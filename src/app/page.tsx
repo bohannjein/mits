@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Bot, ListChecks, PenLine, type LucideIcon } from "lucide-react";
 
 import { MITSLogo } from "@/components/branding/mits-logo";
@@ -93,13 +94,8 @@ export default function Home() {
                   <span className="font-mono text-xs text-muted-foreground">
                     {phase}
                   </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="rounded-sm"
-                    disabled
-                  >
-                    Bald
+                  <Button asChild size="sm" variant="outline" className="rounded-sm">
+                    <Link href="/tickets/new">Öffnen</Link>
                   </Button>
                 </CardFooter>
               </Card>

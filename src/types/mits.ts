@@ -67,6 +67,7 @@ export type MITSFieldWidget =
   | "date"
   | "select"
   | "radio"
+  | "multiselect"
   | "checkbox"
   | "switch"
   | "file";
@@ -76,6 +77,15 @@ export interface MITSFieldUIHint {
   placeholder?: string;
   /** Helper text under the control. */
   help?: string;
+  /** Extra explanation behind an info icon next to the label. */
+  tooltip?: string;
+  /** `accept` attribute for file fields, e.g. "image/*,.pdf". */
+  accept?: string;
+  /**
+   * Human labels for enum values, keyed by the raw value. Kept here rather than
+   * in the JSON Schema so `schema` stays standard (no `enumNames` extension).
+   */
+  optionLabels?: Record<string, string>;
   /** Sort order within its step/group; falls back to JSON Schema property order. */
   order?: number;
   /** Fieldset label — groups related fields inside one step. */

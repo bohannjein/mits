@@ -39,21 +39,50 @@ Diese drei Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
 | State | TanStack Query (Server-State) · Zustand (UI-State) |
 | Backend | FastAPI in `backend/` für KI-Routing und Ollama (ab Phase 3) |
 
-`shadcn add form` existiert in der `radix-nova`-Registry nicht — die Feld-Wrapper
-(`FormField`/`FormMessage`-Äquivalent) baut Phase 2 selbst auf `react-hook-form`.
+`@shadcn/form` ist in der Registry vorhanden, aber ein leerer Stub (nur `name` + `type`,
+keine `files`) — `shadcn add` legt daher nichts an. Ersatz liegt in
+`src/components/forms/form.tsx`: `Form`, `FormField`, `FormItem`, `FormLabel`,
+`FormControl`, `FormDescription`, `FormMessage` mit der kanonischen shadcn-API. Diese Datei
+ist **unser** Code, nicht CLI-verwaltet — deshalb bewusst nicht in `components/ui/`.
 
 ## Struktur
 
 ```
 src/
-  app/                     App Router, globals.css (alle Design-Tokens)
+  app/
+    globals.css            alle Design-Tokens
+    page.tsx               Startseite
+    tickets/new/page.tsx   Ticket-Eingang (Tri-Modal)
   components/
     branding/              ThemeProvider, MITSLogo
     providers/             QueryProvider
+    forms/
+      form.tsx             RHF-Primitives (Ersatz für @shadcn/form)
+      schema-form.tsx      <SchemaForm> — die einzige Formular-Komponente
+    tickets/
+      tri-modal-container.tsx   Tabs: Legacy | Katalog | KI
+      service-catalog.tsx       Kategorie-Kacheln → SchemaForm
+      ai-chat.tsx               Freitext + Screenshot-Upload
+      draft-receipt.tsx         validierter Entwurf als JSON
     ui/                    shadcn-Primitives — nur per CLI ändern/ergänzen
-  lib/                     utils (cn), später schema-to-zod
+  lib/
+    forms/schema-to-zod.ts  JSON Schema → zod + Feldauflösung
+    forms/registry.tsx      Widget → shadcn-Control
+    ai/extract.ts           Naht für Phase 3 (liefert bis dahin "unavailable")
+    store/intake-store.ts   Zustand: aktiver Modus, gewähltes Schema
+    mock-schemas.ts         Beispiel-Schemata (Backend-Ersatz)
+    icons.ts                erlaubte Lucide-Icons für schema.icon
+    utils.ts                cn()
   types/mits.ts            MITSTicket (zod) + MITSFormSchema (JSON Schema)
+scripts/verify-forms.mts   Checks für den Schema-Compiler (`npm test`)
 ```
+
+### Ein neuer Ticket-Typ
+
+Schema zu `CATALOG_SCHEMAS` in `src/lib/mock-schemas.ts` hinzufügen — fertig. Kacheln,
+Formular, Validierung und Payload entstehen daraus. Labels für Enum-Werte stehen in
+`uiHints.optionLabels`, damit `schema` reines JSON Schema bleibt (kein `enumNames`).
+Ein neues Widget braucht einen Eintrag in `MITSFieldWidget` **und** in `FIELD_REGISTRY`.
 
 ## Design-System
 
@@ -68,9 +97,12 @@ Alle leiten sich aus Tokens ab und folgen dem Theme automatisch.
 | Phase | Inhalt | Status |
 |---|---|---|
 | 1 | Setup, Design-System, Typ-Fundament | ✅ |
-| 2 | Dynamic Form Engine (`schema-to-zod`, `SchemaForm`, Legacy + Wizard) | offen |
-| 3 | KI & OCR (FastAPI, Ollama, Triage, Feldextraktion) | offen |
+| 2 | Form Engine (`schema-to-zod`, `SchemaForm`, Registry) + Tri-Modal-Eingang | ✅ |
+| 3 | KI & OCR (FastAPI, Ollama, Triage, Feldextraktion) — Naht: `lib/ai/extract.ts` | offen |
 | 4 | Portal & Admin (Störungs-Banner, Ticket-Board) | offen |
+
+Noch keine Persistenz: `SchemaForm` gibt den validierten `MITSTicketDraft` an den Aufrufer,
+der ihn im Zustand-Store ablegt und als `DraftReceipt` anzeigt. Backend-POST kommt mit Phase 3.
 
 ## Workflow
 
