@@ -21,29 +21,56 @@ export type TicketStatus = z.infer<typeof TicketStatus>;
 export const TicketPriority = z.enum(["low", "normal", "high", "urgent"]);
 export type TicketPriority = z.infer<typeof TicketPriority>;
 
+/**
+ * What survives of an attachment once the payload is JSON.
+ *
+ * The browser holds real `File` objects; the API receives only this metadata.
+ * Blob storage is not part of this phase — the record exists so a ticket does not
+ * silently lose the fact that something was attached.
+ */
+export const AttachmentMetaSchema = z.object({
+  name: z.string(),
+  size: z.number().int().nonnegative(),
+  type: z.string().default(""),
+});
+export type AttachmentMeta = z.infer<typeof AttachmentMetaSchema>;
+
 export const MITSTicketSchema = z.object({
   id: z.string(),
   source: TicketSource,
   /** Which MITSFormSchema produced `payload`. Absent for free-text legacy tickets. */
   form_schema_id: z.string().optional(),
+  /** Short display line for lists and the board; derived server-side from the payload. */
+  title: z.string(),
   /** Answers, keyed by the JSON-Schema property name. Validated per form schema. */
   payload: z.record(z.string(), z.unknown()),
   status: TicketStatus,
   priority: TicketPriority,
+  /** Owner. Set from the session — never accepted from the client. */
+  created_by: z.string(),
+  created_by_email: z.string(),
+  /** Technician the ticket is assigned to, if any. */
+  assigned_to: z.string().nullable().default(null),
   /** Coerced: the API and Ollama both hand us ISO strings, not Date objects. */
   created_at: z.coerce.date(),
 });
 export type MITSTicket = z.infer<typeof MITSTicketSchema>;
 
 /**
- * A ticket that has not been persisted yet — no id, no status, no timestamp.
- * This is what the form engine submits and what the Phase 3 extractor has to
- * produce from free text or an image.
+ * A ticket that has not been persisted yet.
+ *
+ * Everything the server owns is omitted, not optional: id, status, timestamp,
+ * ownership, assignment and the derived title. A client that posts `created_by`
+ * is therefore ignored rather than trusted — the API fills it from the session.
  */
 export const MITSTicketDraftSchema = MITSTicketSchema.omit({
   id: true,
   status: true,
   created_at: true,
+  created_by: true,
+  created_by_email: true,
+  assigned_to: true,
+  title: true,
 }).extend({
   priority: TicketPriority.default("normal"),
 });
@@ -141,3 +168,42 @@ export function parseFormSchema(input: unknown): MITSFormSchema {
   const meta = MITSFormSchemaMeta.parse(input);
   return { ...meta, schema: meta.schema as JSONSchema7 } as MITSFormSchema;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Users and authentication settings.
+
+   The role values themselves live in `lib/auth/roles.ts` — the proxy imports
+   those and must stay free of zod and any Node-only dependency.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const MITSRoleSchema = z.enum(["user", "technician", "admin"]);
+
+/** The user shape the UI is allowed to see. No password hash, no session token. */
+export const MITSUserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  emailVerified: z.boolean().default(false),
+  role: MITSRoleSchema.default("user"),
+  image: z.string().nullable().default(null),
+  createdAt: z.coerce.date(),
+});
+export type MITSUser = z.infer<typeof MITSUserSchema>;
+
+/**
+ * Admin-controlled registration policy.
+ *
+ * `allowedEmailDomains` empty means "any domain". Entries are stored lowercase
+ * without a leading `@`; matching is exact on the part after the last `@`, so
+ * `company.com` does not admit `evil-company.com`.
+ */
+export const AuthSettingsSchema = z.object({
+  registrationEnabled: z.boolean().default(true),
+  allowedEmailDomains: z.array(z.string()).default([]),
+});
+export type AuthSettings = z.infer<typeof AuthSettingsSchema>;
+
+export const DEFAULT_AUTH_SETTINGS: AuthSettings = {
+  registrationEnabled: true,
+  allowedEmailDomains: [],
+};

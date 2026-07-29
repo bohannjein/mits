@@ -28,6 +28,13 @@ Diese drei Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
 3. **Schema-First.** Es gibt keine Komponente pro Ticket-Typ (kein `Onboarding.tsx`). Ein
    Ticket-Typ ist ein `MITSFormSchema` (JSON Schema + `uiHints`); Formulare werden daraus
    dynamisch gerendert.
+4. **`src/proxy.ts` ist keine Sicherheitsgrenze.** Die Next-Docs sind da eindeutig: eine
+   Matcher-Änderung oder eine verschobene Server Function entfernt die Proxy-Abdeckung
+   lautlos. Der Proxy ist nur der schnelle Weg (Redirect vor dem Rendern). **Jede**
+   geschützte Seite ruft `requireUser`/`requireRole`, **jede** Route Handler und **jede**
+   Server Action prüft die Session selbst — siehe `lib/auth/session.ts`.
+5. **Niemals Eigentümerschaft aus dem Request lesen.** `created_by` kommt aus der Session.
+   `MITSTicketDraftSchema` lässt das Feld bewusst weg, statt es optional zu machen.
 
 ## Stack
 
@@ -37,6 +44,8 @@ Diese drei Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
 | Styling | Tailwind v4 (CSS-Variablen, keine `tailwind.config.ts`) + shadcn/ui + Lucide |
 | Forms | `react-hook-form` + `zod`, eigener JSON-Schema-Renderer (Phase 2) |
 | State | TanStack Query (Server-State) · Zustand (UI-State) |
+| Auth | Better Auth 1.6 (E-Mail/Passwort), Rollen `user` < `technician` < `admin` |
+| Persistenz | SQLite (`better-sqlite3`, WAL) in `<data dir>/mits.db` |
 | Backend | FastAPI in `backend/` für KI-Routing und Ollama (ab Phase 3) |
 
 `@shadcn/form` ist in der Registry vorhanden, aber ein leerer Stub (nur `name` + `type`,
@@ -49,23 +58,45 @@ ist **unser** Code, nicht CLI-verwaltet — deshalb bewusst nicht in `components
 
 ```
 src/
+  proxy.ts                 Route-Gate (Next 16: früher middleware.ts)
   app/
     globals.css            alle Design-Tokens
     page.tsx               Startseite
+    (auth)/login|register  Anmeldung / Registrierung
+    forbidden/             Landung für angemeldet-aber-zu-wenig-Rechte
+    tickets/page.tsx       eigene Tickets
     tickets/new/page.tsx   Ticket-Eingang (Tri-Modal)
+    board/page.tsx         alle Tickets (technician + admin)
+    admin/page.tsx         Registrierungspolicy + Rollen (admin)
+    admin/actions.ts       Server Actions, prüfen die Rolle selbst
+    api/auth/[...all]/     Better-Auth-Endpoints
+    api/tickets/           Ticket-API (Scope aus der Rolle)
   components/
     branding/              ThemeProvider, MITSLogo
+    layout/app-header.tsx  Header (Server Component) mit UserMenu
     providers/             QueryProvider
+    auth/                  login-form, register-form, user-menu
+    admin/                 registration-settings-form, user-role-form
     forms/
       form.tsx             RHF-Primitives (Ersatz für @shadcn/form)
       schema-form.tsx      <SchemaForm> — die einzige Formular-Komponente
     tickets/
-      tri-modal-container.tsx   Tabs: Legacy | Katalog | KI
+      tri-modal-container.tsx   Tabs: Legacy | Katalog | KI, POST /api/tickets
       service-catalog.tsx       Kategorie-Kacheln → SchemaForm
       ai-chat.tsx               Freitext + Screenshot-Upload
       draft-receipt.tsx         validierter Entwurf als JSON
+      ticket-table.tsx          Listing für /tickets und /board
     ui/                    shadcn-Primitives — nur per CLI ändern/ergänzen
   lib/
+    auth/roles.ts           Rollen + Hierarchie (frei von Node-Imports!)
+    auth/secret.ts          Datenverzeichnis + Session-Secret (kein DB-Import!)
+    auth/server.ts          betterAuth-Konfiguration + Schema-Bootstrap
+    auth/session.ts         requireUser / requireRole / getSessionUserFor
+    auth/client.ts          Browser-Client (signIn/signUp/signOut)
+    db/sqlite.ts            Verbindung + MITS-Tabellen
+    settings.ts             Registrierungspolicy (mits_setting)
+    users.ts                Benutzerliste + Rollenwechsel
+    tickets.ts              Persistenz + Zugriffsregeln
     forms/schema-to-zod.ts  JSON Schema → zod + Feldauflösung
     forms/registry.tsx      Widget → shadcn-Control
     ai/extract.ts           Naht für Phase 3 (liefert bis dahin "unavailable")
@@ -73,9 +104,14 @@ src/
     mock-schemas.ts         Beispiel-Schemata (Backend-Ersatz)
     icons.ts                erlaubte Lucide-Icons für schema.icon
     utils.ts                cn()
-  types/mits.ts            MITSTicket (zod) + MITSFormSchema (JSON Schema)
+  types/mits.ts            MITSTicket, MITSFormSchema, MITSUser, AuthSettings
 scripts/verify-forms.mts   Checks für den Schema-Compiler (`npm test`)
+scripts/verify-auth.mts    E2E-Checks für RBAC + Isolation (`npm run test:auth`)
 ```
+
+`lib/auth/roles.ts` und `lib/auth/secret.ts` importieren bewusst **keine** Datenbank:
+`src/proxy.ts` zieht beide, und der SQLite-Treiber im Proxy-Bundle wäre fatal.
+Alles unter `lib/` mit DB-Zugriff trägt `import "server-only"`.
 
 ### Ein neuer Ticket-Typ
 
@@ -98,11 +134,31 @@ Alle leiten sich aus Tokens ab und folgen dem Theme automatisch.
 |---|---|---|
 | 1 | Setup, Design-System, Typ-Fundament | ✅ |
 | 2 | Form Engine (`schema-to-zod`, `SchemaForm`, Registry) + Tri-Modal-Eingang | ✅ |
+| — | Auth & RBAC (Better Auth, Rollen, Registrierungspolicy, Ticket-Persistenz) | ✅ |
 | 3 | KI & OCR (FastAPI, Ollama, Triage, Feldextraktion) — Naht: `lib/ai/extract.ts` | offen |
-| 4 | Portal & Admin (Störungs-Banner, Ticket-Board) | offen |
+| 4 | Portal & Admin (Störungs-Banner, Board-Workflow: Zuweisung, Status) | offen |
 
-Noch keine Persistenz: `SchemaForm` gibt den validierten `MITSTicketDraft` an den Aufrufer,
-der ihn im Zustand-Store ablegt und als `DraftReceipt` anzeigt. Backend-POST kommt mit Phase 3.
+## Auth-Modell
+
+- **Rollen:** `user` < `technician` < `admin`. Vergleiche immer über `hasAtLeast`,
+  nie über `===`. Unbekannte Rollenwerte fallen auf `user` zurück, nie nach oben.
+- **Registrierung:** E-Mail + Passwort (min. 10 Zeichen), keine E-Mail-Verifikation
+  (es ist kein Mailversand konfiguriert — eine aktivierte Verifikation würde alle
+  aussperren). Das **erste** Konto einer Instanz wird immer angelegt und erhält
+  `admin`; sonst hätte eine Instanz mit deaktivierter Registrierung nie einen Admin.
+- **Privilege Escalation:** `role` ist ein `additionalField` mit `input: false` —
+  ein `role: "admin"` im Sign-up-Body wird verworfen, nicht übernommen. Zusätzlich
+  erzwingt der `databaseHooks.user.create.before`-Hook die Default-Rolle.
+- **Rollenwechsel:** nur über `admin/actions.ts`. Der letzte Admin kann nicht
+  herabgestuft werden, und niemand kann sich selbst die Admin-Rolle entziehen.
+- **Domain-Whitelist:** Vergleich auf dem Teil nach dem **letzten** `@` und exakt —
+  `firma.de` lässt weder `nichtfirma.de` noch `x@firma.de@fremd.de` zu.
+- **Ticket-Sichtbarkeit:** `listTicketsFor` entscheidet nach Rolle. `user` sieht nur
+  eigene Tickets; `getTicketFor` antwortet bei fremdem Ticket mit `null` statt 403,
+  damit sich keine IDs über den Statusunterschied ermitteln lassen.
+- **Payload:** Die API validiert erneut gegen das Formularschema (`strictObject`),
+  auch wenn der Browser das schon getan hat. Anhänge sind in dieser Phase nur
+  Metadaten (`name`, `size`, `type`) — Blob-Storage fehlt noch.
 
 ## Workflow
 
@@ -117,10 +173,23 @@ git push origin main   # https://github.com/bohannjein/mits
 ## Verifikation
 
 ```bash
-npx tsc --noEmit     # Typen
+npm run typecheck    # Typen
 npm run build        # Prod-Build
+npm test             # Schema-Compiler (offline)
 npm run dev          # http://localhost:3000
 ```
+
+RBAC- und Isolations-Checks brauchen einen laufenden Server auf einem Wegwerf-Datenverzeichnis:
+
+```bash
+MITS_DATA_DIR=.tmp-e2e BETTER_AUTH_SECRET=$(openssl rand -hex 32) npx next dev -p 3100
+# in einer zweiten Shell, gleiches MITS_DATA_DIR:
+MITS_DATA_DIR=.tmp-e2e MITS_E2E_URL=http://localhost:3100 npm run test:auth
+```
+
+Das Skript setzt die Registrierungspolicy direkt in der Datenbank (`lib/settings` ist
+`server-only` und wirft außerhalb des Bundlers) und schickt einen `Origin`-Header —
+ohne ihn lehnt Better Auth zustandsändernde Requests korrekt mit 403 ab.
 
 Regel-2-Check — muss leer bleiben:
 

@@ -44,11 +44,15 @@ yarn-error.log*
 *.log
 logs/
 
-# local runtime data (tickets, uploads, scans) — never committed
+# local runtime data (users, sessions, tickets, auth secret) — never committed
 data/
+.tmp-e2e/
 *.sqlite
 *.sqlite3
 *.db
+*.db-shm
+*.db-wal
+auth-secret
 
 # env files (can opt-in for committing if needed)
 .env*

@@ -1,10 +1,11 @@
 import type { JSONSchema7, JSONSchema7Definition } from "json-schema";
 import { z } from "zod";
 
-import type {
-  MITSFieldUIHint,
-  MITSFieldWidget,
-  MITSFormSchema,
+import {
+  AttachmentMetaSchema,
+  type MITSFieldUIHint,
+  type MITSFieldWidget,
+  type MITSFormSchema,
 } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -164,13 +165,32 @@ const fileLike = z.custom<File>(
   { message: "Ungültige Datei." },
 );
 
-function zodForField(field: ResolvedField): z.ZodType {
+/**
+ * How file fields are represented in the value being validated.
+ *
+ * - `file`: real `File` objects — what the form holds in the browser.
+ * - `metadata`: `{ name, size, type }` — what survives JSON, so this is what the
+ *   API validates. Without this distinction the server would reject every
+ *   attachment it receives, since `File` does not exist in the request body.
+ */
+export type FileValueMode = "file" | "metadata";
+
+export interface CompileOptions {
+  fileValue?: FileValueMode;
+}
+
+function zodForField(
+  field: ResolvedField,
+  options: CompileOptions = {},
+): z.ZodType {
   const { schema, widget, required } = field;
 
   switch (widget) {
     case "file": {
       const max = typeof schema.maxItems === "number" ? schema.maxItems : undefined;
-      let list = z.array(fileLike);
+      const item: z.ZodType =
+        options.fileValue === "metadata" ? AttachmentMetaSchema : fileLike;
+      let list = z.array(item);
       if (required) list = list.min(1, "Bitte eine Datei anhängen.");
       if (max) list = list.max(max, `Maximal ${max} Dateien.`);
       return required ? list : list.optional();
@@ -254,12 +274,15 @@ function zodForField(field: ResolvedField): z.ZodType {
  * Phase 3 reuses this to check an Ollama-produced payload before it is offered
  * to the user for confirmation.
  */
-export function schemaToZod(form: MITSFormSchema) {
+export function schemaToZod(form: MITSFormSchema, options: CompileOptions = {}) {
   const shape: Record<string, z.ZodType> = {};
   for (const field of resolveFields(form)) {
-    shape[field.name] = zodForField(field);
+    shape[field.name] = zodForField(field, options);
   }
-  return z.object(shape);
+  // strict(): a payload carrying properties the schema never declared is
+  // rejected rather than stored. Matters on the server, where the body is
+  // attacker-controlled.
+  return z.strictObject(shape);
 }
 
 /**

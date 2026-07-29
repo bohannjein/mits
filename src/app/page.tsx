@@ -2,6 +2,9 @@ import Link from "next/link";
 import { Bot, ListChecks, PenLine, type LucideIcon } from "lucide-react";
 
 import { MITSLogo } from "@/components/branding/mits-logo";
+import { AppHeader } from "@/components/layout/app-header";
+import { ROLE_LABELS } from "@/lib/auth/roles";
+import { getSessionUser } from "@/lib/auth/session";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,16 +55,20 @@ const INTAKE_MODES: {
   },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const user = await getSessionUser();
+
   return (
-    <main className="bg-grid flex flex-1 flex-col items-center px-6 py-14">
+    <>
+      <AppHeader />
+      <main className="bg-grid flex flex-1 flex-col items-center px-6 py-14">
       <div className="w-full max-w-5xl">
-        <header className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <MITSLogo showTagline />
           <Badge variant="outline" className="rounded-sm border-2 font-mono">
-            Phase 1 · Setup
+            {user ? `angemeldet · ${ROLE_LABELS[user.role]}` : "nicht angemeldet"}
           </Badge>
-        </header>
+        </div>
 
         <Separator className="my-8 bg-border" />
 
@@ -95,7 +102,11 @@ export default function Home() {
                     {phase}
                   </span>
                   <Button asChild size="sm" variant="outline" className="rounded-sm">
-                    <Link href="/tickets/new">Öffnen</Link>
+                    {/* Anonymous visitors are sent to the login form, which
+                        returns them here afterwards. */}
+                    <Link href={user ? "/tickets/new" : "/login?next=%2Ftickets%2Fnew"}>
+                      Öffnen
+                    </Link>
                   </Button>
                 </CardFooter>
               </Card>
@@ -103,6 +114,7 @@ export default function Home() {
           )}
         </div>
       </div>
-    </main>
+      </main>
+    </>
   );
 }
