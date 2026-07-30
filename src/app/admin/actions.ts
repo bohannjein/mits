@@ -5,8 +5,10 @@ import { revalidatePath } from "next/cache";
 import { AISettingsError, setAISettings } from "@/lib/ai-settings";
 import { isRole } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
+import { setFeatureFlags } from "@/lib/features";
 import { saveFormSchema } from "@/lib/form-schemas";
 import { resolveFields } from "@/lib/forms/schema-to-zod";
+import { LocationError, replaceLocations } from "@/lib/locations";
 import {
   setMaintenanceNotices,
   setPortalConfig,
@@ -17,6 +19,9 @@ import {
 import { normaliseDomains, setAuthSettings } from "@/lib/settings";
 import { RoleChangeError, setUserRole } from "@/lib/users";
 import {
+  FEATURE_FLAG_META,
+  FeatureFlagsSchema,
+  MITSLocationSchema,
   PortalConfigSchema,
   PortalContentSchema,
   PortalFaqSchema,
@@ -272,6 +277,71 @@ export async function savePortalOperationsAction(
   return {
     ok: true,
     message: `${services.data.length} Dienst(e) und ${shown} sichtbare Wartungsmeldung(en) gespeichert.`,
+  };
+}
+
+/* ── Feature toggles ────────────────────────────────────────────────────── */
+
+export async function saveFeatureFlagsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const payload = parsePayload(formData, "flags", FeatureFlagsSchema);
+  if (!payload.ok) return { ok: false, error: payload.error };
+
+  const flags = setFeatureFlags(payload.data);
+
+  // Every gated surface has to be re-rendered, not just the settings page.
+  revalidatePath("/", "layout");
+
+  const off = (Object.keys(FEATURE_FLAG_META) as (keyof typeof flags)[]).filter(
+    (key) => !flags[key],
+  );
+
+  return {
+    ok: true,
+    message:
+      off.length === 0
+        ? "Alle Module aktiv."
+        : `Gespeichert. Abgeschaltet: ${off
+            .map((key) => FEATURE_FLAG_META[key].label)
+            .join(", ")}.`,
+  };
+}
+
+/* ── Locations ──────────────────────────────────────────────────────────── */
+
+export async function saveLocationsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const payload = parsePayload(
+    formData,
+    "locations",
+    z.array(MITSLocationSchema),
+  );
+  if (!payload.ok) return { ok: false, error: payload.error };
+
+  let saved;
+  try {
+    saved = replaceLocations(payload.data);
+  } catch (error) {
+    if (error instanceof LocationError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath("/admin/locations");
+  revalidatePath("/tickets/new");
+  revalidatePath("/board");
+
+  const active = saved.filter((location) => location.active).length;
+  return {
+    ok: true,
+    message: `${saved.length} Standort(e) gespeichert, ${active} davon auswählbar.`,
   };
 }
 

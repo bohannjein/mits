@@ -35,6 +35,11 @@ export interface SchemaFormProps {
   initialPayload?: Record<string, unknown>;
   /** Rendered to the left of the submit button (e.g. a back button). */
   secondaryAction?: React.ReactNode;
+  /**
+   * Site the ticket belongs to. Chosen once above the intake tabs rather than per
+   * form, since it is the same answer whichever mode produced the ticket.
+   */
+  locationId?: string | null;
 }
 
 export function SchemaForm({
@@ -43,6 +48,7 @@ export function SchemaForm({
   onSubmit,
   initialPayload,
   secondaryAction,
+  locationId = null,
 }: SchemaFormProps) {
   // Recompiled only when the schema identity changes — compiling on every render
   // would hand react-hook-form a new resolver each time and reset validation.
@@ -66,6 +72,7 @@ export function SchemaForm({
         form_schema_id: schema.id,
         payload: values as Record<string, unknown>,
         priority: derivePriority(values),
+        location_id: locationId,
       });
     } finally {
       setSubmitting(false);

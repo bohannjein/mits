@@ -8,7 +8,14 @@ import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { MITSTicketSchema, type MITSTicket, type TicketStatus } from "@/types/mits";
+import {
+  MITSTicketSchema,
+  TICKET_STATUS_LABELS,
+  formatTicketNumber,
+  isOpenStatus,
+  type MITSTicket,
+  type TicketStatus,
+} from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    "My open tickets" on the portal.
@@ -23,19 +30,12 @@ import { MITSTicketSchema, type MITSTicket, type TicketStatus } from "@/types/mi
 
 const ResponseSchema = z.object({ tickets: z.array(MITSTicketSchema) });
 
-/** Only these two count as "offen" — a closed ticket does not belong in the panel. */
-const OPEN_STATUSES: TicketStatus[] = ["open", "in_progress"];
-
-const STATUS_LABELS: Record<TicketStatus, string> = {
-  open: "Offen",
-  in_progress: "In Arbeit",
-  closed: "Geschlossen",
-};
-
 /** Derived from tokens, so both themes and the light variant follow along. */
 const STATUS_STYLES: Record<TicketStatus, string> = {
   open: "bg-chart-2/15 text-chart-2",
   in_progress: "bg-warning/15 text-warning",
+  waiting_user: "bg-chart-5/15 text-chart-5",
+  resolved: "bg-success/15 text-success",
   closed: "bg-muted text-muted-foreground",
 };
 
@@ -71,9 +71,7 @@ export function OpenTicketsPanel({
     refetchOnWindowFocus: true,
   });
 
-  const open = data
-    .filter((ticket) => OPEN_STATUSES.includes(ticket.status))
-    .slice(0, 6);
+  const open = data.filter((ticket) => isOpenStatus(ticket.status)).slice(0, 6);
 
   return (
     <section aria-label={title} className="grid gap-3">
@@ -115,9 +113,12 @@ export function OpenTicketsPanel({
           {open.map((ticket) => (
             <li key={ticket.id}>
               <Link
-                href="/tickets"
+                href={`/tickets/${ticket.id}`}
                 className="flex flex-wrap items-center gap-3 px-5 py-3.5 transition-colors hover:bg-surface-elevated"
               >
+                <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                  {formatTicketNumber(ticket.ticket_number)}
+                </span>
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">
                   {ticket.title}
                 </span>
@@ -132,7 +133,7 @@ export function OpenTicketsPanel({
                 <Badge
                   className={cn("rounded-full", STATUS_STYLES[ticket.status])}
                 >
-                  {STATUS_LABELS[ticket.status]}
+                  {TICKET_STATUS_LABELS[ticket.status]}
                 </Badge>
                 <span className="w-24 shrink-0 text-right text-xs text-muted-foreground">
                   {ticket.created_at.toLocaleDateString("de-DE", {

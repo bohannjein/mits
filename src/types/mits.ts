@@ -15,11 +15,82 @@ import { z } from "zod";
 export const TicketSource = z.enum(["legacy", "wizard", "ai_chat"]);
 export type TicketSource = z.infer<typeof TicketSource>;
 
-export const TicketStatus = z.enum(["open", "in_progress", "closed"]);
+/**
+ * Ticket lifecycle.
+ *
+ * `waiting_user` and `resolved` were added for the agent workflow; the column is
+ * plain TEXT with no constraint, so older rows carrying only the original three
+ * keep parsing. Order matters — it is the order the board and the status pickers
+ * offer, and `OPEN_TICKET_STATUSES` derives from it.
+ */
+export const TicketStatus = z.enum([
+  "open",
+  "in_progress",
+  "waiting_user",
+  "resolved",
+  "closed",
+]);
 export type TicketStatus = z.infer<typeof TicketStatus>;
+
+export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
+  open: "Offen",
+  in_progress: "In Bearbeitung",
+  waiting_user: "Wartet auf Anwender",
+  resolved: "Gelöst",
+  closed: "Geschlossen",
+};
+
+/**
+ * Still someone's problem. `resolved` counts as open on purpose: the agent is
+ * done but the reporter has not confirmed, and a resolved ticket that vanishes
+ * from every list is a ticket nobody notices was never actually fixed.
+ */
+export const OPEN_TICKET_STATUSES: TicketStatus[] = [
+  "open",
+  "in_progress",
+  "waiting_user",
+  "resolved",
+];
+
+export const isOpenStatus = (status: TicketStatus): boolean =>
+  OPEN_TICKET_STATUSES.includes(status);
 
 export const TicketPriority = z.enum(["low", "normal", "high", "urgent"]);
 export type TicketPriority = z.infer<typeof TicketPriority>;
+
+export const TICKET_PRIORITY_LABELS: Record<TicketPriority, string> = {
+  low: "Niedrig",
+  normal: "Normal",
+  high: "Hoch",
+  urgent: "Dringend",
+};
+
+/**
+ * Human-readable ticket number, e.g. TICK-1001.
+ *
+ * Stored as an integer and formatted on the way out, so sorting and the
+ * search-by-number path work on a number rather than on a string.
+ */
+export const TICKET_NUMBER_PREFIX = "TICK";
+export const TICKET_NUMBER_START = 1001;
+
+export const formatTicketNumber = (n: number): string =>
+  `${TICKET_NUMBER_PREFIX}-${n}`;
+
+/**
+ * Pull a ticket number out of whatever a user typed: `1001`, `TICK-1001`,
+ * `tick 1001`, `#1001`. Returns null when there is no plausible number, so the
+ * caller can fall back to a text search instead of jumping.
+ */
+export function parseTicketNumber(input: string): number | null {
+  const match = input
+    .trim()
+    .replace(/^#/, "")
+    .match(/^(?:tick[\s-]*)?(\d{1,12})$/i);
+  if (!match) return null;
+  const value = Number.parseInt(match[1], 10);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
 
 /**
  * An attachment as it appears in a stored payload.
@@ -42,6 +113,14 @@ export type AttachmentMeta = z.infer<typeof AttachmentMetaSchema>;
 
 export const MITSTicketSchema = z.object({
   id: z.string(),
+  /**
+   * Sequential, human-readable. Defaults to 0 so a row written before the column
+   * existed still parses — `formatTicketNumber` renders that as TICK-0, which is
+   * visibly wrong rather than silently plausible.
+   */
+  ticket_number: z.coerce.number().int().nonnegative().default(0),
+  /** Branch or site this ticket belongs to. Null for tickets filed before locations. */
+  location_id: z.string().nullable().default(null),
   source: TicketSource,
   /** Which MITSFormSchema produced `payload`. Absent for free-text legacy tickets. */
   form_schema_id: z.string().optional(),
@@ -70,6 +149,7 @@ export type MITSTicket = z.infer<typeof MITSTicketSchema>;
  */
 export const MITSTicketDraftSchema = MITSTicketSchema.omit({
   id: true,
+  ticket_number: true,
   status: true,
   created_at: true,
   created_by: true,
@@ -78,8 +158,176 @@ export const MITSTicketDraftSchema = MITSTicketSchema.omit({
   title: true,
 }).extend({
   priority: TicketPriority.default("normal"),
+  /** The reporter may state their site; everything else about them comes from the session. */
+  location_id: z.string().nullable().default(null),
 });
 export type MITSTicketDraft = z.infer<typeof MITSTicketDraftSchema>;
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Agent workflow: replies and internal notes.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * `internal` is the security-relevant half of this type. An internal note is
+ * only ever returned to a technician or admin, and it never triggers a mail —
+ * see `listCommentsFor` in `lib/ticket-comments.ts`.
+ */
+export const CommentVisibility = z.enum(["public", "internal"]);
+export type CommentVisibility = z.infer<typeof CommentVisibility>;
+
+export const TicketCommentSchema = z.object({
+  id: z.string(),
+  ticket_id: z.string(),
+  author_id: z.string(),
+  author_email: z.string(),
+  author_name: z.string(),
+  /** Whether the author was staff when they wrote it, for the "Team" badge. */
+  author_is_agent: z.boolean().default(false),
+  visibility: CommentVisibility.default("public"),
+  body: z.string().min(1).max(20000),
+  created_at: z.coerce.date(),
+});
+export type TicketComment = z.infer<typeof TicketCommentSchema>;
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Locations (branches / sites).
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const MITSLocationSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1).max(120),
+  /** Short code for lists and the heatmap, e.g. "HH" or "B1". */
+  code: z.string().max(16).default(""),
+  city: z.string().max(120).default(""),
+  active: z.boolean().default(true),
+});
+export type MITSLocation = z.infer<typeof MITSLocationSchema>;
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Technician presence.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const PresenceState = z.enum(["active", "idle", "offline"]);
+export type PresenceState = z.infer<typeof PresenceState>;
+
+export const PRESENCE_LABELS: Record<PresenceState, string> = {
+  active: "Aktiv",
+  idle: "Inaktiv",
+  offline: "Offline",
+};
+
+/** Seconds of silence before an active agent is shown as idle. */
+export const PRESENCE_IDLE_AFTER_SECONDS = 5 * 60;
+/** …and before they drop off the list entirely. */
+export const PRESENCE_OFFLINE_AFTER_SECONDS = 30 * 60;
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Feature toggles.
+
+   Every optional module is gated here so an instance can be reduced to the parts
+   it actually uses. Defaults match the specification: the three unfinished or
+   noisy ones start off.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const FeatureFlagsSchema = z.object({
+  feature_ticket_search: z.boolean().default(true),
+  feature_agent_dashboard: z.boolean().default(true),
+  feature_presence_sidebar: z.boolean().default(true),
+  feature_email_notifications: z.boolean().default(true),
+  feature_advanced_form_builder: z.boolean().default(true),
+  feature_typing_indicator: z.boolean().default(false),
+  feature_stats_heatmap: z.boolean().default(true),
+  feature_sla_countdown: z.boolean().default(false),
+  feature_auto_merge_suggestions: z.boolean().default(false),
+});
+export type FeatureFlags = z.infer<typeof FeatureFlagsSchema>;
+export type FeatureFlagKey = keyof FeatureFlags;
+
+export const DEFAULT_FEATURE_FLAGS: FeatureFlags = FeatureFlagsSchema.parse({});
+
+/** Admin-facing copy. Kept beside the schema so a new flag cannot ship unlabelled. */
+export const FEATURE_FLAG_META: Record<
+  FeatureFlagKey,
+  { label: string; description: string }
+> = {
+  feature_ticket_search: {
+    label: "Ticket-Suche",
+    description:
+      "Suchleiste im Header und auf /tickets. Eingabe einer Nummer springt direkt ins Ticket.",
+  },
+  feature_agent_dashboard: {
+    label: "Agenten-Dashboard",
+    description:
+      "Ticketeingang mit Übernehmen-Aktion und Übersicht der eigenen offenen Tickets.",
+  },
+  feature_presence_sidebar: {
+    label: "Techniker-Präsenz",
+    description:
+      "Zeigt an, welche Technikerinnen und Techniker gerade angemeldet sind.",
+  },
+  feature_email_notifications: {
+    label: "E-Mail-Benachrichtigungen",
+    description:
+      "Versand bei Ticket-Eingang und bei öffentlichen Antworten. Braucht eine SMTP-Konfiguration.",
+  },
+  feature_advanced_form_builder: {
+    label: "Erweiterter Formular-Builder",
+    description:
+      "Drag-and-drop-Canvas mit Eigenschaften-Inspektor, bedingter Sichtbarkeit und abhängigen Dropdowns.",
+  },
+  feature_typing_indicator: {
+    label: "Schreibt-gerade-Anzeige",
+    description:
+      "Zeigt im Ticket an, wenn die Gegenseite tippt. Erzeugt dauerhaft Anfragen.",
+  },
+  feature_stats_heatmap: {
+    label: "Statistik & Filial-Heatmap",
+    description: "Eröffnet gegen geschlossen sowie Verteilung über die Standorte.",
+  },
+  feature_sla_countdown: {
+    label: "SLA-Countdown",
+    description:
+      "Restzeit bis zur Reaktionsfrist am Ticket. Ohne gepflegte SLA-Zeiten wenig aussagekräftig.",
+  },
+  feature_auto_merge_suggestions: {
+    label: "Zusammenführungs-Vorschläge",
+    description:
+      "Schlägt Tickets vor, die Duplikate sein könnten. Experimentell.",
+  },
+};
+
+/* ──────────────────────────────────────────────────────────────────────────
+   SMTP.
+
+   The password lives in `mits_setting` like every other admin-managed value.
+   That is a deliberate trade-off, documented in AGENTS.md: whoever can read the
+   database can already read the sessions, and an env-only secret would make the
+   settings mask unable to show whether anything is configured at all.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const SmtpSettingsSchema = z.object({
+  host: z.string().max(255).default(""),
+  port: z.coerce.number().int().min(1).max(65535).default(587),
+  user: z.string().max(255).default(""),
+  /** Empty means "keep the stored one" when saving — never "clear it". */
+  password: z.string().max(512).default(""),
+  from: z.string().max(320).default(""),
+  /** Implicit TLS (465). Otherwise STARTTLS is attempted on the given port. */
+  secure: z.boolean().default(false),
+  /**
+   * Absolute base URL for the "open ticket" button in mails. Without it a link
+   * would have to be built from a request, and a mail is sent outside one.
+   */
+  public_url: z.string().max(512).default(""),
+});
+export type SmtpSettings = z.infer<typeof SmtpSettingsSchema>;
+
+export const DEFAULT_SMTP_SETTINGS: SmtpSettings = SmtpSettingsSchema.parse({});
+
+/** Enough to attempt a send. Checked before every mail so a half-filled mask stays inert. */
+export function isSmtpConfigured(settings: SmtpSettings): boolean {
+  return settings.host.trim() !== "" && settings.from.trim() !== "";
+}
 
 /* ──────────────────────────────────────────────────────────────────────────
    Dynamic form schemas.

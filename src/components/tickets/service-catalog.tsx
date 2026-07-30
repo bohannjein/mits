@@ -25,9 +25,12 @@ import type { MITSFormSchema, MITSTicketDraft } from "@/types/mits";
 export function ServiceCatalog({
   schemas,
   onSubmit,
+  /** Chosen once above the tabs; forwarded so every mode stamps the same site. */
+  locationId = null,
 }: {
   schemas: MITSFormSchema[];
   onSubmit: (draft: MITSTicketDraft) => void | Promise<void>;
+  locationId?: string | null;
 }) {
   const selectedSchemaId = useIntakeStore((state) => state.selectedSchemaId);
   const selectSchema = useIntakeStore((state) => state.selectSchema);
@@ -62,6 +65,7 @@ export function ServiceCatalog({
           schema={selected}
           source="wizard"
           onSubmit={onSubmit}
+          locationId={locationId}
           secondaryAction={
             <Button
               type="button"

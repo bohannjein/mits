@@ -11,16 +11,28 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { z } from "zod";
+
 import { SchemaForm } from "@/components/forms/schema-form";
 import { AiChatTab } from "@/components/tickets/ai-chat-tab";
-import { DraftReceipt } from "@/components/tickets/draft-receipt";
+import { TicketReceipt } from "@/components/tickets/draft-receipt";
+import { LocationPicker } from "@/components/tickets/location-picker";
 import { ServiceCatalog } from "@/components/tickets/service-catalog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIntakeStore } from "@/lib/store/intake-store";
 import { cn } from "@/lib/utils";
-import type { MITSFormSchema, MITSTicketDraft, TicketSource } from "@/types/mits";
+import {
+  MITSTicketSchema,
+  type MITSFormSchema,
+  type MITSLocation,
+  type MITSTicket,
+  type MITSTicketDraft,
+  type TicketSource,
+} from "@/types/mits";
+
+const TicketResponseSchema = z.object({ ticket: MITSTicketSchema });
 
 /* ──────────────────────────────────────────────────────────────────────────
    The tri-modal intake.
@@ -76,10 +88,13 @@ export function TriModalContainer({
   catalogSchemas,
   /** Tab to open, from `?mode=` — the portal tiles deep-link into a mode. */
   initialMode,
+  /** Selectable sites. Empty hides the picker entirely. */
+  locations = [],
 }: {
   quickTicketSchema: MITSFormSchema;
   catalogSchemas: MITSFormSchema[];
   initialMode?: TicketSource;
+  locations?: MITSLocation[];
 }) {
   const router = useRouter();
   // Both tabs' AI proposal and the wizard resolve ids against the same list.
@@ -104,10 +119,11 @@ export function TriModalContainer({
   }, [initialMode, setMode]);
 
   const mode = storeOwnsMode ? storeMode : initialMode!;
-  const lastDraft = useIntakeStore((state) => state.lastDraft);
-  const acceptDraft = useIntakeStore((state) => state.acceptDraft);
   const dismissDraft = useIntakeStore((state) => state.dismissDraft);
   const [error, setError] = useState<string | null>(null);
+  /** The persisted ticket, shown as a confirmation instead of the old JSON dump. */
+  const [created, setCreated] = useState<MITSTicket | null>(null);
+  const [locationId, setLocationId] = useState<string | null>(null);
   /** Accepted AI proposal: which form to open and with which values. */
   const [aiProposal, setAiProposal] = useState<{
     schemaId: string;
@@ -137,7 +153,7 @@ export function TriModalContainer({
     const response = await fetch("/api/tickets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...draft, payload }),
+      body: JSON.stringify({ ...draft, payload, location_id: locationId }),
     });
 
     if (response.status === 401) {
@@ -153,10 +169,37 @@ export function TriModalContainer({
       return;
     }
 
-    acceptDraft(draft);
+    // Parsed, not cast: the API answers with ISO strings and the schema coerces
+    // `created_at` to a Date, so the receipt gets the same shape a page render has.
+    const body = (await response.json()) as unknown;
+    const parsed = TicketResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      setError(
+        "Das Ticket wurde gespeichert, die Antwort war aber unlesbar. Bitte unter „Meine Tickets“ nachsehen.",
+      );
+      return;
+    }
+
+    setCreated(parsed.data.ticket);
     // The "my tickets" listing is server-rendered, so its cache must go.
     router.refresh();
   };
+
+  if (created) {
+    return (
+      <TicketReceipt
+        ticket={created}
+        schema={allSchemas.find(
+          (candidate) => candidate.id === created.form_schema_id,
+        )}
+        onAnother={() => {
+          setCreated(null);
+          setAiProposal(null);
+          dismissDraft();
+        }}
+      />
+    );
+  }
 
   return (
     <Tabs
@@ -211,23 +254,31 @@ export function TriModalContainer({
         </Alert>
       )}
 
-      {lastDraft ? (
-        <DraftReceipt draft={lastDraft} onDismiss={dismissDraft} />
-      ) : (
-        <>
+      <LocationPicker
+        locations={locations}
+        value={locationId}
+        onChange={setLocationId}
+      />
+
+      <>
           <TabsContent value="legacy">
             <TabPanel>
               <SchemaForm
                 schema={quickTicketSchema}
                 source="legacy"
                 onSubmit={handleSubmit}
+                locationId={locationId}
               />
             </TabPanel>
           </TabsContent>
 
           <TabsContent value="wizard">
             <TabPanel>
-              <ServiceCatalog schemas={catalogSchemas} onSubmit={handleSubmit} />
+              <ServiceCatalog
+                schemas={catalogSchemas}
+                onSubmit={handleSubmit}
+                locationId={locationId}
+              />
             </TabPanel>
           </TabsContent>
 
@@ -242,6 +293,7 @@ export function TriModalContainer({
                   payload={aiProposal.payload}
                   onSubmit={handleSubmit}
                   onDiscard={() => setAiProposal(null)}
+                  locationId={locationId}
                 />
               ) : (
                 <AiChatTab
@@ -253,8 +305,7 @@ export function TriModalContainer({
               )}
             </TabPanel>
           </TabsContent>
-        </>
-      )}
+      </>
     </Tabs>
   );
 }
@@ -272,12 +323,14 @@ function AiProposalForm({
   payload,
   onSubmit,
   onDiscard,
+  locationId,
 }: {
   schema: MITSFormSchema | undefined;
   schemaId: string;
   payload: Record<string, unknown>;
   onSubmit: (draft: MITSTicketDraft) => Promise<void>;
   onDiscard: () => void;
+  locationId: string | null;
 }) {
   if (!schema) {
     return (
@@ -319,6 +372,7 @@ function AiProposalForm({
         source="ai_chat"
         initialPayload={payload}
         onSubmit={onSubmit}
+        locationId={locationId}
         secondaryAction={
           <Button
             type="button"

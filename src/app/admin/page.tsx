@@ -3,7 +3,9 @@ import Link from "next/link";
 import {
   BrainIcon,
   LayoutDashboardIcon,
+  MapPinIcon,
   MegaphoneIcon,
+  ToggleRightIcon,
   WandSparklesIcon,
 } from "lucide-react";
 
@@ -60,6 +62,18 @@ export default async function AdminPage() {
               <Badge variant="outline" className="rounded-full">
                 {total} Tickets · {open} offen
               </Badge>
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
+                <Link href="/admin/settings/features">
+                  <ToggleRightIcon strokeWidth={1.5} />
+                  Module
+                </Link>
+              </Button>
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
+                <Link href="/admin/locations">
+                  <MapPinIcon strokeWidth={1.5} />
+                  Standorte
+                </Link>
+              </Button>
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
                 <Link href="/admin/settings/ai">
                   <BrainIcon />

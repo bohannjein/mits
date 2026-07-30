@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import { join } from "node:path";
 
 import { dataDir } from "@/lib/auth/secret";
+import { TICKET_NUMBER_START } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    SQLite connection.
@@ -92,5 +93,116 @@ function migrateAppTables(database: Database.Database): void {
       updated_at TEXT NOT NULL,
       updated_by TEXT
     );
+
+    -- Branches / sites. Referenced by tickets, but without a foreign key: a
+    -- location that gets deleted must not take its tickets with it.
+    CREATE TABLE IF NOT EXISTS mits_location (
+      id     TEXT PRIMARY KEY,
+      name   TEXT NOT NULL,
+      code   TEXT NOT NULL DEFAULT '',
+      city   TEXT NOT NULL DEFAULT '',
+      active INTEGER NOT NULL DEFAULT 1
+    );
+
+    -- Replies and internal notes. The visibility column decides whether a row is
+    -- ever shown to the reporter; the filter lives in lib/ticket-comments.ts.
+    CREATE TABLE IF NOT EXISTS mits_ticket_comment (
+      id              TEXT PRIMARY KEY,
+      ticket_id       TEXT NOT NULL,
+      author_id       TEXT NOT NULL,
+      author_email    TEXT NOT NULL,
+      author_name     TEXT NOT NULL,
+      author_is_agent INTEGER NOT NULL DEFAULT 0,
+      visibility      TEXT NOT NULL DEFAULT 'public',
+      body            TEXT NOT NULL,
+      created_at      TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mits_comment_ticket
+      ON mits_ticket_comment (ticket_id, created_at);
+
+    -- Last sign of life per user. One row per user, overwritten in place — this
+    -- is a presence indicator, not an audit trail.
+    CREATE TABLE IF NOT EXISTS mits_presence (
+      user_id   TEXT PRIMARY KEY,
+      seen_at   TEXT NOT NULL
+    );
   `);
+
+  addColumns(database);
+  backfillTicketNumbers(database);
+}
+
+/**
+ * Columns added after the table already shipped.
+ *
+ * SQLite has no `ADD COLUMN IF NOT EXISTS`, and `ALTER TABLE` on an existing
+ * column throws rather than being a no-op, so the current columns are read first.
+ * Cheaper than a version table and it stays correct if someone restores an older
+ * database.
+ */
+function addColumns(database: Database.Database): void {
+  const additions: { table: string; column: string; definition: string }[] = [
+    { table: "mits_ticket", column: "ticket_number", definition: "INTEGER" },
+    { table: "mits_ticket", column: "location_id", definition: "TEXT" },
+  ];
+
+  for (const { table, column, definition } of additions) {
+    const existing = database
+      .prepare(`PRAGMA table_info(${table})`)
+      .all() as { name: string }[];
+    if (existing.some((info) => info.name === column)) continue;
+    database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+
+  // Unique rather than a plain index: two tickets sharing a number would make
+  // the search-by-number jump ambiguous. Created after the backfill would risk
+  // failing, so it is created here and the backfill assigns distinct values.
+  database.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_mits_ticket_number
+       ON mits_ticket (ticket_number) WHERE ticket_number IS NOT NULL`,
+  );
+}
+
+/**
+ * Give tickets written before the column existed a number, oldest first, so the
+ * sequence matches the order they were actually reported.
+ */
+function backfillTicketNumbers(database: Database.Database): void {
+  const pending = database
+    .prepare(
+      `SELECT id FROM mits_ticket
+        WHERE ticket_number IS NULL
+        ORDER BY created_at ASC, id ASC`,
+    )
+    .all() as { id: string }[];
+
+  if (pending.length === 0) return;
+
+  const highest = database
+    .prepare("SELECT MAX(ticket_number) AS n FROM mits_ticket")
+    .get() as { n: number | null };
+
+  let next = Math.max(highest.n ?? 0, TICKET_NUMBER_START - 1) + 1;
+  const update = database.prepare(
+    "UPDATE mits_ticket SET ticket_number = ? WHERE id = ?",
+  );
+
+  database.transaction(() => {
+    for (const row of pending) update.run(next++, row.id);
+  })();
+}
+
+/**
+ * Allocate the next ticket number.
+ *
+ * `MAX + 1` inside the caller's transaction rather than AUTOINCREMENT: `id` is
+ * already a TEXT primary key, and better-sqlite3 is synchronous with a single
+ * writer, so nothing can interleave between the read and the insert.
+ */
+export function nextTicketNumber(): number {
+  const row = db
+    .prepare("SELECT MAX(ticket_number) AS n FROM mits_ticket")
+    .get() as { n: number | null };
+  return Math.max(row.n ?? 0, TICKET_NUMBER_START - 1) + 1;
 }

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { requireUser } from "@/lib/auth/session";
 import { getFormSchema, listCatalogSchemas } from "@/lib/form-schemas";
+import { listActiveLocations } from "@/lib/locations";
 import { QUICK_TICKET_SCHEMA } from "@/lib/mock-schemas";
 import { getActiveAnnouncements } from "@/lib/portal";
 import { TicketSource } from "@/types/mits";
@@ -74,6 +75,7 @@ export default async function NewTicketPage({
             quickTicketSchema={quickTicketSchema}
             catalogSchemas={catalogSchemas}
             initialMode={initialMode}
+            locations={listActiveLocations()}
           />
         </div>
       </main>

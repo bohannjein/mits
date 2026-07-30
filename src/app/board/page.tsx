@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { requireRole } from "@/lib/auth/session";
+import { listLocations } from "@/lib/locations";
 import { countTickets, listAllTickets } from "@/lib/tickets";
 
 export const metadata: Metadata = {
@@ -60,7 +61,11 @@ export default async function BoardPage() {
               </CardHeader>
             </Card>
           ) : (
-            <TicketTable tickets={tickets} showOwner />
+            <TicketTable
+              tickets={tickets}
+              showOwner
+              locations={listLocations()}
+            />
           )}
         </div>
       </main>

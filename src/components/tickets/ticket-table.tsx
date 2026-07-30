@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -7,31 +9,30 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { MITSTicket, TicketPriority, TicketStatus } from "@/types/mits";
+import {
+  TICKET_PRIORITY_LABELS,
+  TICKET_STATUS_LABELS,
+  formatTicketNumber,
+  type MITSLocation,
+  type MITSTicket,
+} from "@/types/mits";
 
 /* Shared listing for "my tickets" and the technician board. `showOwner` is the
    only difference: a plain user never sees a foreign address, because their
-   listing only ever contains their own tickets anyway. */
+   listing only ever contains their own tickets anyway.
 
-const STATUS_LABELS: Record<TicketStatus, string> = {
-  open: "Offen",
-  in_progress: "In Arbeit",
-  closed: "Geschlossen",
-};
-
-const PRIORITY_LABELS: Record<TicketPriority, string> = {
-  low: "Niedrig",
-  normal: "Normal",
-  high: "Hoch",
-  urgent: "Dringend",
-};
+   The labels come from types/mits.ts rather than living here, so a new status
+   cannot render as a blank cell in one table and a label in another. */
 
 export function TicketTable({
   tickets,
   showOwner = false,
+  /** Resolves `location_id` for the site column. Omit to hide that column. */
+  locations,
 }: {
   tickets: MITSTicket[];
   showOwner?: boolean;
+  locations?: MITSLocation[];
 }) {
   if (tickets.length === 0) {
     return (
@@ -41,13 +42,17 @@ export function TicketTable({
     );
   }
 
+  const byId = new Map((locations ?? []).map((entry) => [entry.id, entry]));
+  const showLocation = locations !== undefined && locations.length > 0;
+
   return (
     <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-elev-1">
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead>Nr.</TableHead>
             <TableHead>Titel</TableHead>
-            <TableHead>Typ</TableHead>
+            {showLocation && <TableHead>Standort</TableHead>}
             {showOwner && <TableHead>Melder</TableHead>}
             <TableHead>Priorität</TableHead>
             <TableHead>Status</TableHead>
@@ -55,40 +60,61 @@ export function TicketTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {tickets.map((ticket) => (
-            <TableRow key={ticket.id}>
-              <TableCell className="font-medium">{ticket.title}</TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">
-                {ticket.form_schema_id ?? ticket.source}
-              </TableCell>
-              {showOwner && (
-                <TableCell className="text-xs">{ticket.created_by_email}</TableCell>
-              )}
-              <TableCell>
-                <Badge
-                  variant={
-                    ticket.priority === "urgent" || ticket.priority === "high"
-                      ? "default"
-                      : "outline"
-                  }
-                  className="rounded-full"
-                >
-                  {PRIORITY_LABELS[ticket.priority]}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <Badge variant="secondary" className="rounded-full">
-                  {STATUS_LABELS[ticket.status]}
-                </Badge>
-              </TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">
-                {ticket.created_at.toLocaleString("de-DE", {
-                  dateStyle: "short",
-                  timeStyle: "short",
-                })}
-              </TableCell>
-            </TableRow>
-          ))}
+          {tickets.map((ticket) => {
+            const location = ticket.location_id
+              ? byId.get(ticket.location_id)
+              : undefined;
+
+            return (
+              <TableRow key={ticket.id}>
+                <TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
+                  {formatTicketNumber(ticket.ticket_number)}
+                </TableCell>
+                <TableCell className="font-medium">
+                  <Link
+                    href={`/tickets/${ticket.id}`}
+                    className="underline-offset-4 hover:underline"
+                  >
+                    {ticket.title}
+                  </Link>
+                </TableCell>
+                {showLocation && (
+                  <TableCell className="text-xs text-muted-foreground">
+                    {/* A ticket can outlive its branch — see lib/locations.ts. */}
+                    {location?.code || location?.name || "—"}
+                  </TableCell>
+                )}
+                {showOwner && (
+                  <TableCell className="text-xs">
+                    {ticket.created_by_email}
+                  </TableCell>
+                )}
+                <TableCell>
+                  <Badge
+                    variant={
+                      ticket.priority === "urgent" || ticket.priority === "high"
+                        ? "default"
+                        : "outline"
+                    }
+                    className="rounded-full"
+                  >
+                    {TICKET_PRIORITY_LABELS[ticket.priority]}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge variant="secondary" className="rounded-full">
+                    {TICKET_STATUS_LABELS[ticket.status]}
+                  </Badge>
+                </TableCell>
+                <TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
+                  {ticket.created_at.toLocaleString("de-DE", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  })}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
