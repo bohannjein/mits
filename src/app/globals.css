@@ -5,10 +5,19 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ──────────────────────────────────────────────────────────────────────────
-   MITS design system — Industrial / Neobrutalism.
+   MITS design system — Google Web Design Language (Material 3 / Gemini).
    Dark is the default theme (see ThemeProvider). Every colour lives here as a
    CSS variable; components must only ever use the semantic Tailwind classes
    they generate (bg-background, text-foreground, border-border, …).
+
+   The values below are the Gemini surface ramp expressed in oklch:
+     --background       #131314   app shell
+     --card             #1e1e1f   tiles, cards, tab bars
+     --surface-elevated #28282a   hover / raised state
+     --border           white 10% hairlines instead of opaque edges
+   Same pixels the Google surfaces use, but reachable through the semantic
+   classes — a literal `bg-[#131314]` in a component would break rule 2 and
+   would not follow the light theme.
    ────────────────────────────────────────────────────────────────────────── */
 
 @theme inline {
@@ -52,104 +61,166 @@
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
 
-  /* Sharp corners — industrial, not friendly-rounded. */
-  --radius-sm: calc(var(--radius) * 0.5);
-  --radius-md: calc(var(--radius) * 0.75);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.5);
-  --radius-2xl: calc(var(--radius) * 2);
-  --radius-3xl: calc(var(--radius) * 2.5);
-  --radius-4xl: calc(var(--radius) * 3);
+  /* One step above --card: hover and raised states. Material calls this
+     surface-container-high. */
+  --color-surface-elevated: var(--surface-elevated);
+  /* Material 3 inverse surface — the Gemini pill button: near-white on dark,
+     near-black on light. Replaces `bg-white text-black hover:bg-zinc-200`,
+     which would be inverted and unreadable in the light theme. */
+  --color-inverse-surface: var(--inverse-surface);
+  --color-inverse-surface-foreground: var(--inverse-surface-foreground);
+  --color-inverse-surface-hover: var(--inverse-surface-hover);
+  /* The three Gemini gradient stops (blue → purple → pink). Only ever used
+     with an alpha modifier, e.g. from-gemini-1/20. */
+  --color-gemini-1: var(--gemini-1);
+  --color-gemini-2: var(--gemini-2);
+  --color-gemini-3: var(--gemini-3);
 
-  /* Neobrutalism hard offset shadows. They track the theme because they
-     reference the live border/primary variables — never inline a colour. */
-  --shadow-brutal-sm: 2px 2px 0 0 var(--border);
-  --shadow-brutal: 4px 4px 0 0 var(--border);
-  --shadow-brutal-lg: 6px 6px 0 0 var(--border);
-  --shadow-brutal-primary: 4px 4px 0 0 var(--primary);
+  /* Material 3 shape scale, driven by the single --radius knob:
+     8 / 10 / 12 / 16 / 24 / 28 / 32px. */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 12px);
+  --radius-3xl: calc(var(--radius) + 16px);
+  --radius-4xl: calc(var(--radius) + 20px);
+
+  /* Material 3 elevation levels 1–3 plus two glows. Soft and multi-stage
+     instead of a hard offset — the Google surfaces float, they do not stack. */
+  --shadow-elev-1:
+    0 1px 2px 0 var(--shadow-key), 0 1px 3px 1px var(--shadow-ambient);
+  --shadow-elev-2:
+    0 1px 2px 0 var(--shadow-key), 0 2px 6px 2px var(--shadow-ambient);
+  --shadow-elev-3:
+    0 1px 3px 0 var(--shadow-key), 0 8px 24px -4px var(--shadow-ambient);
+  --shadow-glow: 0 0 0 1px var(--border), 0 12px 32px -8px var(--shadow-ambient);
+  --shadow-glow-gemini:
+    0 0 0 1px color-mix(in oklch, var(--gemini-2) 35%, transparent),
+    0 8px 40px -8px color-mix(in oklch, var(--gemini-2) 30%, transparent);
+
+  /* Kept under the old names because ~10 call sites still reference them
+     (auth cards, resource grid, announcement banner). They now resolve to the
+     Material elevations so nothing renders as a half-migrated hard shadow. */
+  --shadow-brutal-sm: var(--shadow-elev-1);
+  --shadow-brutal: var(--shadow-elev-2);
+  --shadow-brutal-lg: var(--shadow-elev-3);
+  --shadow-brutal-primary:
+    0 0 0 1px color-mix(in oklch, var(--primary) 40%, transparent),
+    0 8px 28px -8px color-mix(in oklch, var(--primary) 25%, transparent);
 }
 
 :root {
-  --background: oklch(0.98 0 0);
-  --foreground: oklch(0.15 0 0);
+  /* Material 3 light: #f8fafd shell, pure white cards. */
+  --background: oklch(0.985 0.003 250);
+  --foreground: oklch(0.245 0.004 265);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0 0);
+  --card-foreground: oklch(0.245 0.004 265);
+  --surface-elevated: oklch(0.962 0.006 250);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0 0);
-  --primary: oklch(0.72 0.17 62);
-  --primary-foreground: oklch(0.16 0.03 62);
-  --secondary: oklch(0.95 0 0);
-  --secondary-foreground: oklch(0.2 0 0);
-  --muted: oklch(0.95 0 0);
-  --muted-foreground: oklch(0.45 0 0);
-  --accent: oklch(0.93 0 0);
-  --accent-foreground: oklch(0.2 0 0);
-  --destructive: oklch(0.58 0.22 25);
-  --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.6 0.15 150);
-  --success-foreground: oklch(0.99 0 0);
-  --warning: oklch(0.75 0.16 80);
-  --warning-foreground: oklch(0.16 0.03 80);
-  /* Solid, high-contrast edges — the defining trait of the look. */
-  --border: oklch(0.82 0 0);
-  --input: oklch(0.78 0 0);
-  --ring: oklch(0.72 0.17 62);
+  --popover-foreground: oklch(0.245 0.004 265);
+  /* Google Blue #0b57d0 — the accent for links, focus and icon highlights. */
+  --primary: oklch(0.45 0.2 264);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.955 0.006 250);
+  --secondary-foreground: oklch(0.245 0.004 265);
+  --muted: oklch(0.955 0.006 250);
+  /* #5f6368 — Google's secondary text. */
+  --muted-foreground: oklch(0.51 0.008 265);
+  --accent: oklch(0.93 0.012 250);
+  --accent-foreground: oklch(0.245 0.004 265);
+  --destructive: oklch(0.52 0.2 25);
+  --destructive-foreground: oklch(1 0 0);
+  --success: oklch(0.55 0.14 150);
+  --success-foreground: oklch(1 0 0);
+  --warning: oklch(0.7 0.15 75);
+  --warning-foreground: oklch(0.2 0.03 75);
+  /* Hairlines, not edges: black at 10% so borders sit under the elevation
+     instead of competing with it. */
+  --border: oklch(0 0 0 / 10%);
+  --input: oklch(0 0 0 / 14%);
+  --ring: oklch(0.45 0.2 264);
+  /* The Gemini gradient stops: #4285f4, #9b72cb, #d96570. */
+  --gemini-1: oklch(0.623 0.188 260);
+  --gemini-2: oklch(0.612 0.129 303);
+  --gemini-3: oklch(0.657 0.144 20);
+  --inverse-surface: oklch(0.245 0.004 265);
+  --inverse-surface-foreground: oklch(1 0 0);
+  --inverse-surface-hover: oklch(0.32 0.004 265);
+  /* Key and ambient shadow tints for the elevation tokens. */
+  --shadow-key: oklch(0 0 0 / 16%);
+  --shadow-ambient: oklch(0 0 0 / 10%);
   /* Status hues, reused by the Phase 4 board: open / in progress / closed /
      escalated / on hold. */
-  --chart-1: oklch(0.72 0.17 62);
-  --chart-2: oklch(0.6 0.14 240);
-  --chart-3: oklch(0.6 0.15 150);
-  --chart-4: oklch(0.58 0.22 25);
-  --chart-5: oklch(0.58 0.17 300);
-  --radius: 0.25rem;
-  --sidebar: oklch(0.96 0 0);
-  --sidebar-foreground: oklch(0.15 0 0);
-  --sidebar-primary: oklch(0.72 0.17 62);
-  --sidebar-primary-foreground: oklch(0.16 0.03 62);
-  --sidebar-accent: oklch(0.93 0 0);
-  --sidebar-accent-foreground: oklch(0.2 0 0);
-  --sidebar-border: oklch(0.82 0 0);
-  --sidebar-ring: oklch(0.72 0.17 62);
+  --chart-1: oklch(0.623 0.188 260);
+  --chart-2: oklch(0.612 0.129 303);
+  --chart-3: oklch(0.55 0.14 150);
+  --chart-4: oklch(0.52 0.2 25);
+  --chart-5: oklch(0.657 0.144 20);
+  /* 12px base — Material's medium shape. Drives the whole radius scale. */
+  --radius: 0.75rem;
+  --sidebar: oklch(0.962 0.006 250);
+  --sidebar-foreground: oklch(0.245 0.004 265);
+  --sidebar-primary: oklch(0.45 0.2 264);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.93 0.012 250);
+  --sidebar-accent-foreground: oklch(0.245 0.004 265);
+  --sidebar-border: oklch(0 0 0 / 10%);
+  --sidebar-ring: oklch(0.45 0.2 264);
 }
 
 .dark {
-  --background: oklch(0.13 0 0);
-  --foreground: oklch(0.97 0 0);
-  --card: oklch(0.17 0 0);
-  --card-foreground: oklch(0.97 0 0);
-  --popover: oklch(0.17 0 0);
-  --popover-foreground: oklch(0.97 0 0);
-  --primary: oklch(0.78 0.17 68);
-  --primary-foreground: oklch(0.16 0.03 68);
-  --secondary: oklch(0.24 0 0);
-  --secondary-foreground: oklch(0.97 0 0);
-  --muted: oklch(0.22 0 0);
-  --muted-foreground: oklch(0.68 0 0);
-  --accent: oklch(0.27 0 0);
-  --accent-foreground: oklch(0.97 0 0);
-  --destructive: oklch(0.62 0.22 25);
-  --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.72 0.15 150);
-  --success-foreground: oklch(0.14 0.03 150);
-  --warning: oklch(0.8 0.16 85);
-  --warning-foreground: oklch(0.16 0.03 85);
-  /* Opaque, not white-with-alpha: edges must stay visible on every surface. */
-  --border: oklch(0.32 0 0);
-  --input: oklch(0.36 0 0);
-  --ring: oklch(0.78 0.17 68);
-  --chart-1: oklch(0.78 0.17 68);
-  --chart-2: oklch(0.68 0.13 240);
-  --chart-3: oklch(0.72 0.15 150);
-  --chart-4: oklch(0.62 0.22 25);
-  --chart-5: oklch(0.66 0.16 300);
-  --sidebar: oklch(0.11 0 0);
-  --sidebar-foreground: oklch(0.97 0 0);
-  --sidebar-primary: oklch(0.78 0.17 68);
-  --sidebar-primary-foreground: oklch(0.16 0.03 68);
-  --sidebar-accent: oklch(0.24 0 0);
-  --sidebar-accent-foreground: oklch(0.97 0 0);
-  --sidebar-border: oklch(0.3 0 0);
-  --sidebar-ring: oklch(0.78 0.17 68);
+  /* The Gemini surface ramp: #131314 / #1e1e1f / #28282a, body text #e3e3e3. */
+  --background: oklch(0.187 0.003 285);
+  --foreground: oklch(0.915 0.002 285);
+  --card: oklch(0.235 0.003 285);
+  --card-foreground: oklch(0.915 0.002 285);
+  --surface-elevated: oklch(0.277 0.004 285);
+  --popover: oklch(0.235 0.003 285);
+  --popover-foreground: oklch(0.915 0.002 285);
+  /* Material 3 dark primary #a8c7fa — light blue, readable on #131314. */
+  --primary: oklch(0.81 0.078 259);
+  --primary-foreground: oklch(0.22 0.05 264);
+  --secondary: oklch(0.277 0.004 285);
+  --secondary-foreground: oklch(0.915 0.002 285);
+  --muted: oklch(0.277 0.004 285);
+  /* zinc-400 #a1a1aa — the tone the fine Lucide icons sit in. */
+  --muted-foreground: oklch(0.71 0.014 286);
+  --accent: oklch(0.33 0.005 285);
+  --accent-foreground: oklch(0.915 0.002 285);
+  --destructive: oklch(0.68 0.19 22);
+  --destructive-foreground: oklch(0.2 0.05 22);
+  --success: oklch(0.78 0.14 150);
+  --success-foreground: oklch(0.2 0.04 150);
+  --warning: oklch(0.84 0.15 85);
+  --warning-foreground: oklch(0.2 0.04 85);
+  /* white/10 hairlines — the soft Material edge, not an opaque frame. */
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.81 0.078 259);
+  --gemini-1: oklch(0.7 0.16 260);
+  --gemini-2: oklch(0.7 0.13 303);
+  --gemini-3: oklch(0.74 0.13 20);
+  --inverse-surface: oklch(0.97 0 0);
+  --inverse-surface-foreground: oklch(0.2 0 0);
+  --inverse-surface-hover: oklch(0.87 0 0);
+  /* Darker than in the light theme: on #131314 an ambient shadow only reads
+     if it is close to black. */
+  --shadow-key: oklch(0 0 0 / 40%);
+  --shadow-ambient: oklch(0 0 0 / 28%);
+  --chart-1: oklch(0.7 0.16 260);
+  --chart-2: oklch(0.7 0.13 303);
+  --chart-3: oklch(0.78 0.14 150);
+  --chart-4: oklch(0.68 0.19 22);
+  --chart-5: oklch(0.74 0.13 20);
+  --sidebar: oklch(0.16 0.003 285);
+  --sidebar-foreground: oklch(0.915 0.002 285);
+  --sidebar-primary: oklch(0.81 0.078 259);
+  --sidebar-primary-foreground: oklch(0.22 0.05 264);
+  --sidebar-accent: oklch(0.277 0.004 285);
+  --sidebar-accent-foreground: oklch(0.915 0.002 285);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.81 0.078 259);
 }
 
 @layer base {
@@ -170,16 +241,84 @@
   }
 }
 
+/* The Gemini highlight drifts rather than pulses — a slow hue travel plus a
+   breathing scale. Kept in CSS because the compositor can run it off the main
+   thread; framer-motion handles everything that reacts to input instead. */
+@keyframes gemini-drift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+    opacity: 0.55;
+  }
+  50% {
+    background-position: 100% 50%;
+    opacity: 1;
+  }
+}
+
 @layer utilities {
-  /* Blueprint grid. Derived from --border, so it retints with the theme. */
+  /* Soft radial wash instead of the old blueprint raster: no hard lines, two
+     Gemini stops bled into the background. */
+  .bg-aurora {
+    background-image:
+      radial-gradient(
+        60rem 32rem at 15% -10%,
+        color-mix(in oklch, var(--gemini-1) 14%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        52rem 30rem at 92% 0%,
+        color-mix(in oklch, var(--gemini-2) 12%, transparent),
+        transparent 70%
+      );
+    background-repeat: no-repeat;
+  }
+  /* The animated Gemini gradient. Sits on a blurred layer behind the AI tile,
+     so the tile itself keeps a flat Material surface. */
+  .bg-gemini-sheen {
+    background-image: linear-gradient(
+      110deg,
+      color-mix(in oklch, var(--gemini-1) 20%, transparent),
+      color-mix(in oklch, var(--gemini-2) 20%, transparent),
+      color-mix(in oklch, var(--gemini-3) 20%, transparent),
+      color-mix(in oklch, var(--gemini-1) 20%, transparent)
+    );
+    background-size: 300% 100%;
+    animation: gemini-drift 9s ease-in-out infinite;
+  }
+  /* Gradient text for the one word that should carry the Gemini identity. */
+  .text-gemini {
+    background-image: linear-gradient(
+      100deg,
+      var(--gemini-1),
+      var(--gemini-2),
+      var(--gemini-3)
+    );
+    background-size: 220% 100%;
+    animation: gemini-drift 9s ease-in-out infinite;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  /* Kept: the auth layout and /forbidden still use it. Now a barely-there
+     raster instead of a blueprint grid, so it reads as texture, not structure. */
   .bg-grid {
     background-image:
       linear-gradient(to right, var(--border) 1px, transparent 1px),
       linear-gradient(to bottom, var(--border) 1px, transparent 1px);
-    background-size: 2.5rem 2.5rem;
+    background-size: 4rem 4rem;
+    mask-image: radial-gradient(60rem 40rem at 50% 0%, black, transparent 75%);
   }
-  /* Stencilled label above a control or card. */
+  /* Section label. No longer stencilled mono caps — Google sets these as a
+     small, tight sans label. */
   .label-industrial {
-    @apply font-mono text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground;
+    @apply text-xs font-medium tracking-wide text-muted-foreground;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-gemini-sheen,
+  .text-gemini {
+    animation: none;
   }
 }

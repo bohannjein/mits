@@ -1,5 +1,6 @@
 "use client";
 
+import { motion, useReducedMotion } from "framer-motion";
 import {
   BotIcon,
   ListChecksIcon,
@@ -18,6 +19,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIntakeStore } from "@/lib/store/intake-store";
+import { cn } from "@/lib/utils";
 import type { MITSFormSchema, MITSTicketDraft, TicketSource } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -28,11 +30,44 @@ import type { MITSFormSchema, MITSTicketDraft, TicketSource } from "@/types/mits
    <SchemaForm> as the guided catalogue.
    ────────────────────────────────────────────────────────────────────────── */
 
-const TABS: { value: TicketSource; label: string; icon: typeof PenLineIcon }[] = [
+const TABS: {
+  value: TicketSource;
+  label: string;
+  icon: typeof PenLineIcon;
+  /** The AI tab keeps the Gemini gradient identity of the portal tile. */
+  gemini?: boolean;
+}[] = [
   { value: "legacy", label: "Schnell-Ticket", icon: PenLineIcon },
   { value: "wizard", label: "Service-Katalog", icon: ListChecksIcon },
-  { value: "ai_chat", label: "KI-Assistent", icon: BotIcon },
+  { value: "ai_chat", label: "KI-Assistent", icon: BotIcon, gemini: true },
 ];
+
+/**
+ * Springs, not durations. The pill is stiff and near-critically damped so it
+ * tracks the pointer without a visible bounce; the panel is softer because it
+ * travels further.
+ */
+const PILL = { type: "spring", stiffness: 460, damping: 36, mass: 0.7 } as const;
+const PANEL = { type: "spring", stiffness: 240, damping: 26, mass: 0.9 } as const;
+
+/**
+ * Mount animation for a tab panel. Radix unmounts the inactive panels, so the
+ * mount is the transition — no AnimatePresence needed, and none possible
+ * without replacing the Radix Tabs primitive.
+ */
+function TabPanel({ children }: { children: React.ReactNode }) {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <motion.div
+      initial={reduceMotion ? false : { opacity: 0, y: 8, scale: 0.995 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={PANEL}
+    >
+      {children}
+    </motion.div>
+  );
+}
 
 export function TriModalContainer({
   /** Free-text fallback form. Rendered by the classic tab. */
@@ -108,18 +143,48 @@ export function TriModalContainer({
       onValueChange={(value) => setMode(value as TicketSource)}
       className="gap-6"
     >
-      <TabsList className="h-auto w-full flex-wrap rounded-sm border-2 border-border bg-card p-1">
-        {TABS.map(({ value, label, icon: Icon }) => (
-          <TabsTrigger key={value} value={value} className="h-9 rounded-sm">
-            <Icon />
-            {label}
+      <TabsList className="h-auto w-full flex-wrap gap-1 rounded-full border border-border bg-card p-1.5">
+        {TABS.map(({ value, label, icon: Icon, gemini }) => (
+          <TabsTrigger
+            key={value}
+            value={value}
+            className={cn(
+              "relative h-10 rounded-full px-4 font-medium",
+              // Neutralise the primitive's own active surface: the moving
+              // pill below is what fills the active tab.
+              "data-active:bg-transparent data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-transparent",
+              "group-data-[variant=default]/tabs-list:data-active:shadow-none",
+              "data-active:text-inverse-surface-foreground dark:data-active:text-inverse-surface-foreground",
+            )}
+          >
+            {/* One shared layoutId across all three triggers: framer-motion
+                interpolates position and width, so the pill slides instead of
+                cutting between tabs. */}
+            {mode === value && (
+              <motion.span
+                aria-hidden
+                layoutId="intake-tab-pill"
+                transition={PILL}
+                className={cn(
+                  "absolute inset-0 rounded-full bg-inverse-surface",
+                  gemini && "shadow-glow-gemini",
+                )}
+              />
+            )}
+            <span className="relative z-10 inline-flex items-center gap-1.5">
+              <Icon strokeWidth={1.5} />
+              {label}
+            </span>
           </TabsTrigger>
         ))}
       </TabsList>
 
       {error && (
-        <Alert variant="destructive" className="rounded-sm border-2">
-          <TriangleAlertIcon />
+        <Alert
+          variant="destructive"
+          className="rounded-2xl border-border px-4 py-3 shadow-elev-1"
+        >
+          <TriangleAlertIcon strokeWidth={1.5} />
           <AlertTitle>Nicht gespeichert</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
@@ -130,36 +195,42 @@ export function TriModalContainer({
       ) : (
         <>
           <TabsContent value="legacy">
-            <SchemaForm
-              schema={quickTicketSchema}
-              source="legacy"
-              onSubmit={handleSubmit}
-            />
+            <TabPanel>
+              <SchemaForm
+                schema={quickTicketSchema}
+                source="legacy"
+                onSubmit={handleSubmit}
+              />
+            </TabPanel>
           </TabsContent>
 
           <TabsContent value="wizard">
-            <ServiceCatalog schemas={catalogSchemas} onSubmit={handleSubmit} />
+            <TabPanel>
+              <ServiceCatalog schemas={catalogSchemas} onSubmit={handleSubmit} />
+            </TabPanel>
           </TabsContent>
 
           <TabsContent value="ai_chat">
-            {aiProposal ? (
-              <AiProposalForm
-                schema={allSchemas.find(
-                  (candidate) => candidate.id === aiProposal.schemaId,
-                )}
-                schemaId={aiProposal.schemaId}
-                payload={aiProposal.payload}
-                onSubmit={handleSubmit}
-                onDiscard={() => setAiProposal(null)}
-              />
-            ) : (
-              <AiChatTab
-                schemas={allSchemas}
-                onAccept={(schemaId, payload) =>
-                  setAiProposal({ schemaId, payload })
-                }
-              />
-            )}
+            <TabPanel>
+              {aiProposal ? (
+                <AiProposalForm
+                  schema={allSchemas.find(
+                    (candidate) => candidate.id === aiProposal.schemaId,
+                  )}
+                  schemaId={aiProposal.schemaId}
+                  payload={aiProposal.payload}
+                  onSubmit={handleSubmit}
+                  onDiscard={() => setAiProposal(null)}
+                />
+              ) : (
+                <AiChatTab
+                  schemas={allSchemas}
+                  onAccept={(schemaId, payload) =>
+                    setAiProposal({ schemaId, payload })
+                  }
+                />
+              )}
+            </TabPanel>
           </TabsContent>
         </>
       )}
@@ -189,8 +260,11 @@ function AiProposalForm({
 }) {
   if (!schema) {
     return (
-      <Alert variant="destructive" className="rounded-sm border-2">
-        <TriangleAlertIcon />
+      <Alert
+        variant="destructive"
+        className="rounded-2xl border-border px-4 py-3 shadow-elev-1"
+      >
+        <TriangleAlertIcon strokeWidth={1.5} />
         <AlertTitle>Formular nicht gefunden</AlertTitle>
         <AlertDescription>
           Das Schema „{schemaId}“ ist MITS nicht bekannt.
@@ -201,14 +275,22 @@ function AiProposalForm({
 
   return (
     <div className="grid gap-5">
-      <Alert className="rounded-sm border-2">
-        <SparklesIcon />
-        <AlertTitle>Von der KI vorbefüllt: {schema.title}</AlertTitle>
-        <AlertDescription>
-          Bitte alle Felder prüfen und ergänzen. Abgesendet wird nur, was hier
-          steht.
-        </AlertDescription>
-      </Alert>
+      {/* Same Gemini treatment as the portal tile, so it stays obvious which
+          part of the screen the model touched. */}
+      <div className="relative">
+        <span
+          aria-hidden
+          className="bg-gemini-sheen pointer-events-none absolute -inset-0.5 rounded-2xl opacity-60 blur-md"
+        />
+        <Alert className="relative rounded-2xl border-border px-4 py-3">
+          <SparklesIcon strokeWidth={1.5} />
+          <AlertTitle>Von der KI vorbefüllt: {schema.title}</AlertTitle>
+          <AlertDescription>
+            Bitte alle Felder prüfen und ergänzen. Abgesendet wird nur, was hier
+            steht.
+          </AlertDescription>
+        </Alert>
+      </div>
 
       <SchemaForm
         key={schema.id}
@@ -220,7 +302,7 @@ function AiProposalForm({
           <Button
             type="button"
             variant="ghost"
-            className="rounded-sm"
+            className="rounded-full px-4"
             onClick={onDiscard}
           >
             Zurück zum Chat

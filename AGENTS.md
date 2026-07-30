@@ -42,6 +42,7 @@ Diese drei Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
 |---|---|
 | Frontend | Next.js 16 (App Router), React 19, TypeScript, `src/`-Layout, Alias `@/*` |
 | Styling | Tailwind v4 (CSS-Variablen, keine `tailwind.config.ts`) + shadcn/ui + Lucide |
+| Motion | `framer-motion` — Spring-Physics, kein `duration`-Easing |
 | Forms | `react-hook-form` + `zod`, eigener JSON-Schema-Renderer (Phase 2) |
 | State | TanStack Query (Server-State) · Zustand (UI-State) |
 | Auth | Better Auth 1.6 (E-Mail/Passwort), Rollen `user` < `technician` < `admin` |
@@ -91,7 +92,8 @@ src/
     api/admin/form-schemas/[id]/  lädt ein Schema in den Builder (admin)
   components/
     branding/              ThemeProvider, MITSLogo
-    dashboard/             announcement-banner, resource-grid
+    dashboard/             announcement-banner, resource-grid,
+                           intake-modes (Client: Motion-Kacheln der Startseite)
     layout/app-header.tsx  Header (Server Component) mit UserMenu
     providers/             QueryProvider
     auth/                  login-form, register-form, user-menu
@@ -154,11 +156,36 @@ Seite; sie dürfen den Store nicht selbst lesen (`server-only`).
 
 ## Design-System
 
-Industrial / Neobrutalism, **Dark ist Standard** (`ThemeProvider`: `defaultTheme="dark"`,
-`enableSystem={false}`). Merkmale: `--radius: 0.25rem` (kantig), opake kontraststarke Border,
-Industrie-Amber als `--primary`, harte Offset-Schatten (`shadow-brutal`, `shadow-brutal-primary`)
-und die Utilities `bg-grid` (Blueprint-Raster) und `label-industrial` (Mono-Kapitälchen-Label).
-Alle leiten sich aus Tokens ab und folgen dem Theme automatisch.
+**Google Web Design Language** (Material 3 / Gemini), **Dark ist Standard**
+(`ThemeProvider`: `defaultTheme="dark"`, `enableSystem={false}`).
+
+| Merkmal | Umsetzung |
+|---|---|
+| Surface-Rampe | `bg-background` #131314 · `bg-card` #1e1e1f · `bg-surface-elevated` #28282a |
+| Border | Haarlinie `oklch(1 0 0 / 10%)` = white/10, nicht opak |
+| Radius | `--radius: 0.75rem`, Material-Shape-Scale 8/10/12/16/24/28/32px |
+| Elevation | `shadow-elev-1..3` (mehrstufig weich) + `shadow-glow`, `shadow-glow-gemini` |
+| Akzent | `--primary` = Google Blue (#0b57d0 hell / #a8c7fa dunkel) |
+| Pill-Buttons | `rounded-full` + `bg-inverse-surface text-inverse-surface-foreground` |
+| Gemini-Gradient | `--gemini-1/2/3` (#4285f4 → #9b72cb → #d96570) |
+| Utilities | `bg-aurora` (weiches Radial-Wash), `bg-gemini-sheen`, `text-gemini`, `label-industrial` |
+
+Alles leitet sich aus Tokens in `globals.css` ab und folgt dem Theme automatisch. Zwei Punkte,
+die man kennen muss:
+
+- **`bg-white`/`text-black` ist kein Ersatz für `bg-inverse-surface`.** Der Gemini-Pill-Button
+  ist im Light-Theme invertiert (dunkel auf hell). Eine literale Farbe wäre dort unlesbar —
+  und würde Regel 2 brechen.
+- **`shadow-brutal*` existiert nur noch als Alias** auf `shadow-elev-*`. Rund zehn Call-Sites
+  (Auth-Karten, `resource-grid`, `announcement-banner`) benutzen die alten Namen; sie rendern
+  dadurch weiche Material-Schatten statt halb migrierter Hartkanten. Beim Anfassen dieser
+  Dateien auf `shadow-elev-*` umstellen.
+
+Bewegung läuft über `framer-motion` mit **Spring-Physics**, nie mit `duration`-Easing.
+Referenz-Werte in `components/dashboard/intake-modes.tsx` (`ENTRANCE`, `LIFT`) und
+`tri-modal-container.tsx` (`PILL`, `PANEL`). `useReducedMotion()` wird explizit abgefragt —
+framer-motion tut das nicht von selbst. Rein dekorative Endlos-Animationen laufen als
+CSS-Keyframes (`gemini-drift`), damit sie der Compositor übernimmt.
 
 ## Roadmap
 
