@@ -2,8 +2,11 @@ import Link from "next/link";
 
 import { UserMenu } from "@/components/auth/user-menu";
 import { MITSLogo } from "@/components/branding/mits-logo";
+import { TicketSearch } from "@/components/tickets/ticket-search";
 import { Button } from "@/components/ui/button";
+import { canViewBoard } from "@/lib/auth/roles";
 import { getSessionUser } from "@/lib/auth/session";
+import { isFeatureEnabled } from "@/lib/features";
 
 /**
  * Application header. A server component so the identity block renders with the
@@ -12,12 +15,31 @@ import { getSessionUser } from "@/lib/auth/session";
 export async function AppHeader() {
   const user = await getSessionUser();
 
+  /*
+   * Search only for a signed-in user: an anonymous visitor has no tickets to
+   * find, and the field would submit to a page that redirects them to the login
+   * form. Staff search the board, everyone else their own tickets — the target
+   * decides the scope, and `searchTickets` enforces it again server-side.
+   */
+  const showSearch =
+    user !== null &&
+    !user.mustChangePassword &&
+    isFeatureEnabled("feature_ticket_search");
+
   return (
     <header className="border-b border-border bg-card">
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-3">
         <Link href="/" className="rounded-xl outline-ring/50 focus-visible:outline-2">
           <MITSLogo />
         </Link>
+
+        {showSearch && (
+          <TicketSearch
+            compact
+            action={canViewBoard(user.role) ? "/board" : "/tickets"}
+            className="order-last w-full sm:order-none sm:ml-auto sm:mr-3 sm:w-auto"
+          />
+        )}
 
         {user ? (
           <UserMenu user={user} />

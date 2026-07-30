@@ -25,6 +25,8 @@ import {
   PortalConfigSchema,
   PortalFaqSchema,
   fillPortalText,
+  formatTicketNumber,
+  parseTicketNumber,
   resolveSmtpPassword,
 } from "../src/types/mits";
 
@@ -329,6 +331,57 @@ console.log("portal faq defaults");
    arrive; an unescaped ticket title looks fine until someone files a ticket
    called `<img onerror=…>` and it renders in a colleague's inbox.
    ────────────────────────────────────────────────────────────────────────── */
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Ticket number parsing.
+
+   This decides whether a search term is a direct jump or a text query. Too
+   permissive and every numeric-looking search stops being a search; too strict
+   and the number people read off a mail does not work.
+   ────────────────────────────────────────────────────────────────────────── */
+
+console.log("ticket number parsing");
+{
+  const accepts: [string, number][] = [
+    ["1001", 1001],
+    ["#1001", 1001],
+    ["TICK-1001", 1001],
+    ["tick-1001", 1001],
+    ["tick 1001", 1001],
+    ["TICK1001", 1001],
+    ["  1001  ", 1001],
+  ];
+  for (const [input, expected] of accepts) {
+    check(
+      `"${input}" -> ${expected}`,
+      parseTicketNumber(input) === expected,
+      String(parseTicketNumber(input)),
+    );
+  }
+
+  const rejects = [
+    "",
+    "   ",
+    "Drucker",
+    "TICK-",
+    "1001a",
+    "10.01",
+    "-5",
+    "0",
+    "rita@example.invalid",
+    "1234567890123",
+    "TICK-1001-2",
+  ];
+  for (const input of rejects) {
+    check(`"${input}" is not a number`, parseTicketNumber(input) === null,
+      String(parseTicketNumber(input)));
+  }
+
+  check(
+    "formatting round-trips",
+    parseTicketNumber(formatTicketNumber(1042)) === 1042,
+  );
+}
 
 console.log("smtp password handling");
 {

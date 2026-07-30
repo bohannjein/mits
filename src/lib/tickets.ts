@@ -242,6 +242,104 @@ export function countTickets(): { total: number; open: number } {
   return { total: row.total, open: row.open ?? 0 };
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Search and filters.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export interface TicketFilter {
+  /** Free text over title and reporter address. */
+  q?: string;
+  locationId?: string;
+  status?: TicketStatus;
+  priority?: TicketPriority;
+  /** Agent id, or the literal "unassigned". */
+  assignedTo?: string;
+  /** Inclusive ISO dates, `YYYY-MM-DD`. */
+  from?: string;
+  to?: string;
+  /** Narrow a technician's or admin's result set to their own tickets. */
+  ownOnly?: boolean;
+}
+
+/** Sentinel the filter form uses; a real id can never collide with it. */
+export const UNASSIGNED_FILTER = "__unassigned";
+
+/**
+ * Search within what this user is allowed to see.
+ *
+ * The scope clause is built from the role first and cannot be widened by any
+ * filter — a plain `user` always gets `created_by = <self>` appended, whatever the
+ * query string says. `ownOnly` only ever narrows, mirroring `?scope=own` on the
+ * ticket API.
+ *
+ * The free-text part deliberately covers `title` and `created_by_email` and **not**
+ * `payload`. The payload holds whatever people typed into a form; letting a
+ * reporter substring-search it would be fine for their own tickets and a data
+ * leak across foreign ones, and the scope clause is not the right place to carry
+ * that distinction.
+ */
+export function searchTickets(
+  filter: TicketFilter,
+  user: SessionUser,
+): MITSTicket[] {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+
+  if (!canViewBoard(user.role) || filter.ownOnly) {
+    clauses.push("created_by = ?");
+    params.push(user.id);
+  }
+
+  const q = filter.q?.trim();
+  if (q) {
+    // LIKE with escaped wildcards: a query containing % or _ should match those
+    // characters, not turn into a pattern.
+    const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    clauses.push(
+      "(title LIKE ? ESCAPE '\\' OR created_by_email LIKE ? ESCAPE '\\')",
+    );
+    params.push(pattern, pattern);
+  }
+
+  if (filter.locationId) {
+    clauses.push("location_id = ?");
+    params.push(filter.locationId);
+  }
+  if (filter.status) {
+    clauses.push("status = ?");
+    params.push(filter.status);
+  }
+  if (filter.priority) {
+    clauses.push("priority = ?");
+    params.push(filter.priority);
+  }
+  if (filter.assignedTo === UNASSIGNED_FILTER) {
+    clauses.push("assigned_to IS NULL");
+  } else if (filter.assignedTo) {
+    clauses.push("assigned_to = ?");
+    params.push(filter.assignedTo);
+  }
+  // `created_at` is an ISO string, so a date prefix comparison sorts correctly.
+  // `to` gets a time suffix rather than `<=` on the bare date, which would
+  // exclude everything that happened during the chosen day.
+  if (filter.from) {
+    clauses.push("created_at >= ?");
+    params.push(`${filter.from}T00:00:00.000Z`);
+  }
+  if (filter.to) {
+    clauses.push("created_at <= ?");
+    params.push(`${filter.to}T23:59:59.999Z`);
+  }
+
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+
+  const rows = db
+    .prepare(`${SELECT_TICKET} ${where} ORDER BY created_at DESC LIMIT 500`)
+    .all(...params) as TicketRow[];
+
+  return rows.map(rowToTicket);
+}
+
 /** Look up by the human-readable number, for the search bar's direct jump. */
 export function getTicketByNumberFor(
   ticketNumber: number,

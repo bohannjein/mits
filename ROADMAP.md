@@ -1,7 +1,7 @@
 # Enterprise-Helpdesk — Umsetzungsplan
 
-Arbeitsstand des Helpdesk-Ausbaus. **Part 1 und Part 2 sind fertig und verifiziert.**
-Nächster Schritt ist **Part 3 (Suche & Deep-Filter)**.
+Arbeitsstand des Helpdesk-Ausbaus. **Part 1 bis 3 sind fertig und verifiziert.**
+Nächster Schritt ist **Part 4 (Agenten-Dashboard & Präsenz)**.
 
 Jeder Part ist so geschnitten, dass er allein baubar, testbar und committebar ist. Die
 Reihenfolge folgt den Abhängigkeiten: E-Mail macht den Agenten-Workflow rund, Suche und
@@ -53,34 +53,30 @@ Abweichungen von der ursprünglichen Planung, mit Grund:
 
 ---
 
-## ⬜ Part 3 — Suche & Deep-Filter
+## ✅ Part 3 — Suche & Deep-Filter
 
-Gate: `feature_ticket_search` (Default an).
+Gate: `feature_ticket_search`. Keine neue Dependency.
 
-Schon vorhanden:
+Gebaut: `searchTickets` in `lib/tickets.ts`, `lib/ticket-query.ts` (gemeinsame
+`searchParams`-Auswertung für beide Seiten), `components/tickets/ticket-search.tsx`,
+`components/tickets/ticket-filters.tsx`, Suchfeld im Header, Filterleiste auf `/tickets`
+und `/board`.
 
-- `parseTicketNumber` in `types/mits.ts` — versteht `1001`, `TICK-1001`, `#1001`, `tick 1001`
-- `getTicketByNumberFor` in `lib/tickets.ts` — mit Zugriffsprüfung, antwortet `null` statt 403
+Abweichungen von der Planung, mit Grund:
 
-Zu bauen:
-
-| Datei | Inhalt |
-|---|---|
-| `components/tickets/ticket-search.tsx` | Client, Eingabe + Direktsprung |
-| `app/api/tickets/search/route.ts` | oder Server Action; Nummer → Redirect, sonst Textsuche |
-| `lib/tickets.ts` | `searchTickets({ q, locationId, status, priority, assignedTo, from, to }, user)` |
-| `app/tickets/page.tsx`, `app/board/page.tsx` | Filterleiste aus `searchParams` |
-| `components/layout/app-header.tsx` | Suchfeld, nur wenn Flag an **und** angemeldet |
-
-Punkte:
-
-- **Scope kommt aus der Rolle, nie aus dem Query-Parameter.** `searchTickets` muss dieselbe
-  Regel wie `listTicketsFor` durchsetzen: ein `user` findet nur Eigenes. Der Filter darf
-  verengen, nie erweitern — siehe `?scope=own` in `app/api/tickets/route.ts` als Muster.
-- Direktsprung erst nach der Zugriffsprüfung. Ein 404 bei fremder Nummer, kein 403, sonst
-  ist der Nummernraum abfragbar.
-- Textsuche über `title` und `created_by_email`, **nicht** über `payload` — dort stehen
-  Freitexte, die ein `user` bei fremden Tickets nicht durchsuchen darf.
+- **Keine `app/api/tickets/search/route.ts`.** Die Suche ist ein `method="get"`-Formular auf
+  die jeweilige Seite. Das Ergebnis ist damit eine echte URL — teilbar, bookmarkbar,
+  Zurück-Taste funktioniert — und es läuft vor der Hydration. Eine API-Route hätte nur
+  Client-State erzeugt, den niemand verlinken kann.
+- **`lib/ticket-query.ts` ist neu** und in der Planung nicht vorgesehen. Zwei Kopien der
+  `searchParams`-Auswertung wären auseinandergelaufen, und ein Filter, der auf zwei Seiten
+  Verschiedenes bedeutet, ist schlimmer als kein Filter.
+- **Ungültige Werte sind „kein Filter", nicht „leeres Ergebnis".** Ein Tippfehler in einer
+  gemerkten URL soll nicht wie „es gibt keine Tickets" aussehen.
+- **`to` vergleicht gegen `T23:59:59.999Z`**, nicht gegen das nackte Datum — sonst schließt
+  `from=to=heute` alles von heute aus.
+- **LIKE-Wildcards werden escaped.** Eine Suche nach `%` soll das Zeichen finden, nicht
+  jedes Ticket.
 
 ---
 

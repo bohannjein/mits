@@ -281,22 +281,27 @@ CSS-Keyframes (`gemini-drift`), damit sie der Compositor übernimmt.
 
 ## ➡️ Aktueller Arbeitsstand
 
-**Der Helpdesk-Ausbau läuft in fünf Parts. Part 1 und 2 sind fertig, als nächstes kommt
-Part 3 (Suche & Deep-Filter).** Der vollständige Plan mit Dateien, Entscheidungen und
-Stolperfallen steht in **[ROADMAP.md](ROADMAP.md)** — vor dem Weiterarbeiten dort lesen,
+**Der Helpdesk-Ausbau läuft in fünf Parts. Part 1 bis 3 sind fertig, als nächstes kommt
+Part 4 (Agenten-Dashboard & Präsenz).** Der vollständige Plan mit Dateien, Entscheidungen
+und Stolperfallen steht in **[ROADMAP.md](ROADMAP.md)** — vor dem Weiterarbeiten dort lesen,
 nicht neu herleiten.
 
 | Part | Inhalt | Status |
 |---|---|---|
 | 1 | Ticket-Nummern, Standorte, Agenten-Workflow, Feature-Toggles, JSON-Cleanup | ✅ `0f68a17` |
 | 2 | E-Mail & SMTP (`nodemailer`, `/admin/settings/email`) | ✅ |
-| 3 | Suche & Deep-Filter | ⬜ **nächster** |
-| 4 | Agenten-Dashboard & Techniker-Präsenz | ⬜ |
+| 3 | Suche & Deep-Filter (`searchTickets`, `lib/ticket-query.ts`) | ✅ |
+| 4 | Agenten-Dashboard & Techniker-Präsenz | ⬜ **nächster** |
 | 5 | Formular-Builder (Canvas, bedingte Logik, abhängige Dropdowns) | ⬜ |
 
-Die Server-Funktionen für Part 3 und 4 sind bereits geschrieben und typgeprüft
-(`getTicketByNumberFor`, `listUnassignedTickets`, `listAssignedTickets`, `todayCounts`,
-`ticketCountsByLocation`, `parseTicketNumber`) — dort ansetzen, nicht neu bauen.
+Die Server-Funktionen für Part 4 sind bereits geschrieben und typgeprüft
+(`listUnassignedTickets`, `listAssignedTickets`, `todayCounts`, `ticketCountsByLocation`,
+Tabelle `mits_presence`) — dort ansetzen, nicht neu bauen.
+
+**Scope-Regel für alles, was Tickets listet:** Die Sichtbarkeit kommt aus der Rolle und wird
+in der SQL-Klausel gesetzt, bevor irgendein Filter greift. Ein Query-Parameter darf
+**verengen** (`?scope=own`, `ownOnly`), nie erweitern. Muster in `searchTickets`
+(`lib/tickets.ts`) und `app/api/tickets/route.ts`.
 
 Weiter offen und **nicht** Teil der fünf Parts: echtes OCR für gescannte Dokumente per
 Tesseract — bräuchte `pytesseract` plus `tesseract-ocr-deu` im Backend-Image und sprengt
