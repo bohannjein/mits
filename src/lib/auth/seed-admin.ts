@@ -97,7 +97,18 @@ async function seed(): Promise<SeedOutcome> {
   // must_change_password column has to exist before it can be written.
   await ensureAuthSchema();
 
-  if (countAdmins() > 0) return { action: "skipped", reason: "admin-exists" };
+  if (countAdmins() > 0) {
+    // Say so. A silent skip means a later "why can I not log in" has no trail:
+    // the account may have been seeded by an earlier container start, and
+    // `docker logs` on the current one shows nothing at all. Naming the
+    // configured address without asserting it was created is the useful line —
+    // no password, no account list.
+    const { email } = credentials();
+    console.info(
+      `[MITS] Administrator present, seeding skipped. If ${email} was seeded by an earlier start, its password is whatever was configured then.`,
+    );
+    return { action: "skipped", reason: "admin-exists" };
+  }
 
   const { email, password, fromEnv } = credentials();
 

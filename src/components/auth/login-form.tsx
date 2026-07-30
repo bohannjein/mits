@@ -26,6 +26,35 @@ const LoginSchema = z.object({
   password: z.string().min(1, "Passwort erforderlich."),
 });
 
+/**
+ * Turn a sign-in failure into something a person can act on.
+ *
+ * Credential errors stay deliberately vague — distinguishing "unknown address"
+ * from "wrong password" tells an attacker which accounts exist. Everything else
+ * gets named, because collapsing a CSRF rejection or a 500 into "password is
+ * wrong" sends people hunting for a password problem that is not there. Neither
+ * message leaks whether the account exists.
+ */
+function describeSignInError(status: number): string {
+  if (status === 401 || status === 400) {
+    return "Anmeldung fehlgeschlagen. E-Mail oder Passwort ist falsch.";
+  }
+  if (status === 403) {
+    return (
+      "Die Anmeldung wurde vom Server abgelehnt (403). Das ist der CSRF-Schutz: " +
+      "die Adresse im Browser gilt nicht als vertrauenswürdiger Origin. " +
+      "BETTER_AUTH_URL auf die öffentliche URL dieser Instanz setzen."
+    );
+  }
+  if (status === 429) {
+    return "Zu viele Versuche. Bitte einen Moment warten.";
+  }
+  if (status >= 500) {
+    return `Serverfehler bei der Anmeldung (HTTP ${status}). Details stehen im Server-Log.`;
+  }
+  return `Anmeldung fehlgeschlagen (HTTP ${status}).`;
+}
+
 export function LoginForm({ next }: { next: string }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -43,9 +72,7 @@ export function LoginForm({ next }: { next: string }) {
     });
 
     if (signInError) {
-      // Deliberately generic: distinguishing "unknown address" from "wrong
-      // password" tells an attacker which accounts exist.
-      setError("Anmeldung fehlgeschlagen. E-Mail oder Passwort ist falsch.");
+      setError(describeSignInError(signInError.status));
       return;
     }
 
