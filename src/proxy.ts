@@ -62,6 +62,7 @@ function redirectToLogin(request: NextRequest, returnTo: string) {
 export const config = {
   matcher: [
     "/admin/:path*",
+    "/agent/:path*",
     "/board/:path*",
     "/tickets/:path*",
     "/settings/:path*",

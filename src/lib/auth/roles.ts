@@ -45,6 +45,7 @@ export const ROLE_LABELS: Record<MITSRole, string> = {
 /** Route prefixes and the role they require. Consumed by the proxy and the guards. */
 export const PROTECTED_PREFIXES: { prefix: string; role: MITSRole }[] = [
   { prefix: "/admin", role: "admin" },
+  { prefix: "/agent", role: "technician" },
   { prefix: "/board", role: "technician" },
   { prefix: "/tickets", role: "user" },
   // Own profile and password. Any signed-in role, but never anonymous.

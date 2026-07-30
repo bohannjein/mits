@@ -218,8 +218,33 @@ export const PRESENCE_LABELS: Record<PresenceState, string> = {
 
 /** Seconds of silence before an active agent is shown as idle. */
 export const PRESENCE_IDLE_AFTER_SECONDS = 5 * 60;
-/** …and before they drop off the list entirely. */
+/** …and before they count as gone. */
 export const PRESENCE_OFFLINE_AFTER_SECONDS = 30 * 60;
+
+/**
+ * Derive presence from a single timestamp.
+ *
+ * Deriving beats storing a state: a stored one would need a background job to
+ * move somebody from active to idle, while silence does that work by itself.
+ *
+ * Here rather than in `lib/presence.ts` so the thresholds are testable — an
+ * off-by-one at a boundary mislabels a colleague without anything looking wrong.
+ * A null timestamp is offline, not unknown: someone who has never been seen
+ * cannot take a ticket either way.
+ */
+export function presenceStateFor(
+  seenAt: Date | null,
+  now: number,
+): PresenceState {
+  if (!seenAt) return "offline";
+
+  const secondsAgo = (now - seenAt.getTime()) / 1000;
+  // A clock skew that puts the last sighting in the future counts as just-seen
+  // rather than wrapping around to offline.
+  if (secondsAgo <= PRESENCE_IDLE_AFTER_SECONDS) return "active";
+  if (secondsAgo <= PRESENCE_OFFLINE_AFTER_SECONDS) return "idle";
+  return "offline";
+}
 
 /* ──────────────────────────────────────────────────────────────────────────
    Feature toggles.

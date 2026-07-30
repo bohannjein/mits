@@ -281,9 +281,9 @@ CSS-Keyframes (`gemini-drift`), damit sie der Compositor übernimmt.
 
 ## ➡️ Aktueller Arbeitsstand
 
-**Der Helpdesk-Ausbau läuft in fünf Parts. Part 1 bis 3 sind fertig, als nächstes kommt
-Part 4 (Agenten-Dashboard & Präsenz).** Der vollständige Plan mit Dateien, Entscheidungen
-und Stolperfallen steht in **[ROADMAP.md](ROADMAP.md)** — vor dem Weiterarbeiten dort lesen,
+**Der Helpdesk-Ausbau läuft in fünf Parts. Part 1 bis 4 sind fertig, offen ist nur noch
+Part 5 (Formular-Builder).** Der vollständige Plan mit Dateien, Entscheidungen und
+Stolperfallen steht in **[ROADMAP.md](ROADMAP.md)** — vor dem Weiterarbeiten dort lesen,
 nicht neu herleiten.
 
 | Part | Inhalt | Status |
@@ -291,12 +291,16 @@ nicht neu herleiten.
 | 1 | Ticket-Nummern, Standorte, Agenten-Workflow, Feature-Toggles, JSON-Cleanup | ✅ `0f68a17` |
 | 2 | E-Mail & SMTP (`nodemailer`, `/admin/settings/email`) | ✅ |
 | 3 | Suche & Deep-Filter (`searchTickets`, `lib/ticket-query.ts`) | ✅ |
-| 4 | Agenten-Dashboard & Techniker-Präsenz | ⬜ **nächster** |
-| 5 | Formular-Builder (Canvas, bedingte Logik, abhängige Dropdowns) | ⬜ |
+| 4 | Agenten-Desk & Präsenz (`/agent`, `lib/presence.ts`) | ✅ |
+| 5 | Formular-Builder (Canvas, bedingte Logik, abhängige Dropdowns) | ⬜ **letzter** |
 
-Die Server-Funktionen für Part 4 sind bereits geschrieben und typgeprüft
-(`listUnassignedTickets`, `listAssignedTickets`, `todayCounts`, `ticketCountsByLocation`,
-Tabelle `mits_presence`) — dort ansetzen, nicht neu bauen.
+**Präsenz-Farben:** 🟢 aktiv (`--success`), 🟡 inaktiv (`--warning`), ⚫ offline
+(`--muted-foreground/50`). Der ursprüngliche Anforderungstext nennt für „inaktiv“ noch grau
+— das ist überholt, der Nutzer hat auf gelb korrigiert.
+
+**Rollenwechsel greifen verzögert.** Eine per SQL oder im Admin-Desk geänderte Rolle wirkt
+erst nach Ablauf des Session-Cookie-Caches (60 s) oder nach einer Neuanmeldung. Beim Testen
+die Sitzung neu aufbauen, sonst sieht ein frisch befördeter Techniker weiter `/forbidden`.
 
 **Scope-Regel für alles, was Tickets listet:** Die Sichtbarkeit kommt aus der Rolle und wird
 in der SQL-Klausel gesetzt, bevor irgendein Filter greift. Ein Query-Parameter darf

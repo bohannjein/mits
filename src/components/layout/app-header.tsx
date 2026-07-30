@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { UserMenu } from "@/components/auth/user-menu";
 import { MITSLogo } from "@/components/branding/mits-logo";
+import { PresenceHeartbeat } from "@/components/dashboard/presence-heartbeat";
 import { TicketSearch } from "@/components/tickets/ticket-search";
 import { Button } from "@/components/ui/button";
 import { canViewBoard } from "@/lib/auth/roles";
@@ -26,8 +27,21 @@ export async function AppHeader() {
     !user.mustChangePassword &&
     isFeatureEnabled("feature_ticket_search");
 
+  /*
+   * The heartbeat lives here so every page a technician opens counts as a sign of
+   * life, without each page having to know about presence. Gated on the role as
+   * well as the flag: a reporter's whereabouts are not tracked, and rendering the
+   * component for them would send requests the API answers with 204 anyway.
+   */
+  const trackPresence =
+    user !== null &&
+    !user.mustChangePassword &&
+    canViewBoard(user.role) &&
+    isFeatureEnabled("feature_presence_sidebar");
+
   return (
     <header className="border-b border-border bg-card">
+      {trackPresence && <PresenceHeartbeat />}
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-3">
         <Link href="/" className="rounded-xl outline-ring/50 focus-visible:outline-2">
           <MITSLogo />

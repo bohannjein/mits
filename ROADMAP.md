@@ -1,7 +1,7 @@
 # Enterprise-Helpdesk — Umsetzungsplan
 
-Arbeitsstand des Helpdesk-Ausbaus. **Part 1 bis 3 sind fertig und verifiziert.**
-Nächster Schritt ist **Part 4 (Agenten-Dashboard & Präsenz)**.
+Arbeitsstand des Helpdesk-Ausbaus. **Part 1 bis 4 sind fertig und verifiziert.**
+Nächster und letzter Schritt ist **Part 5 (Formular-Builder)**.
 
 Jeder Part ist so geschnitten, dass er allein baubar, testbar und committebar ist. Die
 Reihenfolge folgt den Abhängigkeiten: E-Mail macht den Agenten-Workflow rund, Suche und
@@ -80,29 +80,14 @@ Abweichungen von der Planung, mit Grund:
 
 ---
 
-## ⬜ Part 4 — Agenten-Dashboard & Präsenz
+## ✅ Part 4 — Agenten-Dashboard & Präsenz
 
-Gates: `feature_agent_dashboard`, `feature_presence_sidebar`, `feature_stats_heatmap`
-(alle Default an).
+Gates: `feature_agent_dashboard`, `feature_presence_sidebar`, `feature_stats_heatmap`.
+Keine neue Dependency.
 
-Schon vorhanden und typgeprüft, nur noch anzuzeigen:
-
-- `listUnassignedTickets()`, `listAssignedTickets(agentId)`, `todayCounts()` in `lib/tickets.ts`
-- `ticketCountsByLocation()` in `lib/locations.ts`
-- Tabelle `mits_presence` (`user_id`, `seen_at`)
-- `PresenceState`, `PRESENCE_LABELS`, `PRESENCE_IDLE_AFTER_SECONDS` (5 min),
-  `PRESENCE_OFFLINE_AFTER_SECONDS` (30 min) in `types/mits.ts`
-
-Zu bauen:
-
-| Datei | Inhalt |
-|---|---|
-| `lib/presence.ts` | `touchPresence(userId)`, `listAgentPresence()` — Zustand aus `seen_at` abgeleitet |
-| `app/agent/page.tsx` | Ticketeingang mit „Übernehmen“, eigene offene Tickets |
-| `components/dashboard/agent-inbox.tsx` | Liste + Quick-Action |
-| `components/dashboard/presence-list.tsx` | Technikerliste |
-| `components/dashboard/stats-tiles.tsx` | Eröffnet/Geschlossen heute + Filial-Heatmap |
-| `app/api/presence/route.ts` | Heartbeat, `POST`, session-geprüft |
+Gebaut: `lib/presence.ts`, `app/agent/page.tsx`, `app/api/presence/route.ts`,
+`components/dashboard/{agent-inbox,presence-list,stats-tiles,presence-heartbeat}.tsx`.
+`/agent` in `PROTECTED_PREFIXES` und im Proxy-Matcher.
 
 **Präsenz-Farben — vom Nutzer ausdrücklich abweichend von der ersten Spezifikation:**
 
@@ -110,22 +95,33 @@ Zu bauen:
 |---|---|---|
 | Aktiv | 🟢 grün | `--success` |
 | Inaktiv / Idle | 🟡 **gelb** | `--warning` |
-| Offline | ⚫ **grau** | `--muted-foreground` |
+| Offline | ⚫ **grau** | `--muted-foreground/50` |
 
-Ursprünglich war Idle grau und Offline ausgegraut. Der Nutzer hat auf gelb für Idle und
-grau für Offline korrigiert. Nicht wieder umdrehen.
+Ursprünglich war Idle grau und Offline ausgegraut. Nicht wieder umdrehen.
 
-Punkte:
+Abweichungen von der Planung, mit Grund:
 
-- Präsenz ist ein Indikator, kein Audit-Log: **eine Zeile pro Benutzer**, in place
-  überschrieben.
-- Heartbeat gehört an eine Stelle, die ohnehin läuft — nicht als eigener Poll-Timer, wenn
-  es sich vermeiden lässt. `feature_typing_indicator` (Default **aus**) ist der Ort für
-  dauerhafte Anfragen, Präsenz nicht.
-- Nur Technik und Admin erscheinen in der Liste. Ein `user` hat dort nichts zu suchen —
-  auch nicht als Datenpunkt.
-- `todayCounts` vergleicht den ISO-Datumspräfix, also **UTC**. Für einen Zähler in Ordnung,
-  aber nicht als „heute“ in einer Zeitzone verkaufen.
+- **Es gibt einen Intervall-Heartbeat**, gegen die eigene Notiz „kein Poll-Timer“. Er läuft
+  nur bei sichtbarem Tab und mit halber Idle-Schwelle (2,5 min). Ohne ihn fällt eine
+  Technikerin, die fünf Minuten an einer längeren Antwort schreibt, auf „inaktiv“, während
+  sie arbeitet. Versteckter Tab hört auf zu schlagen — genau das soll „inaktiv“ heißen.
+- **`presenceStateFor` liegt in `types/mits.ts`**, nicht in `lib/presence.ts`. Die zwei
+  Schwellen sind das ganze Verhalten; ein Off-by-one etikettiert Kollegen falsch, ohne dass
+  etwas falsch aussieht. Jetzt in `npm test` mit beiden Grenzwerten.
+- **`AgentInbox` benutzt `assignTicketAction` wieder** statt einer eigenen Claim-Action.
+  Diese prüft schon Session, Rolle und Ziel-Rolle und revalidiert die richtigen Pfade — ein
+  zweiter Eingang in dieselbe Mutation wäre ein zweiter Ort, das falsch zu machen.
+- **Abgeschaltetes Dashboard antwortet 404**, nicht mit einer Hinweisseite. Die Route
+  existiert auf dieser Instanz nicht.
+- **Heartbeat antwortet immer 204**, auch wenn er nichts schreibt (Modul aus, oder Aufrufer
+  ist kein Techniker). Der Client soll aus dem Status nicht ableiten können, ob er Technik
+  ist, und hat nichts, worauf er reagieren könnte.
+- **Zeitzone wird benannt.** `todayCounts` vergleicht den ISO-Präfix, also UTC — steht als
+  Hinweis unter den Kacheln, statt „heute“ zu behaupten.
+
+Beim Testen bestätigt, kein Fehler: **eine per SQL geänderte Rolle greift erst nach dem
+Ablauf des Session-Cookie-Caches (60 s) oder einer Neuanmeldung.** Wer im Test eine Rolle
+umstellt, muss die Sitzung neu aufbauen.
 
 ---
 

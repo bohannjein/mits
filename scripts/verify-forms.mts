@@ -22,6 +22,9 @@ import {
   KEEP_SMTP_PASSWORD,
   MITSTicketSchema,
   PORTAL_WIDGET_ORDER,
+  PRESENCE_IDLE_AFTER_SECONDS,
+  PRESENCE_OFFLINE_AFTER_SECONDS,
+  presenceStateFor,
   PortalConfigSchema,
   PortalFaqSchema,
   fillPortalText,
@@ -380,6 +383,60 @@ console.log("ticket number parsing");
   check(
     "formatting round-trips",
     parseTicketNumber(formatTicketNumber(1042)) === 1042,
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Presence thresholds.
+
+   The two boundaries are the entire behaviour. An off-by-one here shows a
+   colleague as available when they left half an hour ago, or as gone while they
+   are typing — and neither looks wrong on screen.
+   ────────────────────────────────────────────────────────────────────────── */
+
+console.log("presence state");
+{
+  const now = Date.UTC(2026, 6, 30, 12, 0, 0);
+  const agoSeconds = (s: number) => new Date(now - s * 1000);
+
+  check("never seen is offline", presenceStateFor(null, now) === "offline");
+  check("just now is active", presenceStateFor(agoSeconds(0), now) === "active");
+  check(
+    "one second before the idle threshold is still active",
+    presenceStateFor(agoSeconds(PRESENCE_IDLE_AFTER_SECONDS - 1), now) === "active",
+  );
+  check(
+    "exactly at the idle threshold is still active",
+    presenceStateFor(agoSeconds(PRESENCE_IDLE_AFTER_SECONDS), now) === "active",
+  );
+  check(
+    "one second past it is idle",
+    presenceStateFor(agoSeconds(PRESENCE_IDLE_AFTER_SECONDS + 1), now) === "idle",
+  );
+  check(
+    "exactly at the offline threshold is still idle",
+    presenceStateFor(agoSeconds(PRESENCE_OFFLINE_AFTER_SECONDS), now) === "idle",
+  );
+  check(
+    "one second past it is offline",
+    presenceStateFor(agoSeconds(PRESENCE_OFFLINE_AFTER_SECONDS + 1), now) ===
+      "offline",
+  );
+  check(
+    "a day ago is offline",
+    presenceStateFor(agoSeconds(86_400), now) === "offline",
+  );
+  check(
+    "a future timestamp counts as just-seen, not as wrapped-around",
+    presenceStateFor(new Date(now + 60_000), now) === "active",
+  );
+  check(
+    "the heartbeat beats at least twice per idle window",
+    PRESENCE_IDLE_AFTER_SECONDS / 2 < PRESENCE_IDLE_AFTER_SECONDS,
+  );
+  check(
+    "idle comes before offline",
+    PRESENCE_IDLE_AFTER_SECONDS < PRESENCE_OFFLINE_AFTER_SECONDS,
   );
 }
 

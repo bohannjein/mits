@@ -2,6 +2,7 @@
 
 import {
   ChevronDownIcon,
+  HeadsetIcon,
   LayoutDashboardIcon,
   LogOutIcon,
   ShieldIcon,
@@ -101,12 +102,20 @@ export function UserMenu({ user }: { user: SessionUser }) {
           </DropdownMenuItem>
 
           {showBoard && (
-            <DropdownMenuItem asChild>
-              <Link href="/board">
-                <LayoutDashboardIcon />
-                Ticket-Board
-              </Link>
-            </DropdownMenuItem>
+            <>
+              <DropdownMenuItem asChild>
+                <Link href="/agent">
+                  <HeadsetIcon />
+                  Agenten-Desk
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/board">
+                  <LayoutDashboardIcon />
+                  Ticket-Board
+                </Link>
+              </DropdownMenuItem>
+            </>
           )}
 
           {showAdmin && (
