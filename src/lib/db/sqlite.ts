@@ -127,6 +127,25 @@ function migrateAppTables(database: Database.Database): void {
       user_id   TEXT PRIMARY KEY,
       seen_at   TEXT NOT NULL
     );
+
+    -- Ticket relations. One row per pair, in the direction the agent stated;
+    -- the opposite reading is derived. Two rows would be two places for one fact.
+    CREATE TABLE IF NOT EXISTS mits_ticket_link (
+      id          TEXT PRIMARY KEY,
+      from_ticket TEXT NOT NULL,
+      to_ticket   TEXT NOT NULL,
+      kind        TEXT NOT NULL,
+      created_by  TEXT NOT NULL,
+      created_at  TEXT NOT NULL
+    );
+
+    -- One relation per pair regardless of direction, so A->B and B->A cannot both
+    -- exist. The pair is normalised on insert (see lib/ticket-links.ts), which is
+    -- what makes a two-column unique index sufficient.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_mits_link_pair
+      ON mits_ticket_link (from_ticket, to_ticket);
+    CREATE INDEX IF NOT EXISTS idx_mits_link_to
+      ON mits_ticket_link (to_ticket);
   `);
 
   addColumns(database);

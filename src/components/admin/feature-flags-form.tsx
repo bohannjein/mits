@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import {
   DEFAULT_FEATURE_FLAGS,
   FEATURE_FLAG_META,
+  INERT_FEATURE_FLAGS,
   type FeatureFlagKey,
   type FeatureFlags,
 } from "@/types/mits";
@@ -80,6 +81,16 @@ export function FeatureFlagsForm({ flags }: { flags: FeatureFlags }) {
                     <Label htmlFor={key} className="text-sm font-medium">
                       {meta.label}
                     </Label>
+                    {/* A switch that does nothing is worse than a missing switch:
+                        an admin flips it, waits, and concludes MITS is broken. */}
+                    {INERT_FEATURE_FLAGS.includes(key) && (
+                      <Badge
+                        variant="outline"
+                        className="h-auto rounded-full border-warning/40 px-2 py-0.5 text-[11px] font-normal text-warning"
+                      >
+                        geplant, noch ohne Funktion
+                      </Badge>
+                    )}
                     {!isDefault && (
                       <Badge
                         variant="outline"

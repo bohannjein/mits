@@ -8,6 +8,7 @@ import { requireRole } from "@/lib/auth/session";
 import { setFeatureFlags } from "@/lib/features";
 import { saveFormSchema } from "@/lib/form-schemas";
 import { resolveFields } from "@/lib/forms/schema-to-zod";
+import { setCannedResponses } from "@/lib/canned-responses";
 import { LocationError, replaceLocations } from "@/lib/locations";
 import { testMail } from "@/lib/mail-templates";
 import {
@@ -27,6 +28,7 @@ import {
 import { normaliseDomains, setAuthSettings } from "@/lib/settings";
 import { RoleChangeError, setUserRole } from "@/lib/users";
 import {
+  CannedResponseSchema,
   FEATURE_FLAG_META,
   FeatureFlagsSchema,
   MITSLocationSchema,
@@ -170,6 +172,7 @@ export async function savePortalContentAction(
 
   setPortalContent(parsed.data);
   revalidatePath("/");
+  revalidatePath("/customer");
   revalidatePath("/admin/portal");
   revalidatePath("/customer/new");
 
@@ -211,7 +214,9 @@ function parsePayload<T>(
 
 /** Both the portal and the intake page read portal settings. */
 function revalidatePortal(): void {
+  // The public landing reads the hero texts, /customer renders the widgets.
   revalidatePath("/");
+  revalidatePath("/customer");
   revalidatePath("/admin/portal");
   revalidatePath("/customer/new");
 }
@@ -352,6 +357,35 @@ export async function saveLocationsAction(
   return {
     ok: true,
     message: `${saved.length} Standort(e) gespeichert, ${active} davon auswählbar.`,
+  };
+}
+
+/* ── Canned responses ───────────────────────────────────────────────────── */
+
+export async function saveCannedResponsesAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const payload = parsePayload(
+    formData,
+    "responses",
+    z.array(CannedResponseSchema),
+  );
+  if (!payload.ok) return { ok: false, error: payload.error };
+
+  const saved = setCannedResponses(payload.data);
+  revalidatePath("/admin/canned-responses");
+  // Every agent ticket page renders the list.
+  revalidatePath("/mits", "layout");
+
+  return {
+    ok: true,
+    message:
+      saved.length === 0
+        ? "Bausteine geleert — im Ticket erscheinen keine Schaltflächen mehr."
+        : `${saved.length} Baustein(e) gespeichert.`,
   };
 }
 

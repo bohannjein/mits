@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 
 import { canViewBoard } from "@/lib/auth/roles";
 import { requireUser, type SessionUser } from "@/lib/auth/session";
+import { isFeatureEnabled } from "@/lib/features";
 import { ticketReplyMail } from "@/lib/mail-templates";
+import { TicketLinkError, addLink, removeLink } from "@/lib/ticket-links";
 import { sendNotification, ticketUrl } from "@/lib/smtp";
 import { CommentError, addComment } from "@/lib/ticket-comments";
 import {
@@ -18,6 +20,7 @@ import {
   CommentVisibility,
   TicketPriority,
   TicketStatus,
+  parseTicketNumber,
   type MITSTicket,
 } from "@/types/mits";
 
@@ -145,6 +148,56 @@ export async function setTicketPriorityAction(
  * `addComment` refuses rather than downgrading: silently publishing a note meant
  * to stay internal is the worse failure.
  */
+/* ── Ticket links ───────────────────────────────────────────────────────── */
+
+export async function addTicketLinkAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, true);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  // A switched-off module refuses on the server too, not just in the UI.
+  if (!isFeatureEnabled("feature_ticket_linking")) {
+    return { ok: false, error: "Ticket-Verknüpfung ist abgeschaltet." };
+  }
+
+  const number = parseTicketNumber(String(formData.get("target") ?? ""));
+  if (number === null) {
+    return { ok: false, error: "Bitte eine Ticket-Nummer angeben, z. B. 1001." };
+  }
+
+  try {
+    addLink(ticketId, number, String(formData.get("kind") ?? ""), auth.user);
+  } catch (error) {
+    if (error instanceof TicketLinkError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath(`/mits/tickets/${ticketId}`);
+  return { ok: true, message: "Verknüpfung angelegt." };
+}
+
+export async function removeTicketLinkAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, true);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  try {
+    removeLink(String(formData.get("linkId") ?? ""), ticketId, auth.user);
+  } catch (error) {
+    if (error instanceof TicketLinkError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath(`/mits/tickets/${ticketId}`);
+  return { ok: true, message: "Verknüpfung entfernt." };
+}
+
 export async function addCommentAction(
   _previous: TicketActionResult | null,
   formData: FormData,

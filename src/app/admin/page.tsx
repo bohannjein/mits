@@ -4,6 +4,7 @@ import {
   BrainIcon,
   LayoutDashboardIcon,
   MailIcon,
+  MessageSquareTextIcon,
   MapPinIcon,
   MegaphoneIcon,
   ToggleRightIcon,
@@ -73,6 +74,12 @@ export default async function AdminPage() {
                 <Link href="/admin/locations">
                   <MapPinIcon strokeWidth={1.5} />
                   Standorte
+                </Link>
+              </Button>
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
+                <Link href="/admin/canned-responses">
+                  <MessageSquareTextIcon strokeWidth={1.5} />
+                  Textbausteine
                 </Link>
               </Button>
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">

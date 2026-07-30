@@ -217,6 +217,87 @@ export const TicketCommentSchema = z.object({
 export type TicketComment = z.infer<typeof TicketCommentSchema>;
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Ticket links.
+
+   Stored once per pair, in the direction the agent stated it. The opposite
+   direction is derived on read — two rows would be two places for the same fact
+   and could drift apart.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const TicketLinkKind = z.enum([
+  "relates_to",
+  "duplicate_of",
+  "blocked_by",
+  "parent_of",
+]);
+export type TicketLinkKind = z.infer<typeof TicketLinkKind>;
+
+/** How the stored direction reads. */
+export const TICKET_LINK_LABELS: Record<TicketLinkKind, string> = {
+  relates_to: "Hängt zusammen mit",
+  duplicate_of: "Ist Duplikat von",
+  blocked_by: "Hängt ab von",
+  parent_of: "Übergeordnet zu",
+};
+
+/** …and how it reads from the other ticket's side. */
+export const TICKET_LINK_INVERSE_LABELS: Record<TicketLinkKind, string> = {
+  relates_to: "Hängt zusammen mit",
+  duplicate_of: "Hat Duplikat",
+  blocked_by: "Blockiert",
+  parent_of: "Untergeordnet zu",
+};
+
+export const TicketLinkSchema = z.object({
+  id: z.string(),
+  from_ticket: z.string(),
+  to_ticket: z.string(),
+  kind: TicketLinkKind,
+  created_by: z.string(),
+  created_at: z.coerce.date(),
+});
+export type TicketLink = z.infer<typeof TicketLinkSchema>;
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Canned responses.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const CannedResponseSchema = z.object({
+  id: z.string(),
+  title: z.string().min(1).max(160),
+  body: z.string().min(1).max(8000),
+  category: z.string().max(120).default(""),
+  order_index: z.number().int().nonnegative().default(0),
+});
+export type CannedResponse = z.infer<typeof CannedResponseSchema>;
+
+/**
+ * Fill the placeholders a canned response may carry.
+ *
+ * Same shape as `fillPortalText`: literal `{token}` replacement, no expression
+ * language. A template that could compute would be a template that could leak.
+ */
+export function fillCannedResponse(
+  body: string,
+  values: {
+    ticket_number: string;
+    reporter_name: string;
+    agent_name: string;
+  },
+): string {
+  return body
+    .replaceAll("{ticket_number}", values.ticket_number)
+    .replaceAll("{reporter_name}", values.reporter_name)
+    .replaceAll("{agent_name}", values.agent_name);
+}
+
+export const CANNED_PLACEHOLDERS = [
+  "{ticket_number}",
+  "{reporter_name}",
+  "{agent_name}",
+] as const;
+
+/* ──────────────────────────────────────────────────────────────────────────
    Locations (branches / sites).
    ────────────────────────────────────────────────────────────────────────── */
 
@@ -287,6 +368,8 @@ export const FeatureFlagsSchema = z.object({
   feature_presence_sidebar: z.boolean().default(true),
   feature_email_notifications: z.boolean().default(true),
   feature_advanced_form_builder: z.boolean().default(true),
+  feature_ticket_linking: z.boolean().default(true),
+  feature_canned_responses: z.boolean().default(true),
   feature_typing_indicator: z.boolean().default(false),
   feature_stats_heatmap: z.boolean().default(true),
   feature_sla_countdown: z.boolean().default(false),
@@ -296,6 +379,19 @@ export type FeatureFlags = z.infer<typeof FeatureFlagsSchema>;
 export type FeatureFlagKey = keyof FeatureFlags;
 
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = FeatureFlagsSchema.parse({});
+
+/**
+ * Flags that are declared but gate nothing yet.
+ *
+ * Kept on request as roadmap placeholders. The mask marks them, because a switch
+ * that silently does nothing is worse than a missing switch — an admin flips it,
+ * waits for an effect, and concludes the app is broken.
+ */
+export const INERT_FEATURE_FLAGS: FeatureFlagKey[] = [
+  "feature_typing_indicator",
+  "feature_sla_countdown",
+  "feature_auto_merge_suggestions",
+];
 
 /** Admin-facing copy. Kept beside the schema so a new flag cannot ship unlabelled. */
 export const FEATURE_FLAG_META: Record<
@@ -326,6 +422,16 @@ export const FEATURE_FLAG_META: Record<
     label: "Erweiterter Formular-Builder",
     description:
       "Drag-and-drop-Canvas mit Eigenschaften-Inspektor, bedingter Sichtbarkeit und abhängigen Dropdowns.",
+  },
+  feature_ticket_linking: {
+    label: "Ticket-Verknüpfung",
+    description:
+      "Tickets miteinander in Beziehung setzen: hängt ab von, Duplikat, über- und untergeordnet.",
+  },
+  feature_canned_responses: {
+    label: "Textbausteine",
+    description:
+      "Vorformulierte Antworten, die im Antwortfeld eingesetzt werden. Gepflegt unter /admin/canned-responses.",
   },
   feature_typing_indicator: {
     label: "Schreibt-gerade-Anzeige",

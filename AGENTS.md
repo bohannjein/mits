@@ -298,8 +298,18 @@ nicht neu herleiten.
 | 4 | Agenten-Desk & Präsenz (`lib/presence.ts`) | ✅ |
 | 5 | Routentrennung `/customer` + `/mits`, Queue mit Tabs | ✅ |
 | 6 | Prioritäten `low/medium/high/critical` migriert | ✅ |
-| 7 | Ticket-Verknüpfung + Textbausteine | ⬜ **nächster** |
-| 8 | Formular-Builder (Canvas, bedingte Logik, abhängige Dropdowns) | ⬜ |
+| 7 | Ticket-Verknüpfung + Textbausteine (11 Flags) | ✅ |
+| 8 | Formular-Builder (Canvas, bedingte Logik, abhängige Dropdowns) | ⬜ **letzter** |
+
+**Verknüpfungen sind ein Fenster in andere Tickets.** `listLinksFor` prüft **jedes** Ziel
+einzeln mit `getTicketFor` und lässt ein nicht sichtbares Ticket komplett weg — nicht als
+„gesperrt". Auch „hier liegt ein Ticket, das du nicht öffnen darfst" ist eine Auskunft
+darüber, welche Tickets existieren. Eine Zeile pro Paar, die Gegenrichtung wird beim Lesen
+über `TICKET_LINK_INVERSE_LABELS` invertiert.
+
+**Textbausteine werden eingesetzt, nie gesendet.** Platzhalter löst der Server auf, damit der
+Browser den Namen des Melders nicht für ein Template zugestellt bekommt. Was rausgeht,
+bestätigt die Technik — dieselbe Regel wie bei der KI-Triage.
 
 ## Zwei Welten
 

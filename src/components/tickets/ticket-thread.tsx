@@ -7,7 +7,7 @@ import {
   SendIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 
 import { addCommentAction } from "@/app/actions/tickets";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -32,18 +32,29 @@ export function TicketThread({
   comments,
   /** Staff see the internal-note switch and the note styling. */
   isAgent,
+  /** Canned responses, already placeholder-filled for this ticket. Staff only. */
+  cannedResponses = [],
 }: {
   ticketId: string;
   comments: TicketComment[];
   isAgent: boolean;
+  cannedResponses?: { id: string; title: string; body: string }[];
 }) {
   const [internal, setInternal] = useState(false);
   const [body, setBody] = useState("");
   const [result, formAction, sending] = useActionState(addCommentAction, null);
 
-  // Clear the box once the server confirms, without an effect: a new key on the
-  // textarea would lose focus, and an effect would fight the user's typing.
-  const shownBody = result?.ok ? "" : body;
+  /*
+   * Clear the box once the server confirms — as an effect, keyed on the result
+   * object's identity so it runs once per submission.
+   *
+   * The obvious shortcut, `const shown = result?.ok ? "" : body`, is wrong as soon
+   * as canned responses exist: after one successful reply `result.ok` stays true,
+   * so inserting a snippet would set `body` and the field would keep showing "".
+   */
+  useEffect(() => {
+    if (result?.ok) setBody("");
+  }, [result]);
 
   return (
     <section aria-label="Verlauf" className="grid gap-4">
@@ -112,13 +123,40 @@ export function TicketThread({
           value={internal ? "internal" : "public"}
         />
 
-        <Label htmlFor="comment-body">
-          {internal ? "Interne Notiz" : "Antwort"}
-        </Label>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label htmlFor="comment-body">
+            {internal ? "Interne Notiz" : "Antwort"}
+          </Label>
+
+          {/* Inserted into the field, never sent on its own. The agent confirms
+              what goes out — the same rule the AI triage follows. */}
+          {isAgent && cannedResponses.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Baustein:</span>
+              {cannedResponses.map((canned) => (
+                <Button
+                  key={canned.id}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 rounded-full px-2.5 text-xs text-muted-foreground"
+                  disabled={sending}
+                  onClick={() =>
+                    setBody((current) =>
+                      current.trim() ? `${current.trimEnd()}\n\n${canned.body}` : canned.body,
+                    )
+                  }
+                >
+                  {canned.title}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
         <Textarea
           id="comment-body"
           name="body"
-          value={shownBody}
+          value={body}
           onChange={(event) => setBody(event.target.value)}
           rows={4}
           required
@@ -161,7 +199,7 @@ export function TicketThread({
                 ? "bg-warning/15 text-warning hover:bg-warning/25"
                 : "bg-inverse-surface text-inverse-surface-foreground hover:bg-inverse-surface-hover",
             )}
-            disabled={sending || shownBody.trim() === ""}
+            disabled={sending || body.trim() === ""}
           >
             {sending ? (
               <Loader2Icon className="animate-spin" />
