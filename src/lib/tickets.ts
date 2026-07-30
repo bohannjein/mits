@@ -19,6 +19,9 @@ import {
   type TicketStatus,
 } from "@/types/mits";
 
+// Re-exported so `lib/agent-views.ts` builds its presets from one place.
+export { OPEN_TICKET_STATUSES };
+
 /* ──────────────────────────────────────────────────────────────────────────
    Ticket persistence and access rules.
 
@@ -259,6 +262,16 @@ export interface TicketFilter {
   to?: string;
   /** Narrow a technician's or admin's result set to their own tickets. */
   ownOnly?: boolean;
+
+  /*
+   * Set by the queue-view presets (`lib/agent-views.ts`) rather than by the
+   * filter form. They combine with the single-value filters above with AND, so a
+   * tab plus a deep filter narrows twice — which is what an agent expects when
+   * they filter inside a tab.
+   */
+  statusIn?: TicketStatus[];
+  priorityIn?: TicketPriority[];
+  unassignedOnly?: boolean;
 }
 
 /** Sentinel the filter form uses; a real id can never collide with it. */
@@ -313,11 +326,23 @@ export function searchTickets(
     clauses.push("priority = ?");
     params.push(filter.priority);
   }
-  if (filter.assignedTo === UNASSIGNED_FILTER) {
+  if (filter.assignedTo === UNASSIGNED_FILTER || filter.unassignedOnly) {
     clauses.push("assigned_to IS NULL");
   } else if (filter.assignedTo) {
     clauses.push("assigned_to = ?");
     params.push(filter.assignedTo);
+  }
+
+  // An empty array would render `IN ()`, which is a syntax error in SQLite — and
+  // semantically it should match nothing, not everything, so it is skipped rather
+  // than treated as "no filter".
+  if (filter.statusIn && filter.statusIn.length > 0) {
+    clauses.push(`status IN (${filter.statusIn.map(() => "?").join(", ")})`);
+    params.push(...filter.statusIn);
+  }
+  if (filter.priorityIn && filter.priorityIn.length > 0) {
+    clauses.push(`priority IN (${filter.priorityIn.map(() => "?").join(", ")})`);
+    params.push(...filter.priorityIn);
   }
   // `created_at` is an ISO string, so a date prefix comparison sorts correctly.
   // `to` gets a time suffix rather than `<=` on the bare date, which would

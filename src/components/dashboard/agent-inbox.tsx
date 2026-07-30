@@ -11,7 +11,7 @@ import {
 import Link from "next/link";
 import { useActionState } from "react";
 
-import { assignTicketAction } from "@/app/tickets/[id]/actions";
+import { assignTicketAction } from "@/app/actions/tickets";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
   TICKET_PRIORITY_LABELS,
   TICKET_STATUS_LABELS,
   formatTicketNumber,
+  isElevatedPriority,
   type MITSLocation,
   type MITSTicket,
 } from "@/types/mits";
@@ -91,7 +92,7 @@ export function AgentInbox({
               ? byId.get(ticket.location_id)
               : undefined;
             const urgent =
-              ticket.priority === "urgent" || ticket.priority === "high";
+              isElevatedPriority(ticket.priority);
 
             return (
               <li
@@ -99,7 +100,7 @@ export function AgentInbox({
                 className="flex flex-wrap items-center gap-3 px-5 py-3.5"
               >
                 <Link
-                  href={`/tickets/${ticket.id}`}
+                  href={`/customer/tickets/${ticket.id}`}
                   className="flex min-w-0 flex-1 flex-wrap items-center gap-3 underline-offset-4 hover:underline"
                 >
                   <span className="shrink-0 font-mono text-xs text-muted-foreground">

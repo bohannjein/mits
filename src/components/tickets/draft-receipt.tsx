@@ -131,7 +131,7 @@ export function TicketReceipt({
           asChild
           className="rounded-full bg-inverse-surface px-5 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
         >
-          <Link href={`/tickets/${ticket.id}`}>
+          <Link href={`/customer/tickets/${ticket.id}`}>
             <TicketIcon strokeWidth={1.5} />
             Ticket anzeigen
           </Link>

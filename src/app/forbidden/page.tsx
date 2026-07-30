@@ -47,13 +47,13 @@ export default async function ForbiddenPage() {
               asChild
               className="rounded-full bg-inverse-surface px-4 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
             >
-              <Link href="/tickets/new">Ticket erfassen</Link>
+              <Link href="/customer/new">Ticket erfassen</Link>
             </Button>
             <Button
               asChild
               className="rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
             >
-              <Link href="/tickets">Meine Tickets</Link>
+              <Link href="/customer/tickets">Meine Tickets</Link>
             </Button>
           </CardContent>
         </Card>

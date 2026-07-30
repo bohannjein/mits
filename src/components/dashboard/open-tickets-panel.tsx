@@ -10,8 +10,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   MITSTicketSchema,
+  TICKET_PRIORITY_LABELS,
   TICKET_STATUS_LABELS,
   formatTicketNumber,
+  isElevatedPriority,
   isOpenStatus,
   type MITSTicket,
   type TicketStatus,
@@ -98,7 +100,7 @@ export function OpenTicketsPanel({
             size="sm"
             className="h-8 rounded-full px-3 text-muted-foreground"
           >
-            <Link href="/tickets">Alle</Link>
+            <Link href="/customer/tickets">Alle</Link>
           </Button>
         </div>
       </div>
@@ -113,7 +115,7 @@ export function OpenTicketsPanel({
           {open.map((ticket) => (
             <li key={ticket.id}>
               <Link
-                href={`/tickets/${ticket.id}`}
+                href={`/customer/tickets/${ticket.id}`}
                 className="flex flex-wrap items-center gap-3 px-5 py-3.5 transition-colors hover:bg-surface-elevated"
               >
                 <span className="shrink-0 font-mono text-xs text-muted-foreground">
@@ -122,12 +124,12 @@ export function OpenTicketsPanel({
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">
                   {ticket.title}
                 </span>
-                {(ticket.priority === "high" || ticket.priority === "urgent") && (
+                {(isElevatedPriority(ticket.priority)) && (
                   <Badge
                     variant="outline"
                     className="rounded-full border-destructive/40 text-destructive"
                   >
-                    {ticket.priority === "urgent" ? "Dringend" : "Hoch"}
+                    {TICKET_PRIORITY_LABELS[ticket.priority]}
                   </Badge>
                 )}
                 <Badge

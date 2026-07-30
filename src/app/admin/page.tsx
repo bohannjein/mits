@@ -100,7 +100,7 @@ export default async function AdminPage() {
                 </Link>
               </Button>
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/board">
+                <Link href="/mits">
                   <LayoutDashboardIcon />
                   Board
                 </Link>

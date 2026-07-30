@@ -26,7 +26,7 @@ export default async function NewTicketPage({
   searchParams: Promise<{ mode?: string }>;
 }) {
   // Authoritative guard — the proxy only redirects early.
-  const user = await requireUser("/tickets/new");
+  const user = await requireUser("/customer/new");
 
   // Validated against the enum rather than cast: `?mode=` is user input, and an
   // unknown value should open the default tab, not render nothing.
@@ -62,7 +62,7 @@ export default async function NewTicketPage({
               </p>
             </div>
             <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-              <Link href="/tickets">
+              <Link href="/customer/tickets">
                 <ListIcon />
                 Meine Tickets
               </Link>

@@ -57,7 +57,7 @@ export function UserMenu({ user }: { user: SessionUser }) {
           size="sm"
           className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
         >
-          <Link href={showAdmin ? "/admin" : "/board"}>
+          <Link href={showAdmin ? "/admin" : "/mits"}>
             {showAdmin ? (
               <ShieldIcon strokeWidth={1.5} />
             ) : (
@@ -95,7 +95,7 @@ export function UserMenu({ user }: { user: SessionUser }) {
           <DropdownMenuSeparator />
 
           <DropdownMenuItem asChild>
-            <Link href="/tickets">
+            <Link href="/customer/tickets">
               <TicketIcon />
               Meine Tickets
             </Link>
@@ -104,13 +104,13 @@ export function UserMenu({ user }: { user: SessionUser }) {
           {showBoard && (
             <>
               <DropdownMenuItem asChild>
-                <Link href="/agent">
+                <Link href="/mits">
                   <HeadsetIcon />
                   Agenten-Desk
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/board">
+                <Link href="/mits">
                   <LayoutDashboardIcon />
                   Ticket-Board
                 </Link>

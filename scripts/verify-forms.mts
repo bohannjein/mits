@@ -24,6 +24,10 @@ import {
   PORTAL_WIDGET_ORDER,
   PRESENCE_IDLE_AFTER_SECONDS,
   PRESENCE_OFFLINE_AFTER_SECONDS,
+  TICKET_PRIORITY_LABELS,
+  TicketPriority,
+  TicketPriorityValues,
+  isElevatedPriority,
   presenceStateFor,
   PortalConfigSchema,
   PortalFaqSchema,
@@ -393,6 +397,53 @@ console.log("ticket number parsing");
    colleague as available when they left half an hour ago, or as gone while they
    are typing — and neither looks wrong on screen.
    ────────────────────────────────────────────────────────────────────────── */
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Priority rename.
+
+   `normal` became `medium` and `urgent` became `critical`. The database migration
+   in lib/db/sqlite.ts rewrites stored rows, but `MITSTicketSchema.priority` is the
+   enum — a row the migration never reached would throw on read and take a whole
+   listing with it. The preprocess is the guard against that; these checks are what
+   keep it.
+   ────────────────────────────────────────────────────────────────────────── */
+
+console.log("priority rename");
+{
+  const parse = (value: string) => TicketPriority.safeParse(value);
+
+  check("medium is accepted", parse("medium").data === "medium");
+  check("critical is accepted", parse("critical").data === "critical");
+  check("low and high are unchanged", parse("low").data === "low" && parse("high").data === "high");
+  check("legacy normal maps to medium", parse("normal").data === "medium");
+  check("legacy urgent maps to critical", parse("critical").data === "critical" && parse("urgent").data === "critical");
+  check("nonsense is still rejected", !parse("panisch").success);
+  check(
+    "a ticket row carrying a legacy value still parses",
+    MITSTicketSchema.parse({
+      id: "t-legacy",
+      source: "legacy",
+      title: "Alt",
+      payload: {},
+      status: "open",
+      priority: "urgent",
+      created_by: "u",
+      created_by_email: "u@example.invalid",
+      created_at: "2026-01-01T00:00:00.000Z",
+    }).priority === "critical",
+  );
+  check(
+    "labels cover every value",
+    TicketPriorityValues.every((p) => Boolean(TICKET_PRIORITY_LABELS[p])),
+  );
+  check(
+    "elevated is high and critical only",
+    isElevatedPriority("high") &&
+      isElevatedPriority("critical") &&
+      !isElevatedPriority("medium") &&
+      !isElevatedPriority("low"),
+  );
+}
 
 console.log("presence state");
 {

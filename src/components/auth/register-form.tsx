@@ -59,7 +59,7 @@ export function RegisterForm({ allowedDomains }: { allowedDomains: string[] }) {
       return;
     }
 
-    router.push("/tickets/new");
+    router.push("/customer/new");
     router.refresh();
   });
 

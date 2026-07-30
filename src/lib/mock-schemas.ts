@@ -32,8 +32,8 @@ export const QUICK_TICKET_SCHEMA: MITSFormSchema = {
       priority: {
         type: "string",
         title: "Priorität",
-        enum: ["low", "normal", "high", "urgent"],
-        default: "normal",
+        enum: ["low", "medium", "high", "critical"],
+        default: "medium",
       },
       description: {
         type: "string",

@@ -32,15 +32,19 @@ Diese drei Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
    Literalfarben inline und Tabellen-Layout statt Flexbox. Die Palette dort spiegelt das
    Light-Theme — ein Postfach ist nicht themebar. Bei Token-Änderungen von Hand nachziehen.
    Der Regel-2-Grep unten schließt die Datei deshalb aus.
-3. **Schema-First.** Es gibt keine Komponente pro Ticket-Typ (kein `Onboarding.tsx`). Ein
+3. **Keine Emojis im Frontend.** Nicht in Buttons, Badges, Karten, Tabellen oder Meldungen.
+   Zustände und Bedeutung kommen über Lucide-SVG-Icons und Typografie. Typografische Zeichen
+   sind erlaubt und keine Emojis: `→`, `—`, `·`, `„…“`. Diese Dateien (`AGENTS.md`,
+   `ROADMAP.md`) sind Dokumentation, nicht UI — Emojis dort bleiben.
+4. **Schema-First.** Es gibt keine Komponente pro Ticket-Typ (kein `Onboarding.tsx`). Ein
    Ticket-Typ ist ein `MITSFormSchema` (JSON Schema + `uiHints`); Formulare werden daraus
    dynamisch gerendert.
-4. **`src/proxy.ts` ist keine Sicherheitsgrenze.** Die Next-Docs sind da eindeutig: eine
+5. **`src/proxy.ts` ist keine Sicherheitsgrenze.** Die Next-Docs sind da eindeutig: eine
    Matcher-Änderung oder eine verschobene Server Function entfernt die Proxy-Abdeckung
    lautlos. Der Proxy ist nur der schnelle Weg (Redirect vor dem Rendern). **Jede**
    geschützte Seite ruft `requireUser`/`requireRole`, **jede** Route Handler und **jede**
    Server Action prüft die Session selbst — siehe `lib/auth/session.ts`.
-5. **Niemals Eigentümerschaft aus dem Request lesen.** `created_by` kommt aus der Session.
+6. **Niemals Eigentümerschaft aus dem Request lesen.** `created_by` kommt aus der Session.
    `MITSTicketDraftSchema` lässt das Feld bewusst weg, statt es optional zu machen.
 
 ## Stack
@@ -291,8 +295,37 @@ nicht neu herleiten.
 | 1 | Ticket-Nummern, Standorte, Agenten-Workflow, Feature-Toggles, JSON-Cleanup | ✅ `0f68a17` |
 | 2 | E-Mail & SMTP (`nodemailer`, `/admin/settings/email`) | ✅ |
 | 3 | Suche & Deep-Filter (`searchTickets`, `lib/ticket-query.ts`) | ✅ |
-| 4 | Agenten-Desk & Präsenz (`/agent`, `lib/presence.ts`) | ✅ |
-| 5 | Formular-Builder (Canvas, bedingte Logik, abhängige Dropdowns) | ⬜ **letzter** |
+| 4 | Agenten-Desk & Präsenz (`lib/presence.ts`) | ✅ |
+| 5 | Routentrennung `/customer` + `/mits`, Queue mit Tabs | ✅ |
+| 6 | Prioritäten `low/medium/high/critical` migriert | ✅ |
+| 7 | Ticket-Verknüpfung + Textbausteine | ⬜ **nächster** |
+| 8 | Formular-Builder (Canvas, bedingte Logik, abhängige Dropdowns) | ⬜ |
+
+## Zwei Welten
+
+```
+/                       öffentlicher Einstieg: Login-Maske, angemeldet -> homeFor(role)
+/customer/…             Anwender: Portal, Ticket-Erstellung, eigene Tickets, schlanke Detailansicht
+/mits/                  Technik: Live-Queue mit Tabs, Präsenz + Statistik als Spalte
+/mits/tickets/[id]      Agenten-Detailansicht mit Workflow-Panel
+/admin/…                Administration
+```
+
+`/tickets`, `/board` und `/agent` existieren **nicht mehr** und werden nicht umgeleitet.
+
+**Ein `user` auf `/mits/*` landet auf `/customer`, nicht auf `/forbidden`.** Das steuert
+`deniedPathFor` in `lib/auth/roles.ts`; alles ohne kleinere Sicht behält `/forbidden`.
+
+**Die zwei Detailansichten sind zwei Routen mit je eigenem Guard**, keine gemeinsame Seite
+mit `isAgent`-Bedingung. Gemeinsam ist nur `components/tickets/ticket-detail.tsx` — Kopf,
+Badges, Angaben. Zwei geschützte Routen sind schwerer versehentlich zu öffnen als eine
+Bedingung im Markup.
+
+**Queue-Ansichten sind Presets über `searchTickets`** (`lib/agent-views.ts`), keine eigenen
+Queries. Deep-Filter kombinieren mit AND obendrauf. `parseTicketQuery` gibt deshalb
+**keine undefinierten Schlüssel** zurück: `{...preset, ...filter}` würde sonst
+`status: undefined` über das Preset schreiben und die Ansicht stillschweigend aufweiten —
+eine Queue mit den falschen Tickets sieht aus wie eine funktionierende Queue.
 
 **Präsenz-Farben:** 🟢 aktiv (`--success`), 🟡 inaktiv (`--warning`), ⚫ offline
 (`--muted-foreground/50`). Der ursprüngliche Anforderungstext nennt für „inaktiv“ noch grau

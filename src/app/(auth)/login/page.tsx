@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { CUSTOMER_HOME, homeFor } from "@/lib/auth/roles";
 import { getSessionUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
@@ -20,7 +21,9 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ next?: string }>;
 }) {
-  if (await getSessionUser()) redirect("/tickets/new");
+  const signedIn = await getSessionUser();
+  // Staff land on the queue, reporters in their portal — homeFor decides.
+  if (signedIn) redirect(homeFor(signedIn.role));
 
   const { next } = await searchParams;
 
@@ -45,7 +48,7 @@ export default async function LoginPage({
  * open redirect.
  */
 function safeNext(next: string | undefined): string {
-  if (!next) return "/tickets/new";
-  if (!next.startsWith("/") || next.startsWith("//")) return "/tickets/new";
+  if (!next) return CUSTOMER_HOME;
+  if (!next.startsWith("/") || next.startsWith("//")) return CUSTOMER_HOME;
   return next;
 }

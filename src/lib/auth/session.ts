@@ -3,7 +3,7 @@ import "server-only";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { hasAtLeast, toRole, type MITSRole } from "@/lib/auth/roles";
+import { deniedPathFor, hasAtLeast, toRole, type MITSRole } from "@/lib/auth/roles";
 import { auth, ensureAuthSchema } from "@/lib/auth/server";
 import { mustChangePassword } from "@/lib/users";
 
@@ -132,17 +132,24 @@ export async function requireApiUser(
 }
 
 /**
- * Page guard with a role floor. An authenticated user who lacks the role is sent
- * to /forbidden rather than to the login form — re-authenticating would not help
- * and looks like a broken login loop.
+ * Page guard with a role floor.
+ *
+ * An authenticated user who lacks the role is not sent to the login form —
+ * re-authenticating would not help and reads as a broken login loop. Where they
+ * go instead depends on the path: a reporter who follows a link into `/mits`
+ * belongs in their own portal, everything else lands on `/forbidden`.
+ *
+ * `deniedTo` overrides that decision for a caller that knows better; without it
+ * the path in `returnTo` decides, which is the path being guarded.
  */
 export async function requireRole(
   role: MITSRole,
   returnTo?: string,
+  deniedTo?: string,
 ): Promise<SessionUser> {
   const user = await requireUser(returnTo);
   if (!hasAtLeast(user.role, role)) {
-    redirect("/forbidden");
+    redirect(deniedTo ?? (returnTo ? deniedPathFor(returnTo) : "/forbidden"));
   }
   return user;
 }

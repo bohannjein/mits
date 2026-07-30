@@ -26,13 +26,13 @@ const ACTIONS: {
   gemini?: boolean;
 }[] = [
   {
-    href: "/tickets/new?mode=ai_chat",
+    href: "/customer/new?mode=ai_chat",
     icon: Bot,
     title: "Smart IT-Helpdesk",
     gemini: true,
   },
   {
-    href: "/tickets/new?mode=wizard",
+    href: "/customer/new?mode=wizard",
     icon: ListChecks,
     title: "Formular-Katalog",
   },

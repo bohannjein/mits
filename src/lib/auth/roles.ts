@@ -42,20 +42,48 @@ export const ROLE_LABELS: Record<MITSRole, string> = {
   admin: "Administration",
 };
 
-/** Route prefixes and the role they require. Consumed by the proxy and the guards. */
-export const PROTECTED_PREFIXES: { prefix: string; role: MITSRole }[] = [
+/* ──────────────────────────────────────────────────────────────────────────
+   Route gating.
+
+   Two worlds: `/customer` is what a reporter uses, `/mits` is the staff hub.
+   `deniedPath` says where somebody who is signed in but lacks the role goes —
+   a reporter who follows a link into `/mits` belongs in their own portal, not on
+   a permission error they can do nothing about. Everything else keeps
+   `/forbidden`, which is the honest answer when there is no lesser view to offer.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const CUSTOMER_HOME = "/customer";
+export const AGENT_HOME = "/mits";
+
+export const PROTECTED_PREFIXES: {
+  prefix: string;
+  role: MITSRole;
+  deniedPath?: string;
+}[] = [
   { prefix: "/admin", role: "admin" },
-  { prefix: "/agent", role: "technician" },
-  { prefix: "/board", role: "technician" },
-  { prefix: "/tickets", role: "user" },
+  { prefix: "/mits", role: "technician", deniedPath: CUSTOMER_HOME },
+  { prefix: "/customer", role: "user" },
   // Own profile and password. Any signed-in role, but never anonymous.
   { prefix: "/settings", role: "user" },
 ];
 
-/** The strictest rule matching this path, or null when the path is public. */
-export function requiredRoleFor(pathname: string): MITSRole | null {
-  const match = PROTECTED_PREFIXES.find(
+function matchPrefix(pathname: string) {
+  return PROTECTED_PREFIXES.find(
     ({ prefix }) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
-  return match ? match.role : null;
+}
+
+/** The strictest rule matching this path, or null when the path is public. */
+export function requiredRoleFor(pathname: string): MITSRole | null {
+  return matchPrefix(pathname)?.role ?? null;
+}
+
+/** Where to send a signed-in user who may not open this path. */
+export function deniedPathFor(pathname: string): string {
+  return matchPrefix(pathname)?.deniedPath ?? "/forbidden";
+}
+
+/** Landing page for a role — used by `/` and after signing in. */
+export function homeFor(role: unknown): string {
+  return canViewBoard(role) ? AGENT_HOME : CUSTOMER_HOME;
 }

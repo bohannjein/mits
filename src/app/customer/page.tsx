@@ -1,0 +1,106 @@
+import type { ReactNode } from "react";
+
+import { AnnouncementBanner } from "@/components/dashboard/announcement-banner";
+import { FaqAccordion } from "@/components/dashboard/faq-accordion";
+import { MaintenanceNotice } from "@/components/dashboard/maintenance-notice";
+import { OpenTicketsPanel } from "@/components/dashboard/open-tickets-panel";
+import { PortalActions } from "@/components/dashboard/portal-actions";
+import { ResourceGrid } from "@/components/dashboard/resource-grid";
+import { ServiceStatus } from "@/components/dashboard/service-status";
+import { AppHeader } from "@/components/layout/app-header";
+import { requireUser } from "@/lib/auth/session";
+import {
+  getActiveAnnouncements,
+  getActiveMaintenanceNotices,
+  getPortalConfig,
+  getPortalContent,
+  getPortalFaqs,
+  getPortalServices,
+} from "@/lib/portal";
+import { listOwnTickets } from "@/lib/tickets";
+import { fillPortalText, type PortalWidgetKey } from "@/types/mits";
+
+/* ──────────────────────────────────────────────────────────────────────────
+   The reporter's self-service portal.
+
+   Assembled from `portal_config`: which widgets exist, in which order, under
+   which heading. Adapting an instance is an admin task in /admin/portal.
+
+   Anonymous visitors never reach here — `/customer` requires a session and `/` is
+   where the login mask lives. That split is why this page has no signed-out
+   branch to keep in step with the public one.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export default async function CustomerPortalPage() {
+  const user = await requireUser("/customer");
+  const config = getPortalConfig();
+  const titles = config.widget_titles;
+
+  // Just the given name: "Hallo Jana" reads like a colleague, the full address
+  // like a mail merge.
+  const firstName = user.name.split(/\s+/)[0] || user.name;
+
+  // Every widget is built up front and the order decides what gets rendered.
+  // Cheap: each source is one indexed SQLite read.
+  const widgets: Record<PortalWidgetKey, ReactNode> = {
+    outages: (
+      <AnnouncementBanner
+        title={titles.outages}
+        announcements={getActiveAnnouncements()}
+      />
+    ),
+    maintenance: (
+      <MaintenanceNotice
+        title={titles.maintenance}
+        notices={getActiveMaintenanceNotices()}
+      />
+    ),
+    status: (
+      <ServiceStatus title={titles.status} services={getPortalServices()} />
+    ),
+    active_tickets: (
+      <OpenTicketsPanel
+        title={titles.active_tickets}
+        initialTickets={listOwnTickets(user.id)}
+      />
+    ),
+    faq: <FaqAccordion title={titles.faq} faqs={getPortalFaqs()} />,
+    downloads: (
+      <ResourceGrid
+        title={titles.downloads}
+        resources={getPortalContent().resources}
+      />
+    ),
+  };
+
+  return (
+    <>
+      <AppHeader />
+      <main className="bg-aurora flex flex-1 flex-col items-center px-6 py-12">
+        <div className="grid w-full max-w-4xl gap-8">
+          <section>
+            <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
+              {fillPortalText(config.hero_title, firstName)}
+            </h1>
+            {config.hero_subtitle.trim() && (
+              <p className="mt-3 max-w-2xl leading-relaxed text-muted-foreground">
+                {fillPortalText(config.hero_subtitle, firstName)}
+              </p>
+            )}
+          </section>
+
+          {/* Above the configurable widgets on purpose: it is what the portal is
+              for, and burying it behind a toggle would let an admin lock everyone
+              out of the intake by accident. */}
+          <PortalActions label={config.ticket_button_label} />
+
+          {config.widget_order
+            .filter((key) => config.enabled_widgets[key])
+            .map((key) => (
+              <div key={key}>{widgets[key]}</div>
+            ))}
+        </div>
+      </main>
+    </>
+  );
+}

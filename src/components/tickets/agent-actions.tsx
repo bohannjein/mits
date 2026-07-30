@@ -12,7 +12,7 @@ import {
   assignTicketAction,
   setTicketPriorityAction,
   setTicketStatusAction,
-} from "@/app/tickets/[id]/actions";
+} from "@/app/actions/tickets";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +34,7 @@ import {
   TICKET_PRIORITY_LABELS,
   TICKET_STATUS_LABELS,
   TicketPriority,
+  TicketPriorityValues,
   TicketStatus,
   type MITSTicket,
 } from "@/types/mits";
@@ -193,7 +194,7 @@ export function AgentActions({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TicketPriority.options.map((priority) => (
+                  {TicketPriorityValues.map((priority) => (
                     <SelectItem key={priority} value={priority}>
                       {TICKET_PRIORITY_LABELS[priority]}
                     </SelectItem>

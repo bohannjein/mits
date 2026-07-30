@@ -13,6 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { homeFor } from "@/lib/auth/roles";
 import { getSessionUser } from "@/lib/auth/session";
 import { ensureAuthSchema } from "@/lib/auth/server";
 import { countUsers } from "@/lib/users";
@@ -23,7 +24,8 @@ export const metadata: Metadata = {
 };
 
 export default async function RegisterPage() {
-  if (await getSessionUser()) redirect("/tickets/new");
+  const signedIn = await getSessionUser();
+  if (signedIn) redirect(homeFor(signedIn.role));
 
   // The user table has to exist before it can be counted.
   await ensureAuthSchema();

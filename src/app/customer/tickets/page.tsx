@@ -29,7 +29,7 @@ export default async function MyTicketsPage({
 }) {
   // Authoritative guard. The proxy already redirected anonymous visitors, but
   // this is the check that actually decides.
-  const user = await requireUser("/tickets");
+  const user = await requireUser("/customer/tickets");
 
   const params = await searchParams;
   const flags = getFeatureFlags();
@@ -72,7 +72,7 @@ export default async function MyTicketsPage({
               asChild
               className="h-10 rounded-full bg-inverse-surface px-5 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
             >
-              <Link href="/tickets/new">
+              <Link href="/customer/new">
                 <PlusIcon strokeWidth={1.5} />
                 Neues Ticket
               </Link>
@@ -83,9 +83,9 @@ export default async function MyTicketsPage({
 
           {searchEnabled && (
             <div className="mb-6 grid gap-4">
-              <TicketSearch action="/tickets" defaultValue={values.q} />
+              <TicketSearch action="/customer/tickets" defaultValue={values.q} />
               <TicketFilters
-                action="/tickets"
+                action="/customer/tickets"
                 values={values}
                 locations={locations}
                 activeCount={activeCount}

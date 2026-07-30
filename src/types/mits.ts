@@ -55,15 +55,42 @@ export const OPEN_TICKET_STATUSES: TicketStatus[] = [
 export const isOpenStatus = (status: TicketStatus): boolean =>
   OPEN_TICKET_STATUSES.includes(status);
 
-export const TicketPriority = z.enum(["low", "normal", "high", "urgent"]);
+/**
+ * Ticket priority.
+ *
+ * `normal` was renamed to `medium` and `urgent` to `critical`. The rename is
+ * migrated in `lib/db/sqlite.ts`, but the preprocess below maps the old values
+ * anyway — a database restored from a backup taken before the migration would
+ * otherwise fail `MITSTicketSchema` on every row and take whole listings down
+ * with it. Cheap insurance against a total outage.
+ */
+export const LEGACY_PRIORITY_MAP: Record<string, string> = {
+  normal: "medium",
+  urgent: "critical",
+};
+
+export const TicketPriority = z.preprocess(
+  (value) =>
+    typeof value === "string" ? (LEGACY_PRIORITY_MAP[value] ?? value) : value,
+  z.enum(["low", "medium", "high", "critical"]),
+);
 export type TicketPriority = z.infer<typeof TicketPriority>;
+
+/** The bare enum, for `.options` where the preprocess wrapper hides it. */
+export const TicketPriorityValues = ["low", "medium", "high", "critical"] as const;
 
 export const TICKET_PRIORITY_LABELS: Record<TicketPriority, string> = {
   low: "Niedrig",
-  normal: "Normal",
+  medium: "Mittel",
   high: "Hoch",
-  urgent: "Dringend",
+  critical: "Kritisch",
 };
+
+/** Above the default — what the escalated queue view and the badges react to. */
+export const ELEVATED_PRIORITIES: TicketPriority[] = ["high", "critical"];
+
+export const isElevatedPriority = (priority: TicketPriority): boolean =>
+  ELEVATED_PRIORITIES.includes(priority);
 
 /**
  * Human-readable ticket number, e.g. TICK-1001.
@@ -157,7 +184,7 @@ export const MITSTicketDraftSchema = MITSTicketSchema.omit({
   assigned_to: true,
   title: true,
 }).extend({
-  priority: TicketPriority.default("normal"),
+  priority: TicketPriority.default("medium"),
   /** The reporter may state their site; everything else about them comes from the session. */
   location_id: z.string().nullable().default(null),
 });

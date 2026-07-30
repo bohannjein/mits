@@ -13,6 +13,7 @@ import {
   TICKET_PRIORITY_LABELS,
   TICKET_STATUS_LABELS,
   formatTicketNumber,
+  isElevatedPriority,
   type MITSLocation,
   type MITSTicket,
 } from "@/types/mits";
@@ -29,10 +30,16 @@ export function TicketTable({
   showOwner = false,
   /** Resolves `location_id` for the site column. Omit to hide that column. */
   locations,
+  /**
+   * Where a row links to. The two worlds have their own detail view, and linking
+   * an agent into the reporter's lean page would drop the workflow panel.
+   */
+  detailBase = "/customer/tickets",
 }: {
   tickets: MITSTicket[];
   showOwner?: boolean;
   locations?: MITSLocation[];
+  detailBase?: string;
 }) {
   if (tickets.length === 0) {
     return (
@@ -72,7 +79,7 @@ export function TicketTable({
                 </TableCell>
                 <TableCell className="font-medium">
                   <Link
-                    href={`/tickets/${ticket.id}`}
+                    href={`${detailBase}/${ticket.id}`}
                     className="underline-offset-4 hover:underline"
                   >
                     {ticket.title}
@@ -92,7 +99,7 @@ export function TicketTable({
                 <TableCell>
                   <Badge
                     variant={
-                      ticket.priority === "urgent" || ticket.priority === "high"
+                      isElevatedPriority(ticket.priority)
                         ? "default"
                         : "outline"
                     }

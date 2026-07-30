@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { useActionState, useState } from "react";
 
-import { addCommentAction } from "@/app/tickets/[id]/actions";
+import { addCommentAction } from "@/app/actions/tickets";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

@@ -20,6 +20,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { signIn } from "@/lib/auth/client";
+import { homeFor } from "@/lib/auth/roles";
 
 const LoginSchema = z.object({
   email: z.email("Bitte eine gültige E-Mail-Adresse angeben."),
@@ -55,6 +56,12 @@ function describeSignInError(status: number): string {
   return `Anmeldung fehlgeschlagen (HTTP ${status}).`;
 }
 
+/**
+ * @param next Where to go after signing in. Empty means "decide from the role" —
+ *   staff land on the queue, reporters in their portal. A caller that came from a
+ *   guarded page passes that page instead, so the redirect returns people where
+ *   they were headed.
+ */
 export function LoginForm({ next }: { next: string }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +73,7 @@ export function LoginForm({ next }: { next: string }) {
 
   const submit = form.handleSubmit(async (values) => {
     setError(null);
-    const { error: signInError } = await signIn.email({
+    const { data, error: signInError } = await signIn.email({
       email: values.email,
       password: values.password,
     });
@@ -76,7 +83,11 @@ export function LoginForm({ next }: { next: string }) {
       return;
     }
 
-    router.push(next);
+    // The sign-in response carries the role, so the landing page can be decided
+    // without a second round-trip. `homeFor` degrades to the customer portal for
+    // an unknown role, never upwards.
+    const target = next || homeFor((data?.user as { role?: unknown })?.role);
+    router.push(target);
     // The header reads the session on the server, so the new cookie only takes
     // effect after the route cache is dropped.
     router.refresh();

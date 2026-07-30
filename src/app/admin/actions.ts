@@ -171,7 +171,7 @@ export async function savePortalContentAction(
   setPortalContent(parsed.data);
   revalidatePath("/");
   revalidatePath("/admin/portal");
-  revalidatePath("/tickets/new");
+  revalidatePath("/customer/new");
 
   return {
     ok: true,
@@ -213,7 +213,7 @@ function parsePayload<T>(
 function revalidatePortal(): void {
   revalidatePath("/");
   revalidatePath("/admin/portal");
-  revalidatePath("/tickets/new");
+  revalidatePath("/customer/new");
 }
 
 export async function savePortalConfigAction(
@@ -345,8 +345,8 @@ export async function saveLocationsAction(
   }
 
   revalidatePath("/admin/locations");
-  revalidatePath("/tickets/new");
-  revalidatePath("/board");
+  revalidatePath("/customer/new");
+  revalidatePath("/mits");
 
   const active = saved.filter((location) => location.active).length;
   return {
@@ -422,7 +422,7 @@ export async function sendTestMailAction(
   }
 
   const url = getEffectiveSmtpSettings().public_url
-    ? `${getEffectiveSmtpSettings().public_url}/tickets`
+    ? `${getEffectiveSmtpSettings().public_url}/customer/tickets`
     : null;
 
   const mail = testMail(actor.email, url);
@@ -520,7 +520,7 @@ export async function saveFormSchemaAction(
 
   saveFormSchema(schema, actor.id);
   revalidatePath("/admin/forms/builder");
-  revalidatePath("/tickets/new");
+  revalidatePath("/customer/new");
 
   return {
     ok: true,

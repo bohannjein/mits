@@ -127,11 +127,11 @@ export function SchemaForm({
 function derivePriority(values: Record<string, unknown>): MITSTicketDraft["priority"] {
   const candidate = values.priority;
   return candidate === "low" ||
-    candidate === "normal" ||
+    candidate === "medium" ||
     candidate === "high" ||
-    candidate === "urgent"
+    candidate === "critical"
     ? candidate
-    : "normal";
+    : "medium";
 }
 
 function groupFields(fields: ReturnType<typeof resolveFields>) {

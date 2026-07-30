@@ -50,7 +50,7 @@ export async function AppHeader() {
         {showSearch && (
           <TicketSearch
             compact
-            action={canViewBoard(user.role) ? "/board" : "/tickets"}
+            action={canViewBoard(user.role) ? "/mits" : "/customer/tickets"}
             className="order-last w-full sm:order-none sm:ml-auto sm:mr-3 sm:w-auto"
           />
         )}

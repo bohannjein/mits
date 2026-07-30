@@ -1,7 +1,12 @@
 import { getCookieCache, getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { hasAtLeast, requiredRoleFor, toRole } from "@/lib/auth/roles";
+import {
+  deniedPathFor,
+  hasAtLeast,
+  requiredRoleFor,
+  toRole,
+} from "@/lib/auth/roles";
 import { authSecret } from "@/lib/auth/secret";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -45,7 +50,9 @@ export async function proxy(request: NextRequest) {
   if (!cached?.user) return NextResponse.next();
 
   if (!hasAtLeast(toRole((cached.user as { role?: unknown }).role), required)) {
-    return NextResponse.redirect(new URL("/forbidden", request.url));
+    // A reporter who lands in /mits goes to their own portal rather than to a
+    // permission error — see `deniedPathFor`.
+    return NextResponse.redirect(new URL(deniedPathFor(pathname), request.url));
   }
 
   return NextResponse.next();
@@ -62,9 +69,8 @@ function redirectToLogin(request: NextRequest, returnTo: string) {
 export const config = {
   matcher: [
     "/admin/:path*",
-    "/agent/:path*",
-    "/board/:path*",
-    "/tickets/:path*",
+    "/customer/:path*",
+    "/mits/:path*",
     "/settings/:path*",
   ],
 };

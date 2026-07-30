@@ -53,7 +53,7 @@ async function authorize(
   ticketId: string,
   requireAgent: boolean,
 ): Promise<Authorized> {
-  const user = await requireUser(`/tickets/${ticketId}`);
+  const user = await requireUser(`/mits/tickets/${ticketId}`);
 
   if (requireAgent && !canViewBoard(user.role)) {
     return { ok: false, error: "Diese Aktion ist der Technik vorbehalten." };
@@ -87,9 +87,10 @@ export async function assignTicketAction(
     throw error;
   }
 
-  revalidatePath(`/tickets/${ticketId}`);
-  revalidatePath("/board");
-  revalidatePath("/agent");
+  revalidatePath(`/customer/tickets/${ticketId}`);
+  revalidatePath(`/mits/tickets/${ticketId}`);
+  revalidatePath("/mits");
+  revalidatePath("/mits");
 
   return {
     ok: true,
@@ -109,9 +110,10 @@ export async function setTicketStatusAction(
   if (!status.success) return { ok: false, error: "Unbekannter Status." };
 
   setTicketStatus(ticketId, status.data);
-  revalidatePath(`/tickets/${ticketId}`);
-  revalidatePath("/board");
-  revalidatePath("/agent");
+  revalidatePath(`/customer/tickets/${ticketId}`);
+  revalidatePath(`/mits/tickets/${ticketId}`);
+  revalidatePath("/mits");
+  revalidatePath("/mits");
 
   return { ok: true, message: "Status geändert." };
 }
@@ -128,8 +130,9 @@ export async function setTicketPriorityAction(
   if (!priority.success) return { ok: false, error: "Unbekannte Priorität." };
 
   setTicketPriority(ticketId, priority.data);
-  revalidatePath(`/tickets/${ticketId}`);
-  revalidatePath("/board");
+  revalidatePath(`/customer/tickets/${ticketId}`);
+  revalidatePath(`/mits/tickets/${ticketId}`);
+  revalidatePath("/mits");
 
   return { ok: true, message: "Priorität geändert." };
 }
@@ -170,7 +173,8 @@ export async function addCommentAction(
     throw error;
   }
 
-  revalidatePath(`/tickets/${ticketId}`);
+  revalidatePath(`/customer/tickets/${ticketId}`);
+  revalidatePath(`/mits/tickets/${ticketId}`);
 
   /*
    * Notify the reporter, under three conditions that all have to hold:

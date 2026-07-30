@@ -2,6 +2,7 @@ import "server-only";
 
 import { redirect } from "next/navigation";
 
+import { canViewBoard } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
 import {
@@ -77,17 +78,26 @@ export function parseTicketQuery(
     Boolean,
   ).length;
 
+  /*
+   * Undefined keys are omitted, not set to undefined.
+   *
+   * The queue merges a view preset with these filters as
+   * `{ ...preset, ...filter }`. An explicit `status: undefined` in the second
+   * object overwrites the preset's status and silently widens the query — the
+   * "waiting" tab then shows every ticket, which reads as a working queue
+   * containing the wrong rows rather than as an error.
+   */
+  const filter: TicketFilter = { ...(options.ownOnly ? { ownOnly: true } : {}) };
+  if (q) filter.q = q;
+  if (locationId) filter.locationId = locationId;
+  if (status) filter.status = status;
+  if (priority) filter.priority = priority;
+  if (assignedTo) filter.assignedTo = assignedTo;
+  if (from) filter.from = from;
+  if (to) filter.to = to;
+
   return {
-    filter: {
-      q,
-      locationId,
-      status,
-      priority,
-      assignedTo,
-      from,
-      to,
-      ownOnly: options.ownOnly,
-    },
+    filter,
     values: { q, locationId, status, priority, assignedTo, from, to },
     activeCount,
   };
@@ -101,6 +111,11 @@ export function parseTicketQuery(
  * number space could be probed for which tickets exist. Someone searching a
  * foreign number simply gets an empty list.
  *
+ * The target world is derived from the role, not passed in: a technician jumps
+ * into the agent view with its workflow panel, a reporter into their own lean
+ * view. Deriving it here means a caller cannot accidentally send a reporter to
+ * `/mits`, where the guard would bounce them straight back.
+ *
  * Called from a page, so `redirect` throws and never returns.
  */
 export function jumpToTicketNumber(term: string | undefined, user: SessionUser): void {
@@ -111,5 +126,8 @@ export function jumpToTicketNumber(term: string | undefined, user: SessionUser):
   if (number === null) return;
 
   const ticket = getTicketByNumberFor(number, user);
-  if (ticket) redirect(`/tickets/${ticket.id}`);
+  if (!ticket) return;
+
+  const base = canViewBoard(user.role) ? "/mits/tickets" : "/customer/tickets";
+  redirect(`${base}/${ticket.id}`);
 }

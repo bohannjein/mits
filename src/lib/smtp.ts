@@ -229,7 +229,7 @@ export async function verifySmtp(): Promise<
 export function ticketUrl(ticketId: string): string | null {
   const base = getEffectiveSmtpSettings().public_url;
   if (!base) return null;
-  return `${base}/tickets/${ticketId}`;
+  return `${base}/customer/tickets/${ticketId}`;
 }
 
 function safeJsonParse(value: string): unknown {

@@ -131,6 +131,92 @@ function migrateAppTables(database: Database.Database): void {
 
   addColumns(database);
   backfillTicketNumbers(database);
+  renamePriorities(database);
+}
+
+/**
+ * Rename `normal` to `medium` and `urgent` to `critical`.
+ *
+ * Priority lives in four places, and missing one of them is a broken listing
+ * rather than a cosmetic slip: `MITSTicketSchema.priority` is the enum, so an
+ * unmigrated row throws on read.
+ *
+ *   1. the `mits_ticket.priority` column
+ *   2. inside stored `payload` JSON — the quick-ticket form has its own priority
+ *      field, so the answer is duplicated there
+ *   3. built-in form schemas (in code, changed by hand)
+ *   4. admin-authored schemas in `mits_form_schema`
+ *
+ * Idempotent: after the first run there is nothing left matching the old values.
+ */
+function renamePriorities(database: Database.Database): void {
+  const pending = database
+    .prepare(
+      "SELECT COUNT(*) AS count FROM mits_ticket WHERE priority IN ('normal', 'urgent')",
+    )
+    .get() as { count: number };
+
+  const schemasPending = database
+    .prepare(
+      `SELECT COUNT(*) AS count FROM mits_form_schema
+        WHERE definition LIKE '%"normal"%' OR definition LIKE '%"urgent"%'`,
+    )
+    .get() as { count: number };
+
+  const payloadsPending = database
+    .prepare(
+      `SELECT COUNT(*) AS count FROM mits_ticket
+        WHERE payload LIKE '%"priority":"normal"%'
+           OR payload LIKE '%"priority":"urgent"%'`,
+    )
+    .get() as { count: number };
+
+  if (
+    pending.count === 0 &&
+    schemasPending.count === 0 &&
+    payloadsPending.count === 0
+  ) {
+    return;
+  }
+
+  database.transaction(() => {
+    database
+      .prepare("UPDATE mits_ticket SET priority = 'medium' WHERE priority = 'normal'")
+      .run();
+    database
+      .prepare("UPDATE mits_ticket SET priority = 'critical' WHERE priority = 'urgent'")
+      .run();
+
+    // String replacement on the JSON rather than parse-and-rewrite: the keys are
+    // known and quoted, so a targeted replace cannot touch a value that merely
+    // contains the word.
+    database
+      .prepare(
+        `UPDATE mits_ticket
+            SET payload = replace(
+                  replace(payload, '"priority":"normal"', '"priority":"medium"'),
+                  '"priority":"urgent"', '"priority":"critical"')
+          WHERE payload LIKE '%"priority":"normal"%'
+             OR payload LIKE '%"priority":"urgent"%'`,
+      )
+      .run();
+
+    // Admin-authored schemas copy the priority enum, so their stored definition
+    // still offers the old values until it is rewritten too.
+    database
+      .prepare(
+        `UPDATE mits_form_schema
+            SET definition = replace(
+                  replace(definition, '"normal"', '"medium"'),
+                  '"urgent"', '"critical"')
+          WHERE definition LIKE '%"normal"%' OR definition LIKE '%"urgent"%'`,
+      )
+      .run();
+  })();
+
+  console.info(
+    `[MITS] Prioritäten umbenannt: ${pending.count} Ticket(s), ${payloadsPending.count} Payload(s), ${schemasPending.count} Schema(ta).`,
+  );
 }
 
 /**
