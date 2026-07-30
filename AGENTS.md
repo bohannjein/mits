@@ -269,10 +269,31 @@ CSS-Keyframes (`gemini-drift`), damit sie der Compositor übernimmt.
 | — | Auth & RBAC (Better Auth, Rollen, Registrierungspolicy, Ticket-Persistenz) | ✅ |
 | 3 | KI-Routing, Vision-OCR, Dockerization für Portainer | ✅ |
 | 4 | Portal (Banner + Schnellzugriffe), Datei-Ablage, Formular-Builder | ✅ |
+| 5 | Modulares Portal-Dashboard (`portal_config`, FAQ, Status, Wartung) | ✅ |
+| 6 | Enterprise-Helpdesk — siehe **[ROADMAP.md](ROADMAP.md)** | Part 1 ✅, Part 2–5 offen |
 
-Noch offen: Board-Workflow (Zuweisung, Statuswechsel, Kommentare) und echtes OCR für
-gescannte Dokumente per Tesseract — letzteres bräuchte `pytesseract` plus
-`tesseract-ocr-deu` im Backend-Image und sprengt damit das Vier-Pakete-Limit.
+## ➡️ Aktueller Arbeitsstand
+
+**Der Helpdesk-Ausbau läuft in fünf Parts. Part 1 ist fertig (`0f68a17`), als nächstes
+kommt Part 2 (E-Mail & SMTP).** Der vollständige Plan mit Dateien, Entscheidungen und
+Stolperfallen steht in **[ROADMAP.md](ROADMAP.md)** — vor dem Weiterarbeiten dort lesen,
+nicht neu herleiten.
+
+| Part | Inhalt | Status |
+|---|---|---|
+| 1 | Ticket-Nummern, Standorte, Agenten-Workflow, Feature-Toggles, JSON-Cleanup | ✅ `0f68a17` |
+| 2 | E-Mail & SMTP (`nodemailer`, `/admin/settings/email`) | ⬜ **nächster** |
+| 3 | Suche & Deep-Filter | ⬜ |
+| 4 | Agenten-Dashboard & Techniker-Präsenz | ⬜ |
+| 5 | Formular-Builder (Canvas, bedingte Logik, abhängige Dropdowns) | ⬜ |
+
+Die Server-Funktionen für Part 3 und 4 sind bereits geschrieben und typgeprüft
+(`getTicketByNumberFor`, `listUnassignedTickets`, `listAssignedTickets`, `todayCounts`,
+`ticketCountsByLocation`, `parseTicketNumber`) — dort ansetzen, nicht neu bauen.
+
+Weiter offen und **nicht** Teil der fünf Parts: echtes OCR für gescannte Dokumente per
+Tesseract — bräuchte `pytesseract` plus `tesseract-ocr-deu` im Backend-Image und sprengt
+damit das Vier-Pakete-Limit.
 
 ## KI-Pipeline (Phase 3)
 
