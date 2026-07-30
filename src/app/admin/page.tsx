@@ -3,6 +3,7 @@ import Link from "next/link";
 import {
   BrainIcon,
   LayoutDashboardIcon,
+  MailIcon,
   MapPinIcon,
   MegaphoneIcon,
   ToggleRightIcon,
@@ -72,6 +73,12 @@ export default async function AdminPage() {
                 <Link href="/admin/locations">
                   <MapPinIcon strokeWidth={1.5} />
                   Standorte
+                </Link>
+              </Button>
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
+                <Link href="/admin/settings/email">
+                  <MailIcon strokeWidth={1.5} />
+                  E-Mail
                 </Link>
               </Button>
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">

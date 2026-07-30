@@ -25,6 +25,13 @@ Diese drei Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
    `border-border`, `bg-primary`, `text-muted-foreground`, `bg-destructive`, … Kein Hex, kein
    `rgb()`, kein `oklch()` und keine Tailwind-Palette (`bg-zinc-800`) außerhalb von
    `src/app/globals.css`. Neue Farbe = neues Token in `globals.css` (`:root` **und** `.dark`).
+
+   **Die einzige Ausnahme ist `src/lib/mail-templates.ts`.** Mail-Clients entfernen
+   `<style>`-Blöcke, lösen keine CSS-Custom-Properties auf, und Outlook rendert mit der
+   Word-Engine. `bg-card` und `var(--card)` kämen dort als unformatierter Text an, deshalb
+   Literalfarben inline und Tabellen-Layout statt Flexbox. Die Palette dort spiegelt das
+   Light-Theme — ein Postfach ist nicht themebar. Bei Token-Änderungen von Hand nachziehen.
+   Der Regel-2-Grep unten schließt die Datei deshalb aus.
 3. **Schema-First.** Es gibt keine Komponente pro Ticket-Typ (kein `Onboarding.tsx`). Ein
    Ticket-Typ ist ein `MITSFormSchema` (JSON Schema + `uiHints`); Formulare werden daraus
    dynamisch gerendert.
@@ -274,16 +281,16 @@ CSS-Keyframes (`gemini-drift`), damit sie der Compositor übernimmt.
 
 ## ➡️ Aktueller Arbeitsstand
 
-**Der Helpdesk-Ausbau läuft in fünf Parts. Part 1 ist fertig (`0f68a17`), als nächstes
-kommt Part 2 (E-Mail & SMTP).** Der vollständige Plan mit Dateien, Entscheidungen und
+**Der Helpdesk-Ausbau läuft in fünf Parts. Part 1 und 2 sind fertig, als nächstes kommt
+Part 3 (Suche & Deep-Filter).** Der vollständige Plan mit Dateien, Entscheidungen und
 Stolperfallen steht in **[ROADMAP.md](ROADMAP.md)** — vor dem Weiterarbeiten dort lesen,
 nicht neu herleiten.
 
 | Part | Inhalt | Status |
 |---|---|---|
 | 1 | Ticket-Nummern, Standorte, Agenten-Workflow, Feature-Toggles, JSON-Cleanup | ✅ `0f68a17` |
-| 2 | E-Mail & SMTP (`nodemailer`, `/admin/settings/email`) | ⬜ **nächster** |
-| 3 | Suche & Deep-Filter | ⬜ |
+| 2 | E-Mail & SMTP (`nodemailer`, `/admin/settings/email`) | ✅ |
+| 3 | Suche & Deep-Filter | ⬜ **nächster** |
 | 4 | Agenten-Dashboard & Techniker-Präsenz | ⬜ |
 | 5 | Formular-Builder (Canvas, bedingte Logik, abhängige Dropdowns) | ⬜ |
 
@@ -503,8 +510,10 @@ jeder andere Origin — `127.0.0.1`, eine LAN-IP, ein echter Hostname — geht d
 prüft genau den einen Fall, der ohnehin funktioniert, und lässt einen kaputten Deploy
 durchgehen.
 
-Regel-2-Check — muss leer bleiben:
+Regel-2-Check — muss leer bleiben. `mail-templates.ts` ist die dokumentierte Ausnahme
+(siehe Regel 2), Doc-Kommentare mit `#1001` sind Ticket-Nummern und keine Farben:
 
 ```bash
-grep -rnE "#[0-9a-fA-F]{3,8}\b|rgb\(|oklch\(" src --include=*.tsx --include=*.ts
+grep -rnE "#[0-9a-fA-F]{3,8}\b|rgb\(|oklch\(" src --include=*.tsx --include=*.ts \
+  | grep -v "mail-templates.ts"
 ```

@@ -329,6 +329,26 @@ export function isSmtpConfigured(settings: SmtpSettings): boolean {
   return settings.host.trim() !== "" && settings.from.trim() !== "";
 }
 
+/** Sentinel the admin form may post to mean "keep the stored password". */
+export const KEEP_SMTP_PASSWORD = "__keep__";
+
+/**
+ * Decide which password a save should persist.
+ *
+ * A password input is never populated on render, so a blank field means "I did
+ * not touch this" — treating it as "clear it" would wipe the credentials on every
+ * unrelated save of the mask. Clearing stays possible by entering whitespace,
+ * which trims to empty and is unambiguous.
+ *
+ * Extracted from `lib/smtp.ts` so it can be tested offline: silently emptying a
+ * stored password has no visible failure mode until the next mail does not arrive.
+ */
+export function resolveSmtpPassword(submitted: string, stored: string): string {
+  if (submitted === KEEP_SMTP_PASSWORD) return stored;
+  if (submitted === "") return stored;
+  return submitted.trim();
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
    Dynamic form schemas.
 

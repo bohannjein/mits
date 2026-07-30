@@ -9,6 +9,14 @@ import { setFeatureFlags } from "@/lib/features";
 import { saveFormSchema } from "@/lib/form-schemas";
 import { resolveFields } from "@/lib/forms/schema-to-zod";
 import { LocationError, replaceLocations } from "@/lib/locations";
+import { testMail } from "@/lib/mail-templates";
+import {
+  SmtpError,
+  getEffectiveSmtpSettings,
+  sendMail,
+  setSmtpSettings,
+  verifySmtp,
+} from "@/lib/smtp";
 import {
   setMaintenanceNotices,
   setPortalConfig,
@@ -27,7 +35,9 @@ import {
   PortalFaqSchema,
   PortalMaintenanceSchema,
   PortalServiceSchema,
+  SmtpSettingsSchema,
   isSafeResourceHref,
+  isSmtpConfigured,
   parseFormSchema,
 } from "@/types/mits";
 import { z } from "zod";
@@ -343,6 +353,86 @@ export async function saveLocationsAction(
     ok: true,
     message: `${saved.length} Standort(e) gespeichert, ${active} davon auswählbar.`,
   };
+}
+
+/* ── SMTP ───────────────────────────────────────────────────────────────── */
+
+export async function saveSmtpSettingsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  let saved;
+  try {
+    saved = setSmtpSettings(
+      SmtpSettingsSchema.parse({
+        host: String(formData.get("host") ?? ""),
+        port: String(formData.get("port") ?? "587"),
+        user: String(formData.get("user") ?? ""),
+        // Blank means keep — a password field is never populated on render, so
+        // treating blank as "clear" would wipe credentials on every save.
+        password: String(formData.get("password") ?? ""),
+        from: String(formData.get("from") ?? ""),
+        secure: formData.get("secure") === "on",
+        public_url: String(formData.get("public_url") ?? ""),
+      }),
+    );
+  } catch (error) {
+    if (error instanceof SmtpError) return { ok: false, error: error.message };
+    if (error instanceof Error) {
+      return { ok: false, error: `Eingaben ungültig: ${error.message.slice(0, 200)}` };
+    }
+    throw error;
+  }
+
+  revalidatePath("/admin/settings/email");
+
+  if (!isSmtpConfigured(saved)) {
+    return {
+      ok: true,
+      message:
+        "Gespeichert. Host oder Absenderadresse fehlen noch — es wird nichts versendet.",
+    };
+  }
+
+  return {
+    ok: true,
+    message: saved.public_url
+      ? "Gespeichert. Benachrichtigungen enthalten einen Link auf das Ticket."
+      : "Gespeichert. Ohne öffentliche Adresse gehen Mails ohne Ticket-Link hinaus.",
+  };
+}
+
+/**
+ * Verify the connection and send one mail to the acting admin.
+ *
+ * Deliberately to the admin's own address rather than a free-text field: a form
+ * that mails anywhere is an open relay for whoever reaches it.
+ */
+export async function sendTestMailAction(
+  _previous: ActionResult | null,
+  _formData: FormData,
+): Promise<ActionResult> {
+  const actor = await requireRole("admin");
+
+  const verified = await verifySmtp();
+  if (!verified.ok) {
+    return { ok: false, error: `Verbindung fehlgeschlagen: ${verified.reason}` };
+  }
+
+  const url = getEffectiveSmtpSettings().public_url
+    ? `${getEffectiveSmtpSettings().public_url}/tickets`
+    : null;
+
+  const mail = testMail(actor.email, url);
+  const sent = await sendMail({ to: actor.email, ...mail });
+
+  if (!sent.ok) {
+    return { ok: false, error: `Verbindung stand, Versand fehlgeschlagen: ${sent.reason}` };
+  }
+
+  return { ok: true, message: `Test-Mail an ${actor.email} versendet.` };
 }
 
 /* ── AI settings ────────────────────────────────────────────────────────── */

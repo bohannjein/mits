@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 
 import { canViewBoard } from "@/lib/auth/roles";
 import { requireUser, type SessionUser } from "@/lib/auth/session";
+import { ticketReplyMail } from "@/lib/mail-templates";
+import { sendNotification, ticketUrl } from "@/lib/smtp";
 import { CommentError, addComment } from "@/lib/ticket-comments";
 import {
   TicketUpdateError,
@@ -155,8 +157,9 @@ export async function addCommentAction(
     return { ok: false, error: "Unbekannte Sichtbarkeit." };
   }
 
+  let comment;
   try {
-    addComment(
+    comment = addComment(
       ticketId,
       auth.user,
       String(formData.get("body") ?? ""),
@@ -168,6 +171,35 @@ export async function addCommentAction(
   }
 
   revalidatePath(`/tickets/${ticketId}`);
+
+  /*
+   * Notify the reporter, under three conditions that all have to hold:
+   *
+   *   1. The comment is public. An internal note must never leave MITS, and this
+   *      is the second gate on that after `addComment` — the mail path is the one
+   *      place where a mistake cannot be taken back.
+   *   2. An agent wrote it. The reporter answering their own ticket should not be
+   *      mailed their own words back.
+   *   3. The recipient is not the author, so an agent filing a ticket for
+   *      themselves does not get a notification about their own reply.
+   *
+   * The comment is already stored at this point; a failed send is logged, not
+   * surfaced, because there is nothing the agent could do about it here.
+   */
+  if (
+    comment.visibility === "public" &&
+    comment.author_is_agent &&
+    auth.ticket.created_by_email !== comment.author_email
+  ) {
+    await sendNotification({
+      to: auth.ticket.created_by_email,
+      ...ticketReplyMail(
+        auth.ticket,
+        { author: comment.author_name, body: comment.body },
+        ticketUrl(auth.ticket.id),
+      ),
+    });
+  }
 
   return {
     ok: true,

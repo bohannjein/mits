@@ -1,4 +1,6 @@
 import { requireApiUser } from "@/lib/auth/session";
+import { ticketCreatedMail } from "@/lib/mail-templates";
+import { sendNotification, ticketUrl } from "@/lib/smtp";
 import {
   TicketValidationError,
   createTicket,
@@ -60,6 +62,24 @@ export async function POST(request: Request) {
 
   try {
     const ticket = createTicket(draft.data, user);
+
+    /*
+     * Notify after the ticket exists, and never let the mail decide whether it
+     * does. `createTicket` is synchronous and lives in a module that has no
+     * business knowing about SMTP, so the trigger sits here rather than inside
+     * it — the roadmap said "after the transaction", and outside the function is
+     * the honest version of that.
+     *
+     * Awaited rather than fired and forgotten: a serverless invocation can be
+     * frozen the moment the response is returned, which would drop the mail
+     * silently. `sendNotification` swallows its own failures and the SMTP client
+     * has short timeouts, so the worst case is a slower 201, not a lost ticket.
+     */
+    await sendNotification({
+      to: ticket.created_by_email,
+      ...ticketCreatedMail(ticket, ticketUrl(ticket.id)),
+    });
+
     return Response.json({ ticket }, { status: 201 });
   } catch (error) {
     if (error instanceof TicketValidationError) {

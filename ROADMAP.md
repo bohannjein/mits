@@ -1,7 +1,7 @@
 # Enterprise-Helpdesk — Umsetzungsplan
 
-Arbeitsstand des Helpdesk-Ausbaus. **Part 1 ist fertig und verifiziert** (Commit `0f68a17`).
-Nächster Schritt ist **Part 2**.
+Arbeitsstand des Helpdesk-Ausbaus. **Part 1 und Part 2 sind fertig und verifiziert.**
+Nächster Schritt ist **Part 3 (Suche & Deep-Filter)**.
 
 Jeder Part ist so geschnitten, dass er allein baubar, testbar und committebar ist. Die
 Reihenfolge folgt den Abhängigkeiten: E-Mail macht den Agenten-Workflow rund, Suche und
@@ -25,48 +25,31 @@ Commit `0f68a17`. Enthalten:
 
 ---
 
-## ⬜ Part 2 — E-Mail & SMTP
+## ✅ Part 2 — E-Mail & SMTP
 
-Gate: `feature_email_notifications` (Default an).
+Gate: `feature_email_notifications`. Dependency: `nodemailer` + `@types/nodemailer`.
 
-**Neue Dependency:** `nodemailer` + `@types/nodemailer`. Ein handgeschriebener SMTP-Client
-wäre ~200 Zeilen für AUTH, STARTTLS und MIME-Encoding — nicht die Stelle für Eigenbau.
+Gebaut: `lib/smtp.ts`, `lib/mail-templates.ts`, `app/admin/settings/email/`,
+`components/admin/email-settings-form.tsx`, `saveSmtpSettingsAction` +
+`sendTestMailAction`. Auslöser in `app/api/tickets/route.ts` (Eingang) und
+`app/tickets/[id]/actions.ts` (öffentliche Antwort).
 
-Schon vorhanden, nicht neu bauen:
+Abweichungen von der ursprünglichen Planung, mit Grund:
 
-- `SmtpSettingsSchema`, `DEFAULT_SMTP_SETTINGS`, `isSmtpConfigured` in `types/mits.ts`
-- `countPublicComments` in `lib/ticket-comments.ts`
-
-Zu bauen:
-
-| Datei | Inhalt |
-|---|---|
-| `lib/smtp.ts` | `getSmtpSettings` / `setSmtpSettings` (Key `smtp` in `mits_setting`), `sendMail`, `sendTestMail` |
-| `lib/mail-templates.ts` | Eingangsbestätigung + Antwort-Benachrichtigung, Button „Ticket im Browser öffnen“ auf `<public_url>/tickets/<id>` |
-| `app/admin/settings/email/page.tsx` | Maske + „Test-Mail senden“ |
-| `components/admin/email-settings-form.tsx` | Formular |
-| Action in `app/admin/actions.ts` | `saveSmtpSettingsAction`, `sendTestMailAction` |
-
-Auslöser:
-
-1. Ticket-Eingang → in `createTicket` **nach** der Transaktion, nicht darin
-2. Neue **öffentliche** Antwort → in `addCommentAction`, nur bei `visibility === "public"`
-
-Punkte, die beim Bauen zählen:
-
-- **Ein Mailfehler darf ein Ticket nicht scheitern lassen.** Versand nach dem Commit,
-  Fehler geloggt, nicht geworfen. Ein Ticket, das wegen eines toten SMTP-Servens nicht
-  angelegt wird, ist schlimmer als eine fehlende Mail.
-- **Leeres Passwortfeld heißt „gespeichertes behalten“**, nicht „löschen“ — sonst leert
-  jedes Speichern der Maske das Passwort. Schema-Kommentar sagt das schon.
-- **`public_url` ist Pflicht für den Link.** Eine Mail entsteht außerhalb eines Requests,
-  der Host ist dort nicht ableitbar. Ohne den Wert: Mail ohne Button, mit Hinweis.
-- Keine internen Notizen in Mails. Nie.
-- Empfänger ist `ticket.created_by_email`, nicht die Session — die Antwort schreibt der
-  Agent, empfangen soll der Melder.
-- Mail-HTML braucht Inline-CSS und Tabellen-Layout. Design-Tokens gelten hier **nicht**,
-  Mail-Clients kennen keine CSS-Variablen. Das ist die eine dokumentierte Ausnahme von
-  Regel 2 — beim Bauen in AGENTS.md vermerken.
+- **Eingangsmail sitzt im Route Handler, nicht in `createTicket`.** `createTicket` ist
+  synchron und hat mit SMTP nichts zu tun; „nach der Transaktion“ heißt hier ehrlicher
+  „außerhalb der Funktion“.
+- **`sendNotification` wird `await`ed.** Fire-and-forget würde in einer Serverless-Umgebung
+  beim Antworten eingefroren und die Mail lautlos verlieren. Fehler frisst die Funktion
+  selbst, Timeouts sind auf 10 s begrenzt.
+- **Test-Mail geht nur an die eigene Adresse.** Ein Formular mit freiem Empfängerfeld wäre
+  ein offenes Relay für jeden, der es erreicht.
+- **`mail-templates.ts` hat kein `import "server-only"`** — reine String-Funktionen, damit
+  das Escaping in `scripts/verify-forms.mts` prüfbar ist.
+- **Antwort-Trigger prüft drei Bedingungen:** öffentlich, von einem Agenten, und Empfänger
+  ≠ Autor. Sonst mailt MITS dem Melder seine eigenen Worte zurück.
+- **Regel-2-Ausnahme:** Mail-HTML nutzt Literalfarben und Tabellen-Layout, weil Mail-Clients
+  keine CSS-Variablen auflösen. In AGENTS.md vermerkt.
 
 ---
 

@@ -16,12 +16,16 @@ import {
   SOFTWARE_ACCESS_SCHEMA,
   USER_ONBOARDING_SCHEMA,
 } from "../src/lib/mock-schemas";
+import { ticketCreatedMail, ticketReplyMail } from "../src/lib/mail-templates";
 import {
   DEFAULT_PORTAL_FAQS,
+  KEEP_SMTP_PASSWORD,
+  MITSTicketSchema,
   PORTAL_WIDGET_ORDER,
   PortalConfigSchema,
   PortalFaqSchema,
   fillPortalText,
+  resolveSmtpPassword,
 } from "../src/types/mits";
 
 let failures = 0;
@@ -315,6 +319,102 @@ console.log("portal faq defaults");
       (topic) => DEFAULT_PORTAL_FAQS.some((faq) => faq.id.includes(topic)),
     ),
   );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Mail path.
+
+   Two rules with no visible failure mode. A blank password field that clears the
+   stored credentials looks fine until the next notification silently does not
+   arrive; an unescaped ticket title looks fine until someone files a ticket
+   called `<img onerror=…>` and it renders in a colleague's inbox.
+   ────────────────────────────────────────────────────────────────────────── */
+
+console.log("smtp password handling");
+{
+  check(
+    "blank keeps the stored password",
+    resolveSmtpPassword("", "gespeichert") === "gespeichert",
+  );
+  check(
+    "the sentinel keeps it too",
+    resolveSmtpPassword(KEEP_SMTP_PASSWORD, "gespeichert") === "gespeichert",
+  );
+  check(
+    "a new value replaces it",
+    resolveSmtpPassword("neu", "alt") === "neu",
+  );
+  check(
+    "whitespace clears it — the only way to unset",
+    resolveSmtpPassword("   ", "alt") === "",
+  );
+  check(
+    "a new value is trimmed",
+    resolveSmtpPassword("  neu  ", "alt") === "neu",
+  );
+}
+
+console.log("mail templates");
+{
+  const ticket = MITSTicketSchema.parse({
+    id: "t-1",
+    ticket_number: 1042,
+    location_id: null,
+    source: "legacy",
+    form_schema_id: "quick-ticket",
+    title: 'Drucker <script>alert("x")</script> & Co',
+    payload: { title: "x" },
+    status: "open",
+    priority: "normal",
+    created_by: "u-1",
+    created_by_email: "rita@example.invalid",
+    assigned_to: null,
+    created_at: "2026-07-30T10:00:00.000Z",
+  });
+
+  const created = ticketCreatedMail(ticket, "https://mits.example.invalid/tickets/t-1");
+  check("subject carries the number", created.subject.includes("TICK-1042"));
+  check("html carries the number", created.html.includes("TICK-1042"));
+  check(
+    "html carries the absolute link",
+    created.html.includes("https://mits.example.invalid/tickets/t-1"),
+  );
+  check("plain-text alternative exists", created.text.length > 50);
+  check(
+    "script tag is escaped in html",
+    !created.html.includes("<script>") && created.html.includes("&lt;script&gt;"),
+  );
+  check(
+    "ampersand is escaped in html",
+    created.html.includes("&amp; Co"),
+  );
+  check(
+    "no CSS custom properties — mail clients cannot resolve them",
+    !created.html.includes("var(--"),
+  );
+
+  const noUrl = ticketCreatedMail(ticket, null);
+  check(
+    "without a public url there is no button",
+    !noUrl.html.includes("Ticket im Browser"),
+  );
+  check(
+    "…and the reader is told where to look instead",
+    noUrl.html.includes("Meine Tickets"),
+  );
+
+  const reply = ticketReplyMail(
+    ticket,
+    { author: "Tim Technik", body: "Zeile eins\nZeile zwei <b>fett</b>" },
+    "https://mits.example.invalid/tickets/t-1",
+  );
+  check("reply body is quoted", reply.html.includes("Zeile eins"));
+  check(
+    "newlines become <br>, markup does not survive",
+    reply.html.includes("Zeile eins<br>Zeile zwei") &&
+      reply.html.includes("&lt;b&gt;fett&lt;/b&gt;"),
+  );
+  check("reply subject carries the number", reply.subject.includes("TICK-1042"));
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
