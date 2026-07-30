@@ -46,6 +46,11 @@ VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "llava")
 # a broken backend.
 TIMEOUT_SECONDS = float(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "120"))
 SERVICE_TOKEN = os.environ.get("MITS_SERVICE_TOKEN", "")
+#: Where the web app drops the generated shared token. Read lazily, because the
+#: web container usually creates it after this service has already started.
+SERVICE_TOKEN_FILE = os.environ.get(
+    "MITS_SERVICE_TOKEN_FILE", "/app/data/service-token"
+)
 MAX_IMAGES = int(os.environ.get("MITS_MAX_IMAGES", "4"))
 # ~8 MB of base64 per image. Larger screenshots are downscaled by the browser.
 MAX_IMAGE_CHARS = int(os.environ.get("MITS_MAX_IMAGE_CHARS", str(8 * 1024 * 1024)))
@@ -66,22 +71,53 @@ app = FastAPI(
 # ── Auth ────────────────────────────────────────────────────────────────────
 
 
+_token_cache: str | None = None
+
+
+def expected_token() -> str:
+    """The shared secret this service accepts.
+
+    ``MITS_SERVICE_TOKEN`` wins. Otherwise the token the web app generated into
+    the shared data volume is used, which is what lets the stack deploy with no
+    environment variables at all. Read on demand rather than at import time: the
+    web container normally writes the file after this process has started.
+    """
+    global _token_cache
+    if _token_cache:
+        return _token_cache
+    if SERVICE_TOKEN:
+        _token_cache = SERVICE_TOKEN
+        return _token_cache
+    try:
+        with open(SERVICE_TOKEN_FILE, encoding="utf-8") as handle:
+            token = handle.read().strip()
+    except OSError:
+        return ""
+    if len(token) >= 32:
+        _token_cache = token
+    return token
+
+
 async def require_service_token(
     x_mits_service_token: str | None = Header(default=None),
 ) -> None:
     """Only the MITS web app may call this service.
 
-    Fails closed: with no token configured the endpoint refuses every request
+    Fails closed: with no token available the endpoint refuses every request
     rather than running unauthenticated. The backend publishes no port in the
     compose file either, so this is the second lock, not the only one.
     """
-    if not SERVICE_TOKEN:
+    token = expected_token()
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="MITS_SERVICE_TOKEN is not configured on the backend.",
+            detail=(
+                "No service token available. Set MITS_SERVICE_TOKEN, or mount the "
+                f"MITS data volume so {SERVICE_TOKEN_FILE} is readable."
+            ),
         )
     if not x_mits_service_token or not secrets.compare_digest(
-        x_mits_service_token, SERVICE_TOKEN
+        x_mits_service_token, token
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -366,7 +402,8 @@ async def health() -> dict[str, Any]:
         "fallback_ollama_base_url": OLLAMA_BASE_URL,
         "fallback_text_model": TEXT_MODEL,
         "fallback_vision_model": VISION_MODEL,
-        "service_token_configured": bool(SERVICE_TOKEN),
+        "service_token_available": bool(expected_token()),
+        "service_token_source": "env" if SERVICE_TOKEN else "shared-volume",
         "note": "Effective settings are configured in the MITS UI and sent per request.",
     }
     try:

@@ -1,4 +1,5 @@
 import { canAdminister } from "@/lib/auth/roles";
+import { serviceToken } from "@/lib/auth/secret";
 import { getSessionUserFor } from "@/lib/auth/session";
 import { isSafeOllamaUrl } from "@/types/mits";
 
@@ -24,16 +25,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Keine Berechtigung." }, { status: 403 });
   }
 
-  const token = process.env.MITS_SERVICE_TOKEN?.trim();
-  if (!token) {
-    return Response.json(
-      {
-        error:
-          "MITS_SERVICE_TOKEN ist nicht konfiguriert — der KI-Dienst ist nicht ansprechbar.",
-      },
-      { status: 503 },
-    );
-  }
+  const token = serviceToken();
 
   let body: unknown;
   try {

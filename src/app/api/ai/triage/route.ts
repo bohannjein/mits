@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { getEffectiveAISettings } from "@/lib/ai-settings";
+import { serviceToken } from "@/lib/auth/secret";
 import { getSessionUserFor } from "@/lib/auth/session";
 import { listFormSchemas } from "@/lib/form-schemas";
 
@@ -33,18 +34,9 @@ export async function POST(request: Request) {
     return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
   }
 
-  const token = process.env.MITS_SERVICE_TOKEN?.trim();
-  if (!token) {
-    // Fail closed and say why, rather than sending an unauthenticated request
-    // the backend will reject with a less obvious error.
-    return Response.json(
-      {
-        error:
-          "MITS_SERVICE_TOKEN ist nicht konfiguriert — die KI-Analyse ist deaktiviert.",
-      },
-      { status: 503 },
-    );
-  }
+  // Read from the environment, or generated once into the data dir the backend
+  // shares — so there is nothing to configure for this to work.
+  const token = serviceToken();
 
   let body: unknown;
   try {

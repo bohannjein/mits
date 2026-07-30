@@ -1,13 +1,18 @@
 # MITS — deployable as a Portainer stack straight from the repository.
 #
-# Ollama is NOT part of this stack. Its address and both model names are
-# configured in the UI under /admin/settings/ai and stored in the database, so
-# nothing about the AI setup has to be pinned here. The OLLAMA_* variables below
-# are optional fallbacks for a first boot before anyone opens that page.
+# ZERO CONFIG: no variable has to be set. Leave Portainer's "Environment
+# variables" section empty and hit Deploy.
 #
-# If Ollama listens on the Docker host itself, use
-#   http://host.docker.internal:11434
-# which the extra_hosts entry below resolves.
+#   * Both secrets are GENERATED on first start and kept in the mits-data volume,
+#     so every instance gets its own. No default secret is shipped in this file —
+#     a constant here would let anyone who read the repository forge an admin
+#     session on any instance that never overrode it.
+#   * Ollama's address and both model names are configured in the UI under
+#     /admin/settings/ai. The OLLAMA_* entries below are only first-boot
+#     fallbacks; if Ollama runs on the Docker host, the default already fits
+#     thanks to the extra_hosts mapping.
+#
+# Every variable below is therefore optional. Set one only to override.
 
 services:
   mits-web:
@@ -20,18 +25,23 @@ services:
     ports:
       - "${MITS_WEB_PORT:-3000}:3000"
     environment:
-      # Required. Generate with: openssl rand -hex 32
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
-      # Public URL of this instance, e.g. https://mits.firma.de
+      # Signs session cookies. Unset: generated once into
+      # /app/data/auth-secret, so sessions survive restarts and redeploys.
+      # Override with `openssl rand -hex 32` if several instances share a volume.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      # Shared secret with mits-backend. Unset: generated once into
+      # /app/data/service-token, which the backend mounts read-only.
+      MITS_SERVICE_TOKEN: ${MITS_SERVICE_TOKEN:-}
+      # Public URL of this instance, e.g. https://mits.firma.de. Only needed
+      # behind a proxy that rewrites Host.
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-}
       MITS_TRUSTED_ORIGINS: ${MITS_TRUSTED_ORIGINS:-}
-      # Must match the backend's value — the web app authenticates with it.
-      MITS_SERVICE_TOKEN: ${MITS_SERVICE_TOKEN:?set MITS_SERVICE_TOKEN in .env}
       # Service name, not localhost: this is the compose network.
       MITS_BACKEND_URL: http://mits-backend:8000
       MITS_DATA_DIR: /app/data
     volumes:
-      # Survives image rebuilds — users, sessions, tickets and settings live here.
+      # Survives image rebuilds — users, sessions, tickets, uploads, settings and
+      # the generated secrets all live here.
       - mits-data:/app/data
     depends_on:
       mits-backend:
@@ -45,16 +55,22 @@ services:
     container_name: mits-backend
     restart: unless-stopped
     # No `ports`: the AI endpoint is reachable only from mits-web inside the
-    # stack. Publishing it would expose an unauthenticated-by-default surface to
-    # the host network.
+    # stack. Publishing it would put an endpoint that can be pointed at arbitrary
+    # hosts onto the host network.
     environment:
-      # All three are optional fallbacks — the effective values arrive with each
-      # request from the settings the admin saved in the UI.
+      MITS_SERVICE_TOKEN: ${MITS_SERVICE_TOKEN:-}
+      # Read when MITS_SERVICE_TOKEN is unset — the token the web app generated.
+      MITS_SERVICE_TOKEN_FILE: /app/data/service-token
+      # First-boot fallbacks only; the effective values arrive with each request
+      # from the settings the admin saved in the UI.
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_TEXT_MODEL: ${OLLAMA_TEXT_MODEL:-llama3.1}
       OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-llava}
       OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-120}
-      MITS_SERVICE_TOKEN: ${MITS_SERVICE_TOKEN:?set MITS_SERVICE_TOKEN in .env}
+    volumes:
+      # Read-only: the backend only needs to read the generated token. It must
+      # never write to the database or the uploads.
+      - mits-data:/app/data:ro
     extra_hosts:
       # Lets OLLAMA_BASE_URL point at an Ollama running on the Docker host.
       - "host.docker.internal:host-gateway"

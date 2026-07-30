@@ -245,6 +245,17 @@ Grenzen und Regeln:
   herabgestuft werden, und niemand kann sich selbst die Admin-Rolle entziehen.
 - **Domain-Whitelist:** Vergleich auf dem Teil nach dem **letzten** `@` und exakt —
   `firma.de` lässt weder `nichtfirma.de` noch `x@firma.de@fremd.de` zu.
+- **Kein hardcodiertes Secret — nirgends.** `docker-compose.yml` hat **keine**
+  Pflichtvariable, aber auch keinen Standardwert für ein Geheimnis: ein konstanter
+  Fallback im Repo wäre Session-Forgery auf jeder Standardinstallation. Stattdessen
+  erzeugt die Web-App beim ersten Bedarf `<data dir>/auth-secret` (Modus 0600) und
+  `<data dir>/service-token` (0644), beides pro Instanz zufällig. `mits-backend`
+  mountet dasselbe Volume read-only und liest den Token **lazy** über
+  `expected_token()` — die Datei entsteht erst beim ersten KI-Aufruf, also nach dem
+  Start des Backends. 0644 statt 0600, weil der Backend-Container unter einem anderen
+  Benutzer läuft; kein Verlust, denn wer das Volume lesen kann, liest ohnehin
+  `mits.db` mit den Sessions — und `mits-backend` veröffentlicht keinen Port.
+  Umgebungsvariablen überschreiben beide Werte, falls die Dienste kein Volume teilen.
 - **Ticket-Sichtbarkeit:** `listTicketsFor` entscheidet nach Rolle. `user` sieht nur
   eigene Tickets; `getTicketFor` antwortet bei fremdem Ticket mit `null` statt 403,
   damit sich keine IDs über den Statusunterschied ermitteln lassen.

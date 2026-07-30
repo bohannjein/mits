@@ -89,13 +89,13 @@ Vollständige Vorlage mit Kommentaren: [.env.example](.env.example).
 
 | Variable | Pflicht | Gilt für | Standard | Bedeutung |
 |---|---|---|---|---|
-**Nur zwei Variablen sind Pflicht.** Alles zur KI wird in der UI gepflegt, nicht in
-der Umgebung.
+**Keine Variable ist Pflicht.** Der Stack deployt mit leerem Environment: beide
+Geheimnisse werden beim ersten Start erzeugt, alles zur KI wird in der UI gepflegt.
 
 | Variable | Pflicht | Gilt für | Standard | Bedeutung |
 |---|---|---|---|---|
-| `BETTER_AUTH_SECRET` | **ja** (Docker) | web | generiert | HMAC-Schlüssel für Session-Cookies. `openssl rand -hex 32`. Außerhalb von Docker optional: MITS legt sonst einen Schlüssel unter `<Datenverzeichnis>/auth-secret` ab. Im Stack Pflicht, weil er sonst bei jedem Rebuild neu wäre und alle Sessions verfielen. |
-| `MITS_SERVICE_TOKEN` | **ja** | web + backend | — | Gemeinsames Geheimnis. Das Backend weist jede Anfrage ohne diesen Header ab und verweigert bei fehlender Konfiguration alles (fail closed). Beide Services brauchen denselben Wert. |
+| `BETTER_AUTH_SECRET` | nein | web | **erzeugt** | HMAC-Schlüssel für Session-Cookies. Ohne Angabe erzeugt MITS einen und legt ihn unter `<Datenverzeichnis>/auth-secret` ab — er überlebt Neustarts und Redeploys. Selbst setzen (`openssl rand -hex 32`) nur, wenn mehrere Instanzen Sessions teilen sollen oder das Datenverzeichnis nicht persistent ist. |
+| `MITS_SERVICE_TOKEN` | nein | web + backend | **erzeugt** | Gemeinsames Geheimnis. Ohne Angabe erzeugt die Web-App es unter `<Datenverzeichnis>/service-token`; das Backend mountet dasselbe Volume read-only und liest es dort. Nur nötig, wenn beide Dienste kein Volume teilen. |
 | `BETTER_AUTH_URL` | empfohlen | web | aus Request | Öffentliche URL, z. B. `https://mits.firma.de`. Ohne den Wert leitet Better Auth den Origin aus dem Request ab — hinter einem Proxy, der `Host` umschreibt, falsch. |
 | `MITS_TRUSTED_ORIGINS` | nein | web | leer | Weitere erlaubte Origins für die Auth-Endpoints, kommagetrennt. |
 | `MITS_WEB_PORT` | nein | compose | `3000` | Host-Port, auf dem `mits-web` veröffentlicht wird. |
@@ -111,6 +111,10 @@ der Umgebung.
 Portainer klont dieses Repository selbst und baut daraus beide Images. Es muss also
 nichts lokal geklont, gebaut oder in eine Registry geschoben werden — die Repo-URL
 genügt.
+
+**Zero Config:** Es gibt keine Pflichtvariable. Repo-URL eintragen, *Deploy* klicken,
+fertig. Beide Geheimnisse erzeugt MITS beim ersten Start selbst, die KI wird danach im
+Browser eingerichtet.
 
 > **Wichtig: „Web editor" funktioniert hier nicht.** Der Stack baut aus dem
 > Quellcode (`build:` mit `context: .`). Beim Web editor kennt Portainer nur die
@@ -137,16 +141,7 @@ ollama pull llava        # Texterkennung in Screenshots
 Ohne die Modelle läuft MITS trotzdem — die KI-Analyse meldet dann im Klartext,
 welches Modell fehlt.
 
-### 2. Zwei Geheimnisse erzeugen
-
-```bash
-openssl rand -hex 32     # -> BETTER_AUTH_SECRET
-openssl rand -hex 32     # -> MITS_SERVICE_TOKEN
-```
-
-Beide getrennt erzeugen, nicht denselben Wert zweimal nehmen.
-
-### 3. Stack anlegen
+### 2. Stack anlegen
 
 In Portainer: **Stacks** → **+ Add stack** → Name z. B. `mits` → Build method
 **Repository**.
@@ -168,23 +163,26 @@ Polling-Intervall (z. B. `5m`) setzen oder den Webhook kopieren und in GitHub un
 *Settings → Webhooks* eintragen. Dann deployt jeder Push auf `main` neu. Ohne das
 bleibt der Stack stehen, bis du *Pull and redeploy* drückst.
 
-### 4. Umgebungsvariablen eintragen
+### 3. Umgebungsvariablen: leer lassen
 
-Unter *Environment variables* → **Advanced mode** einfügen und die Werte ersetzen:
+**Nichts eintragen.** Der Bereich *Environment variables* bleibt leer:
+
+- `BETTER_AUTH_SECRET` und `MITS_SERVICE_TOKEN` werden beim ersten Start zufällig
+  erzeugt und im Volume `mits-data` abgelegt — pro Instanz eigene Werte. Es liegt
+  bewusst **kein** Standard-Secret in der Compose-Datei: ein konstanter Wert im
+  Repository würde es jedem erlauben, auf jeder Instanz eine Admin-Session zu
+  fälschen, die ihn nicht überschrieben hat.
+- Ollama-Adresse und Modelle stellst du nach dem Deploy in der UI ein (Schritt 5).
+
+Optional, falls die Instanz hinter einem Reverse Proxy hängt oder Port 3000 belegt
+ist — sonst weglassen:
 
 ```
-BETTER_AUTH_SECRET=<hex-aus-schritt-2>
-MITS_SERVICE_TOKEN=<hex-aus-schritt-2>
 BETTER_AUTH_URL=https://mits.firma.de
-MITS_WEB_PORT=3000
+MITS_WEB_PORT=8080
 ```
 
-Das ist alles. **Ollama-Adresse und Modelle werden hier nicht eingetragen** — die
-stellst du nach dem Deploy in der UI ein (Schritt 6). Nur diese beiden Geheimnisse
-sind in der Compose-Datei als Pflicht deklariert; fehlt eines, bricht das Deploy mit
-einer klaren Meldung ab, statt halb zu starten.
-
-### 5. Deploy the stack
+### 4. Deploy the stack
 
 Der erste Build dauert einige Minuten (Next-Build und beide Images) und legt das
 Volume `mits-data` an. Danach:
@@ -197,7 +195,7 @@ http://<host>:3000/register
 entscheiden, ob sich weitere Nutzer selbst registrieren dürfen — und aus welchen
 E-Mail-Domains.
 
-### 6. KI in der UI einrichten
+### 5. KI in der UI einrichten
 
 **Admin-Desk → KI-Einstellungen** (`/admin/settings/ai`):
 
@@ -216,7 +214,7 @@ E-Mail-Domains.
 Pro Feld gilt: Wert aus der UI → sonst Umgebungsvariable → sonst eingebauter
 Standard. Ein leeres Feld heißt also „Fallback nutzen", nicht „kaputt".
 
-### 7. Kontrollieren
+### 6. Kontrollieren
 
 ```bash
 # Erreicht das Backend seinen Fallback-Ollama? Welche Modelle liegen dort?
@@ -248,13 +246,14 @@ und Redirects landen auf dem falschen Host.
 
 | Symptom | Ursache |
 |---|---|
-| Deploy bricht sofort ab, „variable is not set" | `BETTER_AUTH_SECRET` oder `MITS_SERVICE_TOKEN` fehlt — nur diese zwei sind Pflicht. |
+| Deploy bricht sofort ab, „variable is not set" | Sollte nicht mehr vorkommen — keine Variable ist Pflicht. Tritt es auf: Stack zieht eine veraltete Compose-Datei, *Pull and redeploy*. |
+| KI-Tab meldet „kein Service-Token verfügbar" | `mits-backend` hat das Volume `mits-data` nicht gemountet, oder der erste KI-Aufruf lief noch nicht (der erzeugt die Datei). |
 | Build scheitert bei `npm ci` oder `pip install` | Docker-Host kommt nicht ins Internet oder ein Proxy fehlt. |
 | „failed to read dockerfile" | Build method war *Web editor* statt *Repository*. |
 | Login klappt, aber man bleibt abgemeldet | `BETTER_AUTH_URL` zeigt nicht auf die tatsächlich aufgerufene URL, oder HTTPS terminiert davor ohne passende Header. |
 | KI-Tab meldet „Ollama nicht erreichbar" | Basis-URL unter `/admin/settings/ai` mit „Verbindung testen" prüfen. Sie muss aus Sicht des **Containers** stimmen, nicht vom eigenen Rechner aus. |
 | KI meldet „Modell nicht vorhanden" | Modell auf dem Ollama-Host pullen, dann in den Einstellungen erneut testen und auswählen. |
-| Alle Sessions nach jedem Redeploy weg | `BETTER_AUTH_SECRET` war nicht gesetzt und wurde neu erzeugt. |
+| Alle Sessions nach jedem Redeploy weg | Das Volume `mits-data` wird nicht behalten — dort liegt der erzeugte `auth-secret`. |
 
 ## Roadmap
 
