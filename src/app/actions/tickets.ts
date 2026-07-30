@@ -148,6 +148,58 @@ export async function setTicketPriorityAction(
  * `addComment` refuses rather than downgrading: silently publishing a note meant
  * to stay internal is the worse failure.
  */
+/**
+ * Post a public reply and close the ticket in one step.
+ *
+ * One action rather than two calls from the client: the reply and the status
+ * change are what the agent means by "done", and two round-trips can leave a
+ * ticket answered but open if the second one fails. The comment is written first,
+ * so a failure there does not close a ticket nobody replied to.
+ *
+ * Deliberately public-only. "Answer and close" that quietly filed an internal
+ * note would close a ticket the reporter never heard about.
+ */
+export async function replyAndCloseAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, true);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  let comment;
+  try {
+    comment = addComment(
+      ticketId,
+      auth.user,
+      String(formData.get("body") ?? ""),
+      "public",
+    );
+  } catch (error) {
+    if (error instanceof CommentError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  setTicketStatus(ticketId, "closed");
+
+  revalidatePath(`/customer/tickets/${ticketId}`);
+  revalidatePath(`/mits/tickets/${ticketId}`);
+  revalidatePath("/mits");
+
+  if (auth.ticket.created_by_email !== comment.author_email) {
+    await sendNotification({
+      to: auth.ticket.created_by_email,
+      ...ticketReplyMail(
+        auth.ticket,
+        { author: comment.author_name, body: comment.body },
+        ticketUrl(auth.ticket.id),
+      ),
+    });
+  }
+
+  return { ok: true, message: "Antwort gesendet, Ticket geschlossen." };
+}
+
 /* ── Ticket links ───────────────────────────────────────────────────────── */
 
 export async function addTicketLinkAction(

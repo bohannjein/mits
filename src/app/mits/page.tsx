@@ -9,12 +9,16 @@ import { TicketSearch } from "@/components/tickets/ticket-search";
 import { TicketTable } from "@/components/tickets/ticket-table";
 import { Separator } from "@/components/ui/separator";
 import {
+  AGENT_SCOPE_LABELS,
   AGENT_VIEWS,
   AGENT_VIEW_LABELS,
-  filterForView,
+  filterFor,
   getSavedAgentView,
+  isAgentScope,
   isAgentView,
   saveAgentView,
+  viewsForScope,
+  type AgentScope,
   type AgentView,
 } from "@/lib/agent-views";
 import { canViewBoard } from "@/lib/auth/roles";
@@ -59,30 +63,43 @@ export default async function AgentQueuePage({
   }
 
   /*
-   * No `?view=` means "where I left off". The saved value is written on every
-   * explicit switch, so an agent who works the inbox lands on the inbox and one
-   * who lives in "Meine" lands there — without a settings page for it.
+   * Nothing in the query means "where I left off". The saved pair is written on
+   * every explicit switch, so an agent who works the pool inbox lands there and
+   * one who lives in their own escalated list lands there — no settings page.
    */
-  const requested = Array.isArray(params.view) ? params.view[0] : params.view;
-  const view: AgentView = isAgentView(requested)
-    ? requested
-    : getSavedAgentView(user.id);
+  const one = (value: string | string[] | undefined) =>
+    Array.isArray(value) ? value[0] : value;
 
-  if (isAgentView(requested)) saveAgentView(user.id, requested);
+  const requestedScope = one(params.scope);
+  const requestedView = one(params.view);
+  const saved = getSavedAgentView(user.id);
+
+  const scope: AgentScope = isAgentScope(requestedScope)
+    ? requestedScope
+    : saved.scope;
+
+  let view: AgentView = isAgentView(requestedView) ? requestedView : saved.view;
+  // The inbox does not exist in "Mein Bereich" — a saved or hand-typed value has
+  // to land somewhere real rather than on an empty tab.
+  if (!viewsForScope(scope).includes(view)) view = "open";
+
+  if (isAgentScope(requestedScope) || isAgentView(requestedView)) {
+    saveAgentView(user.id, { scope, view });
+  }
 
   // The tab's preset first, then the deep filters on top of it.
   const { filter, values, activeCount } = parseTicketQuery(params);
   const tickets = searchTickets(
-    { ...filterForView(view, user.id), ...filter },
+    { ...filterFor(scope, view, user.id), ...filter },
     user,
   );
 
-  // Counts for every tab, so the badges show where the work is. Five cheap
-  // indexed reads; the alternative is an agent clicking through to find out.
+  // Counts for the tabs actually shown, so the badges say where the work is.
+  // Cheap indexed reads; the alternative is an agent clicking through to find out.
   const counts = Object.fromEntries(
     AGENT_VIEWS.map((candidate) => [
       candidate,
-      searchTickets(filterForView(candidate, user.id), user).length,
+      searchTickets(filterFor(scope, candidate, user.id), user).length,
     ]),
   ) as Record<AgentView, number>;
 
@@ -102,9 +119,9 @@ export default async function AgentQueuePage({
               Queue
             </h1>
             <p className="mt-2 text-muted-foreground">
-              {AGENT_VIEW_LABELS[view]} — {tickets.length}{" "}
-              {tickets.length === 1 ? "Ticket" : "Tickets"}, angemeldet als{" "}
-              {user.email}.
+              {AGENT_SCOPE_LABELS[scope]} · {AGENT_VIEW_LABELS[view]} —{" "}
+              {tickets.length} {tickets.length === 1 ? "Ticket" : "Tickets"},
+              angemeldet als {user.email}.
             </p>
           </div>
 
@@ -112,7 +129,7 @@ export default async function AgentQueuePage({
 
           <div className="grid gap-8 lg:grid-cols-[1fr_20rem] lg:items-start">
             <div className="grid min-w-0 gap-4">
-              <QueueTabs active={view} counts={counts} />
+              <QueueTabs scope={scope} view={view} counts={counts} />
 
               {flags.feature_ticket_search && (
                 <>

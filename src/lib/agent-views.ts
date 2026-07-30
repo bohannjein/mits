@@ -4,25 +4,50 @@ import { db } from "@/lib/db/sqlite";
 import { OPEN_TICKET_STATUSES, type TicketFilter } from "@/lib/tickets";
 
 /* ──────────────────────────────────────────────────────────────────────────
-   The staff queue views.
+   The staff queue: a scope and a view.
 
-   Each tab is a preset over `searchTickets` (part 3) rather than its own query.
-   One place decides what "waiting" means, and the deep filters keep working on
-   top of a tab because both end up in the same filter object.
+   Scope answers "whose tickets", view answers "which of them". Splitting the two
+   is what removed the old "Meine" tab — that tab mixed both questions, so there
+   was no way to ask for "my waiting tickets" without a second tab for every
+   combination.
+
+   Each view is a preset over `searchTickets` rather than its own query, so the
+   deep filters keep working on top and one place decides what "waiting" means.
    ────────────────────────────────────────────────────────────────────────── */
 
-export const AGENT_VIEWS = ["inbox", "mine", "waiting", "escalated", "all"] as const;
+export const AGENT_SCOPES = ["pool", "mine"] as const;
+export type AgentScope = (typeof AGENT_SCOPES)[number];
+
+export const AGENT_SCOPE_LABELS: Record<AgentScope, string> = {
+  pool: "Team-Pool",
+  mine: "Mein Bereich",
+};
+
+export const AGENT_VIEWS = ["inbox", "open", "waiting", "escalated", "all"] as const;
 export type AgentView = (typeof AGENT_VIEWS)[number];
 
 export const AGENT_VIEW_LABELS: Record<AgentView, string> = {
   inbox: "Eingang",
-  mine: "Meine",
+  open: "Offen",
   waiting: "Wartend",
   escalated: "Eskaliert",
   all: "Alle",
 };
 
-export const DEFAULT_AGENT_VIEW: AgentView = "inbox";
+export const DEFAULT_AGENT_VIEW: AgentView = "open";
+export const DEFAULT_AGENT_SCOPE: AgentScope = "pool";
+
+/**
+ * The inbox is unassigned work, which is a pool concept by definition. In "Mein
+ * Bereich" it would always be empty, so it is hidden rather than shown as a tab
+ * that can never contain anything.
+ */
+export const POOL_ONLY_VIEWS: AgentView[] = ["inbox"];
+
+export const viewsForScope = (scope: AgentScope): AgentView[] =>
+  scope === "pool"
+    ? [...AGENT_VIEWS]
+    : AGENT_VIEWS.filter((view) => !POOL_ONLY_VIEWS.includes(view));
 
 export function isAgentView(value: unknown): value is AgentView {
   return (
@@ -30,57 +55,91 @@ export function isAgentView(value: unknown): value is AgentView {
   );
 }
 
+export function isAgentScope(value: unknown): value is AgentScope {
+  return (
+    typeof value === "string" && (AGENT_SCOPES as readonly string[]).includes(value)
+  );
+}
+
 /**
- * Turn a tab into a filter.
+ * Build the filter for a scope and view.
  *
- * `escalated` reads high and critical, which are the two priorities above the
- * default — the point of the tab is "needs looking at now", not a single value.
+ * `open` deliberately includes tickets that already have an owner — it is "still
+ * being worked on", not "nobody has touched it". That distinction is the whole
+ * point of having a separate inbox: without it, an agent picking up a ticket
+ * would make it vanish from the only list that showed active work.
  */
-export function filterForView(view: AgentView, agentId: string): TicketFilter {
+export function filterFor(
+  scope: AgentScope,
+  view: AgentView,
+  agentId: string,
+): TicketFilter {
+  const base: TicketFilter =
+    scope === "mine" ? { assignedTo: agentId } : {};
+
   switch (view) {
     case "inbox":
-      return { unassignedOnly: true, statusIn: OPEN_TICKET_STATUSES };
-    case "mine":
-      return { assignedTo: agentId, statusIn: OPEN_TICKET_STATUSES };
+      // Unassigned by definition, so the scope's assignee clause is dropped
+      // rather than combined into a contradiction.
+      return { unassignedOnly: true, status: "open" };
+    case "open":
+      return { ...base, statusIn: OPEN_TICKET_STATUSES };
     case "waiting":
-      return { status: "waiting_user" };
+      return { ...base, status: "waiting_user" };
     case "escalated":
-      // The two priorities above the default. Part 6 renames `urgent` to
-      // `critical`; the enum is the single source, so this follows the rename.
-      return { priorityIn: ["high", "critical"], statusIn: OPEN_TICKET_STATUSES };
+      return { ...base, priorityIn: ["high", "critical"], statusIn: OPEN_TICKET_STATUSES };
     case "all":
-      return {};
+      return base;
   }
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
    Saved start view.
 
-   One `mits_setting` row per agent rather than a table: it is a single short
-   string per user, written on every queue visit and read once. A table would buy
-   nothing and need its own migration.
+   One `mits_setting` row per agent: a short string, written on every explicit
+   switch and read once. A table would need its own migration and buy nothing.
    ────────────────────────────────────────────────────────────────────────── */
 
 const key = (userId: string) => `agent_view:${userId}`;
 
-export function getSavedAgentView(userId: string): AgentView {
+interface SavedView {
+  scope: AgentScope;
+  view: AgentView;
+}
+
+export function getSavedAgentView(userId: string): SavedView {
   const row = db
     .prepare("SELECT value FROM mits_setting WHERE key = ?")
     .get(key(userId)) as { value: string } | undefined;
 
-  if (!row) return DEFAULT_AGENT_VIEW;
+  const fallback: SavedView = {
+    scope: DEFAULT_AGENT_SCOPE,
+    view: DEFAULT_AGENT_VIEW,
+  };
+  if (!row) return fallback;
 
-  // Stored as a bare string, so a value from a build that knew a view this one
-  // does not falls back instead of rendering an empty queue.
   const parsed = safeJsonParse(row.value);
-  return isAgentView(parsed) ? parsed : DEFAULT_AGENT_VIEW;
+
+  // Older rows stored the bare view string, before scopes existed. Read them
+  // rather than resetting somebody's start view on upgrade.
+  if (isAgentView(parsed)) return { scope: DEFAULT_AGENT_SCOPE, view: parsed };
+
+  if (parsed && typeof parsed === "object") {
+    const candidate = parsed as { scope?: unknown; view?: unknown };
+    return {
+      scope: isAgentScope(candidate.scope) ? candidate.scope : fallback.scope,
+      view: isAgentView(candidate.view) ? candidate.view : fallback.view,
+    };
+  }
+
+  return fallback;
 }
 
-export function saveAgentView(userId: string, view: AgentView): void {
+export function saveAgentView(userId: string, saved: SavedView): void {
   db.prepare(
     `INSERT INTO mits_setting (key, value) VALUES (?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-  ).run(key(userId), JSON.stringify(view));
+  ).run(key(userId), JSON.stringify(saved));
 }
 
 function safeJsonParse(value: string): unknown {

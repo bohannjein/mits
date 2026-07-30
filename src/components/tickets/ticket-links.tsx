@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -60,9 +61,12 @@ export interface LinkRow {
 export function TicketLinks({
   ticketId,
   links,
+  /** Sidebar variant: tighter card, no description, stacked add form. */
+  compact = false,
 }: {
   ticketId: string;
   links: LinkRow[];
+  compact?: boolean;
 }) {
   const [addResult, addAction, adding] = useActionState(addTicketLinkAction, null);
   const [removeResult, removeAction, removing] = useActionState(
@@ -73,13 +77,22 @@ export function TicketLinks({
   const busy = adding || removing;
 
   return (
-    <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
+    <Card
+      className={cn(
+        "border border-border bg-card ring-0 shadow-elev-1",
+        compact ? "rounded-2xl" : "rounded-3xl",
+      )}
+    >
       <CardHeader>
-        <CardTitle className="text-lg font-medium">Verknüpfungen</CardTitle>
-        <CardDescription className="mt-1 leading-relaxed">
-          Bezug zu anderen Tickets. Nur Tickets, die du selbst öffnen darfst,
-          erscheinen hier.
-        </CardDescription>
+        <CardTitle className={compact ? "text-sm font-medium" : "text-lg font-medium"}>
+          Verknüpfungen
+        </CardTitle>
+        {!compact && (
+          <CardDescription className="mt-1 leading-relaxed">
+            Bezug zu anderen Tickets. Nur Tickets, die du selbst öffnen darfst,
+            erscheinen hier.
+          </CardDescription>
+        )}
       </CardHeader>
 
       <CardContent className="grid gap-4">
@@ -132,7 +145,13 @@ export function TicketLinks({
           </ul>
         )}
 
-        <form action={addAction} className="grid gap-3 sm:grid-cols-[13rem_1fr_auto] sm:items-end">
+        <form
+          action={addAction}
+          className={cn(
+            "grid gap-3",
+            !compact && "sm:grid-cols-[13rem_1fr_auto] sm:items-end",
+          )}
+        >
           <input type="hidden" name="ticketId" value={ticketId} />
 
           <div className="grid gap-2">
