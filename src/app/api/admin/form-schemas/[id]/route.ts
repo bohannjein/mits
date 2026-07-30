@@ -1,5 +1,5 @@
 import { canAdminister } from "@/lib/auth/roles";
-import { getSessionUserFor } from "@/lib/auth/session";
+import { requireApiUser } from "@/lib/auth/session";
 import { getFormSchema } from "@/lib/form-schemas";
 
 /* Loads one schema into the builder. Admin only — a form definition names internal
@@ -9,10 +9,9 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const user = await getSessionUserFor(request);
-  if (!user) {
-    return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if ("response" in auth) return auth.response;
+  const user = auth.user;
   if (!canAdminister(user.role)) {
     return Response.json({ error: "Keine Berechtigung." }, { status: 403 });
   }

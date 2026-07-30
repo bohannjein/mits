@@ -36,6 +36,14 @@ services:
       # behind a proxy that rewrites Host.
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-}
       MITS_TRUSTED_ORIGINS: ${MITS_TRUSTED_ORIGINS:-}
+      # First administrator, created on first start only — and only while the
+      # instance has none. Unset: admin@mits.local with the built-in password
+      # from the repository, which is therefore PUBLIC. Set this to avoid that.
+      # Either way the account can do nothing but change its own password until
+      # it has been changed, so an unset value is a first-run inconvenience
+      # rather than an open door.
+      MITS_DEFAULT_ADMIN_EMAIL: ${MITS_DEFAULT_ADMIN_EMAIL:-}
+      MITS_DEFAULT_ADMIN_PASSWORD: ${MITS_DEFAULT_ADMIN_PASSWORD:-}
       # Service name, not localhost: this is the compose network.
       MITS_BACKEND_URL: http://mits-backend:8000
       MITS_DATA_DIR: /app/data

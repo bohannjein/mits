@@ -11,6 +11,7 @@ import { requireUser } from "@/lib/auth/session";
 import { getFormSchema, listCatalogSchemas } from "@/lib/form-schemas";
 import { QUICK_TICKET_SCHEMA } from "@/lib/mock-schemas";
 import { getActiveAnnouncements } from "@/lib/portal";
+import { TicketSource } from "@/types/mits";
 
 export const metadata: Metadata = {
   title: "Neues Ticket — MITS",
@@ -18,9 +19,18 @@ export const metadata: Metadata = {
     "Ticket klassisch, über den geführten Service-Katalog oder per KI-Assistent erfassen.",
 };
 
-export default async function NewTicketPage() {
+export default async function NewTicketPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mode?: string }>;
+}) {
   // Authoritative guard — the proxy only redirects early.
   const user = await requireUser("/tickets/new");
+
+  // Validated against the enum rather than cast: `?mode=` is user input, and an
+  // unknown value should open the default tab, not render nothing.
+  const { mode } = await searchParams;
+  const initialMode = TicketSource.safeParse(mode).data;
 
   // Resolved on the server so builder-published schemas appear without a rebuild.
   // The quick-ticket form may itself be overridden by a stored version.
@@ -63,6 +73,7 @@ export default async function NewTicketPage() {
           <TriModalContainer
             quickTicketSchema={quickTicketSchema}
             catalogSchemas={catalogSchemas}
+            initialMode={initialMode}
           />
         </div>
       </main>

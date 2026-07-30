@@ -69,11 +69,15 @@ backend/
   Dockerfile.backend       python:3.13-slim, unprivilegierter User
 src/
   proxy.ts                 Route-Gate (Next 16: früher middleware.ts)
+  instrumentation.ts       register(): Standard-Admin beim Serverstart
   app/
     globals.css            alle Design-Tokens
-    page.tsx               Startseite
-    page.tsx               Portal: Banner + Schnellzugriffe + Eingangs-Kacheln
+    page.tsx               Portal: angemeldet = Begrüßung + Kacheln + offene
+                           Tickets + Banner + Schnellzugriffe;
+                           abgemeldet = Login-Maske
     (auth)/login|register  Anmeldung / Registrierung
+    settings/profile/      eigenes Profil + Passwortwechsel
+    settings/actions.ts    changeOwnPassword (räumt must_change_password)
     forbidden/             Landung für angemeldet-aber-zu-wenig-Rechte
     tickets/page.tsx       eigene Tickets
     tickets/new/page.tsx   Ticket-Eingang (Tri-Modal)
@@ -93,7 +97,8 @@ src/
   components/
     branding/              ThemeProvider, MITSLogo
     dashboard/             announcement-banner, resource-grid,
-                           intake-modes (Client: Motion-Kacheln der Startseite)
+                           portal-actions (Client: die zwei Portal-Kacheln),
+                           open-tickets-panel (Client: Live-Liste per TanStack Query)
     layout/app-header.tsx  Header (Server Component) mit UserMenu
     providers/             QueryProvider
     auth/                  login-form, register-form, user-menu
@@ -112,8 +117,11 @@ src/
   lib/
     auth/roles.ts           Rollen + Hierarchie (frei von Node-Imports!)
     auth/secret.ts          Datenverzeichnis + Session-Secret (kein DB-Import!)
+    auth/bootstrap.ts       Seed-Fenster für den Standard-Admin (importfrei!)
     auth/server.ts          betterAuth-Konfiguration + Schema-Bootstrap
-    auth/session.ts         requireUser / requireRole / getSessionUserFor
+    auth/seed-admin.ts      ensureDefaultAdmin + clearMustChangePassword
+    auth/session.ts         requireUser / requireRole / requireApiUser /
+                            requireUserForPasswordChange
     auth/client.ts          Browser-Client (signIn/signUp/signOut)
     db/sqlite.ts            Verbindung + MITS-Tabellen
     settings.ts             Registrierungspolicy (mits_setting)
@@ -198,7 +206,7 @@ Zuordnung, falls doch etwas auftaucht:
 Schema-IDs, Modell-Tags. Zählwerte und Labels sind Sans.
 
 Bewegung läuft über `framer-motion` mit **Spring-Physics**, nie mit `duration`-Easing.
-Referenz-Werte in `components/dashboard/intake-modes.tsx` (`ENTRANCE`, `LIFT`) und
+Referenz-Werte in `components/dashboard/portal-actions.tsx` (`ENTRANCE`, `LIFT`) und
 `tri-modal-container.tsx` (`PILL`, `PANEL`). `useReducedMotion()` wird explizit abgefragt —
 framer-motion tut das nicht von selbst. Rein dekorative Endlos-Animationen laufen als
 CSS-Keyframes (`gemini-drift`), damit sie der Compositor übernimmt.
@@ -277,6 +285,32 @@ Grenzen und Regeln:
 
 - **Rollen:** `user` < `technician` < `admin`. Vergleiche immer über `hasAtLeast`,
   nie über `===`. Unbekannte Rollenwerte fallen auf `user` zurück, nie nach oben.
+- **Standard-Admin (Seeding):** `instrumentation.ts` ruft beim Serverstart
+  `ensureDefaultAdmin()`. Tut nichts, solange die Instanz **irgendeinen** Admin hat —
+  die Bedingung ist „null Admins", nicht „schon mal gelaufen", damit ein
+  wiederhergestelltes Backup ebenfalls aufgeholt wird. Ohne Admin: existiert die
+  Seed-Adresse schon, wird sie **hochgestuft** (Passwort bleibt unangetastet), sonst wird
+  `admin@mits.local` mit `Admin123!` angelegt.
+
+  Beides überschreibbar: `MITS_DEFAULT_ADMIN_EMAIL`, `MITS_DEFAULT_ADMIN_PASSWORD`.
+
+  **Das eingebaute Passwort steht in diesem Repository und ist damit öffentlich.**
+  Deshalb ist `must_change_password` ein echtes Gate, keine Anzeige:
+
+  - `requireUser` leitet **jede** geschützte Seite auf `/settings/profile` um.
+  - `requireApiUser` antwortet in **jedem** Route Handler mit `403`.
+  - Nur `requireUserForPasswordChange` überspringt das Gate — der Name macht die
+    Ausnahme an der Aufrufstelle sichtbar, und nur `/settings/profile` benutzt ihn.
+  - Das Flag wird aus der **Datenbank** gelesen, nicht aus dem Session-Cookie: der
+    Cookie-Cache lebt 60 s, das Konto wäre nach dem Wechsel noch eine Minute gesperrt.
+  - `input: false` wie bei `role` — ein Client kann sein eigenes Gate nicht räumen.
+    Gelöscht wird es ausschließlich von `changeOwnPassword`, also von dem Codepfad, der
+    das Passwort tatsächlich geändert hat. Ein direkter Aufruf von
+    `/api/auth/change-password` ändert das Passwort, räumt das Flag aber **nicht**.
+
+  Das Seeding ist auf `NEXT_PHASE !== phase-production-build` beschränkt. `next build`
+  versucht `/` zu prerendern und bricht erst beim Cookie-Zugriff ab — bis dahin ist
+  Modul-Code schon gelaufen. Ohne den Guard läge eine geseedete `mits.db` im Image-Layer.
 - **Registrierung:** E-Mail + Passwort (min. 10 Zeichen), keine E-Mail-Verifikation
   (es ist kein Mailversand konfiguriert — eine aktivierte Verifikation würde alle
   aussperren). Das **erste** Konto einer Instanz wird immer angelegt und erhält

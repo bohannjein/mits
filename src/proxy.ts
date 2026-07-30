@@ -60,5 +60,10 @@ function redirectToLogin(request: NextRequest, returnTo: string) {
 // Explicit prefixes instead of a negative lookahead: nothing static is matched,
 // so no chance of the gate accidentally swallowing CSS or images.
 export const config = {
-  matcher: ["/admin/:path*", "/board/:path*", "/tickets/:path*"],
+  matcher: [
+    "/admin/:path*",
+    "/board/:path*",
+    "/tickets/:path*",
+    "/settings/:path*",
+  ],
 };

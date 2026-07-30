@@ -1,4 +1,4 @@
-import { getSessionUserFor } from "@/lib/auth/session";
+import { requireApiUser } from "@/lib/auth/session";
 import { openUploadFor } from "@/lib/storage";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -13,10 +13,9 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ fileId: string }> },
 ) {
-  const user = await getSessionUserFor(request);
-  if (!user) {
-    return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if ("response" in auth) return auth.response;
+  const user = auth.user;
 
   const { fileId } = await params;
   const upload = openUploadFor(fileId, user);

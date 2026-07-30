@@ -17,10 +17,13 @@ import { inferAdditionalFields } from "better-auth/client/plugins";
 export const authClient = createAuthClient({
   plugins: [
     inferAdditionalFields({
-      // `input: false` mirrors the server field. Besides matching reality, it
-      // keeps `role` out of the sign-up argument type — the client must not be
-      // able to ask for a role at registration.
-      user: { role: { type: "string", input: false } },
+      // `input: false` mirrors the server fields. Besides matching reality, it
+      // keeps both out of the sign-up argument type — the client must not be
+      // able to ask for a role, nor to clear its own password gate.
+      user: {
+        role: { type: "string", input: false },
+        mustChangePassword: { type: "boolean", input: false },
+      },
     }),
   ],
 });

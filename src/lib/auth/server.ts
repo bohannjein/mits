@@ -4,6 +4,7 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 
+import { isSeedingAdmin } from "@/lib/auth/bootstrap";
 import { DEFAULT_ROLE } from "@/lib/auth/roles";
 import { authSecret } from "@/lib/auth/secret";
 import { db } from "@/lib/db/sqlite";
@@ -56,6 +57,19 @@ export const authOptions = {
         // client could POST `role: "admin"` to /sign-up/email and escalate.
         input: false,
       },
+      /**
+       * Set on the seeded administrator, whose password is a documented
+       * default. While it is true the session may do nothing but change that
+       * password — see `requireUser`. `input: false` for the same reason as
+       * `role`: a client must not be able to clear its own gate.
+       */
+      mustChangePassword: {
+        type: "boolean",
+        required: false,
+        defaultValue: false,
+        input: false,
+        fieldName: "must_change_password",
+      },
     },
   },
 
@@ -83,6 +97,14 @@ export const authOptions = {
           // Otherwise a fresh instance with registration disabled by default
           // would have no way to ever create an administrator.
           if (isFirstUser()) {
+            return { data: { ...user, role: "admin" } };
+          }
+
+          // The seeder recovers an instance that has users but no administrator
+          // — a database restored from a partial backup, say. Scoped to the one
+          // address the seeder is creating, so a sign-up racing this cannot slip
+          // through as admin.
+          if (isSeedingAdmin(user.email)) {
             return { data: { ...user, role: "admin" } };
           }
 

@@ -1,7 +1,8 @@
-import { getSessionUserFor } from "@/lib/auth/session";
+import { requireApiUser } from "@/lib/auth/session";
 import {
   TicketValidationError,
   createTicket,
+  listOwnTickets,
   listTicketsFor,
 } from "@/lib/tickets";
 import { MITSTicketDraftSchema } from "@/types/mits";
@@ -11,21 +12,30 @@ import { MITSTicketDraftSchema } from "@/types/mits";
 
    Authorization is enforced here, not in the proxy: route handlers are reachable
    directly and the proxy is only a fast path. Every request re-reads the session
-   from the database.
+   from the database, and `requireApiUser` additionally refuses an account that
+   still has to change a default password.
    ────────────────────────────────────────────────────────────────────────── */
 
 export async function GET(request: Request) {
-  const user = await getSessionUserFor(request);
-  if (!user) return unauthorized();
+  const auth = await requireApiUser(request);
+  if ("response" in auth) return auth.response;
 
-  // Scope comes from the role, never from a query parameter — a plain user
-  // cannot ask for anyone else's tickets.
-  return Response.json({ tickets: listTicketsFor(user) });
+  // `?scope=own` narrows a technician's or admin's listing to their own tickets
+  // — what the portal's "my tickets" panel needs. Narrowing only: the role still
+  // sets the ceiling, so this parameter can never widen what is returned.
+  const scope = new URL(request.url).searchParams.get("scope");
+  const tickets =
+    scope === "own"
+      ? listOwnTickets(auth.user.id)
+      : listTicketsFor(auth.user);
+
+  return Response.json({ tickets });
 }
 
 export async function POST(request: Request) {
-  const user = await getSessionUserFor(request);
-  if (!user) return unauthorized();
+  const auth = await requireApiUser(request);
+  if ("response" in auth) return auth.response;
+  const user = auth.user;
 
   let body: unknown;
   try {
@@ -60,8 +70,4 @@ export async function POST(request: Request) {
     }
     throw error;
   }
-}
-
-function unauthorized() {
-  return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
 }

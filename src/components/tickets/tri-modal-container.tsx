@@ -9,7 +9,7 @@ import {
   TriangleAlertIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { SchemaForm } from "@/components/forms/schema-form";
 import { AiChatTab } from "@/components/tickets/ai-chat-tab";
@@ -74,15 +74,36 @@ export function TriModalContainer({
   quickTicketSchema,
   /** Everything the guided catalogue offers. */
   catalogSchemas,
+  /** Tab to open, from `?mode=` — the portal tiles deep-link into a mode. */
+  initialMode,
 }: {
   quickTicketSchema: MITSFormSchema;
   catalogSchemas: MITSFormSchema[];
+  initialMode?: TicketSource;
 }) {
   const router = useRouter();
   // Both tabs' AI proposal and the wizard resolve ids against the same list.
   const allSchemas = [quickTicketSchema, ...catalogSchemas];
-  const mode = useIntakeStore((state) => state.mode);
+  const storeMode = useIntakeStore((state) => state.mode);
   const setMode = useIntakeStore((state) => state.setMode);
+
+  /*
+   * `initialMode` cannot simply be written into the store: this component also
+   * renders on the server, where the store is a module-level singleton shared
+   * across requests — one visitor's `?mode=` would leak into another's render.
+   *
+   * So the prop wins for the first paint and an effect hands control to the
+   * store afterwards. Server and client agree on that first render, so there is
+   * no hydration mismatch and no visible flash of the default tab.
+   */
+  const [storeOwnsMode, setStoreOwnsMode] = useState(!initialMode);
+  useEffect(() => {
+    if (!initialMode) return;
+    setMode(initialMode);
+    setStoreOwnsMode(true);
+  }, [initialMode, setMode]);
+
+  const mode = storeOwnsMode ? storeMode : initialMode!;
   const lastDraft = useIntakeStore((state) => state.lastDraft);
   const acceptDraft = useIntakeStore((state) => state.acceptDraft);
   const dismissDraft = useIntakeStore((state) => state.dismissDraft);

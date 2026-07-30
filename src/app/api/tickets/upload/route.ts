@@ -1,4 +1,4 @@
-import { getSessionUserFor } from "@/lib/auth/session";
+import { requireApiUser } from "@/lib/auth/session";
 import {
   MAX_UPLOADS_PER_REQUEST,
   MAX_UPLOAD_BYTES,
@@ -15,10 +15,9 @@ import {
    ────────────────────────────────────────────────────────────────────────── */
 
 export async function POST(request: Request) {
-  const user = await getSessionUserFor(request);
-  if (!user) {
-    return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if ("response" in auth) return auth.response;
+  const user = auth.user;
 
   let form: FormData;
   try {

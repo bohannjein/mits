@@ -47,6 +47,8 @@ export const PROTECTED_PREFIXES: { prefix: string; role: MITSRole }[] = [
   { prefix: "/admin", role: "admin" },
   { prefix: "/board", role: "technician" },
   { prefix: "/tickets", role: "user" },
+  // Own profile and password. Any signed-in role, but never anonymous.
+  { prefix: "/settings", role: "user" },
 ];
 
 /** The strictest rule matching this path, or null when the path is public. */

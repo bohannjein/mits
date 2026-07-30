@@ -49,6 +49,27 @@ export function listUsers(): ManagedUser[] {
   }));
 }
 
+/**
+ * Whether this account still has to replace a seeded default password.
+ *
+ * Read straight from the table on purpose. The value also travels in Better
+ * Auth's session-cache cookie, but that cookie lives for 60 seconds — trusting
+ * it would keep an account locked out for up to a minute after it successfully
+ * changed its password, and would delay a freshly set flag by just as long.
+ * The gate is a security control, so it follows the same rule as the role
+ * checks: the authoritative answer comes from the database.
+ *
+ * A missing row means there is no account left to protect, so it is not gated.
+ */
+export function mustChangePassword(userId: string): boolean {
+  const row = db
+    .prepare("SELECT must_change_password AS flag FROM user WHERE id = ?")
+    .get(userId) as { flag: unknown } | undefined;
+
+  // SQLite has no boolean type: the column comes back as 0 or 1.
+  return row ? Boolean(row.flag) : false;
+}
+
 /** Number of accounts that currently hold the admin role. */
 export function countAdmins(): number {
   const row = db

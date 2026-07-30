@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { getEffectiveAISettings } from "@/lib/ai-settings";
 import { serviceToken } from "@/lib/auth/secret";
-import { getSessionUserFor } from "@/lib/auth/session";
+import { requireApiUser } from "@/lib/auth/session";
 import { listFormSchemas } from "@/lib/form-schemas";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -29,10 +29,9 @@ const TriageRequestSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const user = await getSessionUserFor(request);
-  if (!user) {
-    return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
-  }
+  const auth = await requireApiUser(request);
+  if ("response" in auth) return auth.response;
+  const user = auth.user;
 
   // Read from the environment, or generated once into the data dir the backend
   // shares — so there is nothing to configure for this to work.

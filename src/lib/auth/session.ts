@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { hasAtLeast, toRole, type MITSRole } from "@/lib/auth/roles";
 import { auth, ensureAuthSchema } from "@/lib/auth/server";
+import { mustChangePassword } from "@/lib/users";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Authoritative session access.
@@ -15,12 +16,20 @@ import { auth, ensureAuthSchema } from "@/lib/auth/server";
    one of these helpers, which hit the database rather than trusting a cookie.
    ────────────────────────────────────────────────────────────────────────── */
 
+/** Where a gated session is allowed to go, and nowhere else. */
+export const PASSWORD_CHANGE_PATH = "/settings/profile";
+
 export interface SessionUser {
   id: string;
   name: string;
   email: string;
   role: MITSRole;
   emailVerified: boolean;
+  /**
+   * Set on the seeded administrator until it replaces the documented default
+   * password. A session carrying this may only change that password.
+   */
+  mustChangePassword: boolean;
 }
 
 function toSessionUser(user: {
@@ -37,6 +46,9 @@ function toSessionUser(user: {
     // Unknown values degrade to "user" — never to a higher privilege.
     role: toRole(user.role),
     emailVerified: user.emailVerified === true,
+    // Deliberately not read from `user.mustChangePassword`: that value comes out
+    // of the 60-second session-cache cookie. See `mustChangePassword`.
+    mustChangePassword: mustChangePassword(user.id),
   };
 }
 
@@ -56,14 +68,67 @@ export async function getSessionUserFor(
   return session?.user ? toSessionUser(session.user) : null;
 }
 
-/** Page guard: redirects to the login form, preserving where the user wanted to go. */
+/**
+ * Page guard: redirects to the login form, preserving where the user wanted to go.
+ *
+ * Also enforces the password-change gate. That is on purpose in the *shared*
+ * guard rather than in each page: an account with a published default password
+ * must not be able to reach anything by virtue of a page author forgetting the
+ * check. The one page that may skip it calls `requireUserForPasswordChange`,
+ * which is named so the exception is visible at the call site.
+ */
 export async function requireUser(returnTo?: string): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) {
     const target = returnTo ? `?next=${encodeURIComponent(returnTo)}` : "";
     redirect(`/login${target}`);
   }
+  if (user.mustChangePassword) {
+    redirect(PASSWORD_CHANGE_PATH);
+  }
   return user;
+}
+
+/**
+ * The gated variant, for `/settings/profile` only. Returns the user even when
+ * `mustChangePassword` is set — otherwise the redirect above would loop.
+ */
+export async function requireUserForPasswordChange(): Promise<SessionUser> {
+  const user = await getSessionUser();
+  if (!user) redirect(`/login?next=${encodeURIComponent(PASSWORD_CHANGE_PATH)}`);
+  return user;
+}
+
+/**
+ * Route-handler guard. Route handlers cannot redirect a fetch usefully, so the
+ * gate answers with a status the client can act on. Every handler that changes
+ * or reads data calls this rather than `getSessionUserFor` directly.
+ */
+export async function requireApiUser(
+  request: Request,
+): Promise<{ user: SessionUser } | { response: Response }> {
+  const user = await getSessionUserFor(request);
+
+  if (!user) {
+    return {
+      response: Response.json({ error: "Nicht angemeldet." }, { status: 401 }),
+    };
+  }
+
+  if (user.mustChangePassword) {
+    return {
+      response: Response.json(
+        {
+          error:
+            "Das Passwort dieses Kontos muss zuerst geändert werden.",
+          redirect: PASSWORD_CHANGE_PATH,
+        },
+        { status: 403 },
+      ),
+    };
+  }
+
+  return { user };
 }
 
 /**
