@@ -311,6 +311,23 @@ Grenzen und Regeln:
   Das Seeding ist auf `NEXT_PHASE !== phase-production-build` beschränkt. `next build`
   versucht `/` zu prerendern und bricht erst beim Cookie-Zugriff ab — bis dahin ist
   Modul-Code schon gelaufen. Ohne den Guard läge eine geseedete `mits.db` im Image-Layer.
+- **Trusted Origins:** `trustedOrigins` ist eine **Funktion des Requests**, kein statisches
+  Array. Better Auth vertraut sonst nur der `baseURL` plus `localhost` — für ein
+  selbstgehostetes MITS unbrauchbar, weil der Hostname erst beim Deploy entsteht
+  (`mits.firma.de`, eine LAN-IP, `dubuntulocal:3000`). Ohne das wäre `BETTER_AUTH_URL`
+  eine Pflichtvariable und das Zero-Config-Deployment nicht zu halten.
+
+  Abgeleitet wird aus `X-Forwarded-Host`, sonst `Host` — also aus dem Host, den der
+  Client **angefragt** hat, mit beiden Schemata (hinter einem TLS-Proxy ohne
+  `X-Forwarded-Proto` ist das Schema nicht bestimmbar, der Host trägt die Bedeutung).
+
+  **Der `Origin`-Header wird niemals zurückgespiegelt.** Genau das wäre das Loch: bei
+  einem CSRF-Angriff setzt der Browser `Origin: https://evil.example`, während `Host`
+  diese Instanz bleibt — die zwei passen nicht zueinander, der Request fällt durch.
+  Würde man `Origin` als vertrauenswürdig übernehmen, wäre `evil.example` per Definition
+  vertrauenswürdig und die Prüfung wirkungslos. Host-Header-Injection greift hier nicht:
+  MITS verschickt keine Mail, es gibt also keinen aus dem Host gebauten Link, den ein
+  gefälschter Wert umlenken könnte.
 - **Registrierung:** E-Mail + Passwort (min. 10 Zeichen), keine E-Mail-Verifikation
   (es ist kein Mailversand konfiguriert — eine aktivierte Verifikation würde alle
   aussperren). Das **erste** Konto einer Instanz wird immer angelegt und erhält
@@ -391,8 +408,20 @@ Die Next-App braucht dann `MITS_BACKEND_URL=http://localhost:8000` und denselben
 `MITS_SERVICE_TOKEN`.
 
 Zu beachten, wenn Auth-Endpoints per `curl`/`fetch` angesprochen werden: Better Auth
-lehnt zustandsändernde Requests ohne vertrauenswürdigen `Origin`-Header mit
-`403 Missing or null Origin` ab. Das ist der CSRF-Schutz, kein Fehler.
+lehnt zustandsändernde Requests ohne vertrauenswürdigen `Origin` mit
+`403 INVALID_ORIGIN` ab. Das ist der CSRF-Schutz, kein Fehler — `Origin` **und** `Host`
+mitschicken, und zwar passend zueinander:
+
+```bash
+curl -H "Origin: http://127.0.0.1:3100" -H "Content-Type: application/json" \
+  -d '{"email":"…","password":"…"}' http://127.0.0.1:3100/api/auth/sign-in/email
+```
+
+**Nicht nur gegen `localhost` testen.** Better Auth vertraut diesem Namen per Default;
+jeder andere Origin — `127.0.0.1`, eine LAN-IP, ein echter Hostname — geht den Weg über
+`trustedOrigins` in `lib/auth/server.ts`. Ein Test ausschließlich gegen `localhost`
+prüft genau den einen Fall, der ohnehin funktioniert, und lässt einen kaputten Deploy
+durchgehen.
 
 Regel-2-Check — muss leer bleiben:
 

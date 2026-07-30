@@ -17,6 +17,64 @@ import { getAuthSettings, isEmailDomainAllowed } from "@/lib/settings";
    verification stays off rather than pretending to send mail nobody receives.
    ────────────────────────────────────────────────────────────────────────── */
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Trusted origins for a self-hosted instance.
+
+   Better Auth trusts its `baseURL` plus `localhost`, and rejects everything
+   else with INVALID_ORIGIN. For MITS that default is wrong: the hostname is
+   whoever deploys it — `mits.firma.de`, a bare LAN IP, `dubuntulocal:3000` —
+   and none of that is knowable at build time. Requiring BETTER_AUTH_URL would
+   make the zero-config deployment promised in docker-compose.yml impossible to
+   keep, because a fresh stack simply could not log in.
+
+   So the origin is derived per request from the host the client asked for.
+
+   ── Why this is not a hole in the CSRF protection ──
+
+   The attack this guards against is evil.com making a victim's browser POST
+   here with the victim's cookies. In that request the browser sets
+   `Origin: https://evil.com` while `Host` stays this instance — so the two do
+   not match and the request is still rejected. What is emphatically NOT done
+   here is echoing the request's own `Origin` header back as trusted; that
+   would trust evil.com by definition and disable the check entirely.
+
+   A caller can of course forge `Host`/`X-Forwarded-Host` on a request it makes
+   itself, but that buys nothing: to pass the check it must also set a matching
+   `Origin`, and a page cannot set either header on a cross-site form post. A
+   `fetch` that tries needs CORS preflight approval, which never comes.
+
+   Host-header injection is the other usual worry, and it does not apply: MITS
+   sends no mail, so there is no reset link built from the host that a poisoned
+   value could redirect.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** Explicitly configured origins. These win and are always trusted. */
+function configuredOrigins(): string[] {
+  const origins = (process.env.MITS_TRUSTED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  const baseUrl = process.env.BETTER_AUTH_URL?.trim();
+  if (baseUrl) origins.push(baseUrl);
+
+  return origins;
+}
+
+/** The origin this very request came in on, from `Host`. */
+function requestOrigins(request?: Request): string[] {
+  if (!request) return [];
+
+  const host =
+    request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  if (!host) return [];
+
+  // Both schemes on purpose: behind a TLS-terminating proxy that does not set
+  // x-forwarded-proto there is no way to tell which one the browser used, and
+  // the host is the part that carries the security meaning anyway.
+  return [`http://${host}`, `https://${host}`];
+}
+
 /** True while the instance has no users at all — the bootstrap window. */
 function isFirstUser(): boolean {
   const row = db.prepare("SELECT COUNT(*) AS count FROM user").get() as
@@ -32,10 +90,10 @@ export const authOptions = {
   // Only set when known: Better Auth otherwise derives the origin from the
   // request, which is what a self-hosted instance behind a proxy needs.
   baseURL: process.env.BETTER_AUTH_URL?.trim() || undefined,
-  trustedOrigins: (process.env.MITS_TRUSTED_ORIGINS ?? "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean),
+  trustedOrigins: (request) => [
+    ...configuredOrigins(),
+    ...requestOrigins(request),
+  ],
 
   emailAndPassword: {
     enabled: true,
