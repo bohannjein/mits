@@ -7,14 +7,25 @@ import { isRole } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
 import { saveFormSchema } from "@/lib/form-schemas";
 import { resolveFields } from "@/lib/forms/schema-to-zod";
-import { setPortalContent } from "@/lib/portal";
+import {
+  setMaintenanceNotices,
+  setPortalConfig,
+  setPortalContent,
+  setPortalFaqs,
+  setPortalServices,
+} from "@/lib/portal";
 import { normaliseDomains, setAuthSettings } from "@/lib/settings";
 import { RoleChangeError, setUserRole } from "@/lib/users";
 import {
+  PortalConfigSchema,
   PortalContentSchema,
+  PortalFaqSchema,
+  PortalMaintenanceSchema,
+  PortalServiceSchema,
   isSafeResourceHref,
   parseFormSchema,
 } from "@/types/mits";
+import { z } from "zod";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Admin server actions.
@@ -153,6 +164,117 @@ export async function savePortalContentAction(
   };
 }
 
+/* ── Portal layout, FAQ and operations ──────────────────────────────────── */
+
+/**
+ * Read a JSON payload out of a hidden form field.
+ *
+ * Every portal editor posts its whole list as one JSON string, so the shape of
+ * the parse and the shape of the error are identical for all of them.
+ */
+function parsePayload<T>(
+  formData: FormData,
+  field: string,
+  schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: { issues: { message: string }[] } } },
+): { ok: true; data: T } | { ok: false; error: string } {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(String(formData.get(field) ?? ""));
+  } catch {
+    return { ok: false, error: "Eingaben konnten nicht gelesen werden." };
+  }
+
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Eingaben sind unvollständig.",
+    };
+  }
+  return { ok: true, data: parsed.data };
+}
+
+/** Both the portal and the intake page read portal settings. */
+function revalidatePortal(): void {
+  revalidatePath("/");
+  revalidatePath("/admin/portal");
+  revalidatePath("/tickets/new");
+}
+
+export async function savePortalConfigAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const payload = parsePayload(formData, "config", PortalConfigSchema);
+  if (!payload.ok) return { ok: false, error: payload.error };
+
+  const config = setPortalConfig(payload.data);
+  revalidatePortal();
+
+  const active = config.widget_order.filter(
+    (key) => config.enabled_widgets[key],
+  ).length;
+
+  return {
+    ok: true,
+    message: `Layout gespeichert — ${active} von ${config.widget_order.length} Widgets aktiv.`,
+  };
+}
+
+export async function savePortalFaqsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const payload = parsePayload(formData, "faqs", z.array(PortalFaqSchema));
+  if (!payload.ok) return { ok: false, error: payload.error };
+
+  const faqs = setPortalFaqs(payload.data);
+  revalidatePortal();
+
+  return {
+    ok: true,
+    message:
+      faqs.length === 0
+        ? "FAQ geleert — der Selbsthilfe-Block wird nicht mehr angezeigt."
+        : `${faqs.length} FAQ-Eintrag/-Einträge gespeichert.`,
+  };
+}
+
+export async function savePortalOperationsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const services = parsePayload(
+    formData,
+    "services",
+    z.array(PortalServiceSchema),
+  );
+  if (!services.ok) return { ok: false, error: services.error };
+
+  const maintenance = parsePayload(
+    formData,
+    "maintenance",
+    z.array(PortalMaintenanceSchema),
+  );
+  if (!maintenance.ok) return { ok: false, error: maintenance.error };
+
+  setPortalServices(services.data);
+  setMaintenanceNotices(maintenance.data);
+  revalidatePortal();
+
+  const shown = maintenance.data.filter((notice) => notice.active).length;
+  return {
+    ok: true,
+    message: `${services.data.length} Dienst(e) und ${shown} sichtbare Wartungsmeldung(en) gespeichert.`,
+  };
+}
+
 /* ── AI settings ────────────────────────────────────────────────────────── */
 
 export async function saveAISettingsAction(
@@ -242,6 +364,6 @@ export async function saveFormSchemaAction(
 
   return {
     ok: true,
-    message: `„${schema.title}" gespeichert — ${fieldCount} Feld(er), ab sofort im Service-Katalog.`,
+    message: `„${schema.title}“ gespeichert — ${fieldCount} Feld(er), ab sofort im Service-Katalog.`,
   };
 }

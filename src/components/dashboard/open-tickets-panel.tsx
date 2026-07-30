@@ -55,8 +55,11 @@ async function fetchOwnTickets(): Promise<MITSTicket[]> {
 
 export function OpenTicketsPanel({
   initialTickets,
+  /** Overridden by the portal's widget_titles. */
+  title = "Meine offenen Tickets",
 }: {
   initialTickets: MITSTicket[];
+  title?: string;
 }) {
   const { data, isFetching, refetch } = useQuery({
     queryKey: ["tickets", "own"],
@@ -73,9 +76,9 @@ export function OpenTicketsPanel({
     .slice(0, 6);
 
   return (
-    <section aria-label="Meine offenen Tickets" className="grid gap-3">
+    <section aria-label={title} className="grid gap-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="label-industrial">Meine offenen Tickets</h2>
+        <h2 className="label-industrial">{title}</h2>
         <div className="flex items-center gap-1">
           <Button
             type="button"

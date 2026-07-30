@@ -16,6 +16,13 @@ import {
   SOFTWARE_ACCESS_SCHEMA,
   USER_ONBOARDING_SCHEMA,
 } from "../src/lib/mock-schemas";
+import {
+  DEFAULT_PORTAL_FAQS,
+  PORTAL_WIDGET_ORDER,
+  PortalConfigSchema,
+  PortalFaqSchema,
+  fillPortalText,
+} from "../src/types/mits";
 
 let failures = 0;
 
@@ -196,6 +203,117 @@ console.log("software access");
   check(
     "empty optional date accepted",
     zod.safeParse({ ...base, valid_until: "" }).success,
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Portal configuration normalisation.
+
+   Here for the same reason as the compiler above: it has no visible failure
+   mode. A stored config that fails to parse falls back to the defaults, and a
+   portal quietly showing default widgets in default order looks exactly like a
+   portal an admin never configured.
+
+   Both cases below were real bugs. Zod 4's `record` is exhaustive when keyed by
+   an enum, and `array(enum)` rejects an unknown member — so a partial or
+   slightly stale row threw away the admin's whole layout instead of letting the
+   transforms repair it.
+   ────────────────────────────────────────────────────────────────────────── */
+
+console.log("portal config");
+{
+  const defaults = PortalConfigSchema.parse({});
+  check(
+    "empty object yields every default",
+    defaults.hero_title === "Guten Tag!" &&
+      defaults.ticket_button_label === "Zum Ticketsystem" &&
+      defaults.widget_order.length === PORTAL_WIDGET_ORDER.length,
+  );
+
+  const partialTitles = PortalConfigSchema.safeParse({
+    widget_titles: { faq: "Wissensdatenbank" },
+    widget_order: ["downloads", "faq"],
+  });
+  check("partial widget_titles parses", partialTitles.success);
+  check(
+    "one renamed title keeps the others",
+    partialTitles.success &&
+      partialTitles.data.widget_titles.faq === "Wissensdatenbank" &&
+      partialTitles.data.widget_titles.outages === "Aktuelle Störungen",
+  );
+  check(
+    "a partial section does not discard widget_order",
+    partialTitles.success &&
+      partialTitles.data.widget_order[0] === "downloads" &&
+      partialTitles.data.widget_order[1] === "faq",
+  );
+
+  const partialToggles = PortalConfigSchema.safeParse({
+    enabled_widgets: { status: false },
+  });
+  check("partial enabled_widgets parses", partialToggles.success);
+  check(
+    "unnamed widgets stay enabled",
+    partialToggles.success &&
+      partialToggles.data.enabled_widgets.status === false &&
+      partialToggles.data.enabled_widgets.faq === true,
+  );
+
+  const messyOrder = PortalConfigSchema.safeParse({
+    widget_order: ["faq", "does-not-exist", "outages", "faq"],
+  });
+  check("unknown key in widget_order does not fail the parse", messyOrder.success);
+  check(
+    "unknown dropped, duplicate collapsed, missing appended",
+    messyOrder.success &&
+      messyOrder.data.widget_order.length === PORTAL_WIDGET_ORDER.length &&
+      messyOrder.data.widget_order[0] === "faq" &&
+      messyOrder.data.widget_order[1] === "outages" &&
+      new Set(messyOrder.data.widget_order).size === PORTAL_WIDGET_ORDER.length,
+  );
+
+  check(
+    "a blank title falls back for that key only",
+    PortalConfigSchema.parse({ widget_titles: { faq: "   " } }).widget_titles
+      .faq === "Selbsthilfe",
+  );
+
+  // Re-parsing a parsed config is what every save does: the form posts back the
+  // transformed object. A non-idempotent schema would reject the admin's own data.
+  const roundTrip = PortalConfigSchema.safeParse(defaults);
+  check("parse is idempotent", roundTrip.success);
+
+  check(
+    "{name} is replaced",
+    fillPortalText("Guten Tag, {name}!", "Jana") === "Guten Tag, Jana!",
+  );
+  check(
+    "text without a placeholder is untouched",
+    fillPortalText("Guten Tag!", "Jana") === "Guten Tag!",
+  );
+}
+
+console.log("portal faq defaults");
+{
+  check("six default entries", DEFAULT_PORTAL_FAQS.length === 6);
+  check(
+    "every default parses",
+    DEFAULT_PORTAL_FAQS.every((faq) => PortalFaqSchema.safeParse(faq).success),
+  );
+  check(
+    "order_index is contiguous from zero",
+    DEFAULT_PORTAL_FAQS.every((faq, index) => faq.order_index === index),
+  );
+  check(
+    "ids are unique",
+    new Set(DEFAULT_PORTAL_FAQS.map((faq) => faq.id)).size ===
+      DEFAULT_PORTAL_FAQS.length,
+  );
+  check(
+    "covers the six documented topics",
+    ["referenzbenutzer", "rechte", "hardware", "netzlaufwerk", "sgate", "xphone"].every(
+      (topic) => DEFAULT_PORTAL_FAQS.some((faq) => faq.id.includes(topic)),
+    ),
   );
 }
 

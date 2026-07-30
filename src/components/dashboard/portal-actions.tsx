@@ -47,11 +47,18 @@ const ENTRANCE = {
 
 const LIFT = { type: "spring", stiffness: 420, damping: 30, mass: 0.6 } as const;
 
-export function PortalActions() {
+export function PortalActions({
+  /** From the portal config — `ticket_button_label`. */
+  label,
+}: {
+  label?: string;
+}) {
   const reduceMotion = useReducedMotion();
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <section aria-label={label ?? "Ticket erfassen"} className="grid gap-3">
+      {label && <h2 className="label-industrial">{label}</h2>}
+      <div className="grid gap-4 sm:grid-cols-2">
       {ACTIONS.map(({ href, icon: Icon, title, gemini }, index) => (
         <motion.div
           key={href}
@@ -101,6 +108,7 @@ export function PortalActions() {
           </Card>
         </motion.div>
       ))}
-    </div>
+      </div>
+    </section>
   );
 }

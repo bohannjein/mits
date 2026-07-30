@@ -83,7 +83,8 @@ src/
     tickets/new/page.tsx   Ticket-Eingang (Tri-Modal)
     board/page.tsx         alle Tickets (technician + admin)
     admin/page.tsx         Registrierungspolicy + Rollen (admin)
-    admin/portal/          Systemmeldungen + Schnellzugriffe (admin)
+    admin/portal/          Portal-Editor in vier Tabs: Layout & Texte, FAQ,
+                           Betrieb, Meldungen & Kacheln (admin)
     admin/settings/ai/     Ollama-URL + Modellauswahl (admin)
     admin/forms/builder/   Split-Screen-Formular-Builder (admin)
     admin/actions.ts       Server Actions, prüfen die Rolle selbst
@@ -98,7 +99,11 @@ src/
     branding/              ThemeProvider, MITSLogo
     dashboard/             announcement-banner, resource-grid,
                            portal-actions (Client: die zwei Portal-Kacheln),
-                           open-tickets-panel (Client: Live-Liste per TanStack Query)
+                           open-tickets-panel (Client: Live-Liste per TanStack Query),
+                           faq-accordion (Client), service-status,
+                           maintenance-notice
+    admin/                 … portal-layout-form (Widgets + Texte),
+                           faq-editor, portal-operations-form
     layout/app-header.tsx  Header (Server Component) mit UserMenu
     providers/             QueryProvider
     auth/                  login-form, register-form, user-menu
@@ -126,7 +131,8 @@ src/
     db/sqlite.ts            Verbindung + MITS-Tabellen
     settings.ts             Registrierungspolicy (mits_setting)
     ai-settings.ts          Ollama-URL + Modelle (mits_setting), Env als Fallback
-    portal.ts               Banner + Schnellzugriffe (mits_setting)
+    portal.ts               Banner, Schnellzugriffe, Layout, FAQ, Status,
+                            Wartung — fünf Keys in mits_setting
     form-schemas.ts         Schema-Store: Built-ins + DB-Overrides
     storage.ts              Datei-Ablage auf Platte + Zugriffsprüfung
     users.ts                Benutzerliste + Rollenwechsel
@@ -161,6 +167,49 @@ Eintrag in `MITSFieldWidget` **und** in `FIELD_REGISTRY`.
 **Schemata immer über `lib/form-schemas.ts` auflösen, nie über `mock-schemas.ts`** — sonst
 sind Builder-Änderungen unsichtbar. Client-Komponenten bekommen die Liste als Prop von der
 Seite; sie dürfen den Store nicht selbst lesen (`server-only`).
+
+## Modulares Portal
+
+Die Startseite ist nicht verdrahtet, sondern konfiguriert. `portal_config` in `mits_setting`
+bestimmt, welche Widgets es gibt, in welcher Reihenfolge und unter welcher Überschrift;
+`page.tsx` baut eine `Record<PortalWidgetKey, ReactNode>` und rendert daraus nur, was
+`widget_order.filter(enabled_widgets)` übrig lässt. Eine Instanz anzupassen ist damit eine
+Admin-Aufgabe, kein Commit.
+
+| Setting-Key | Inhalt |
+|---|---|
+| `portal` | Systemmeldungen + Schnellzugriffe (unverändert) |
+| `portal_config` | Hero-Texte, `ticket_button_label`, `enabled_widgets`, `widget_titles`, `widget_order` |
+| `portal_faqs` | FAQ-Einträge, `order_index` beim Speichern aus der Listenposition neu geschrieben |
+| `portal_status` | Dienste + Zustand für das Systemstatus-Widget |
+| `portal_maintenance` | Angekündigte Wartungsfenster |
+
+Fünf Keys statt ein Blob, weil jeder Editor eigenständig speichert — zwei Admins in zwei
+Tabs überschreiben sich nicht gegenseitig unbeteiligte Abschnitte.
+
+**`hero_title` und `hero_subtitle` kennen `{name}`** (Vorname aus der Session). Ohne
+Platzhalter bleibt der Text für alle gleich; für anonyme Besucher löst `{name}` zu nichts auf.
+
+**Ein Widget ohne Inhalt rendert `null`**, auch eingeschaltet — dieselbe Regel wie bei
+`ResourceGrid` und `AnnouncementBanner`. Eine frische Instanz zeigt deshalb nur FAQ und
+Tickets, nicht vier leere Karten.
+
+### Zwei Zod-4-Fallen, die hier zweimal zugeschlagen haben
+
+`PortalConfigSchema` normalisiert absichtlich statt zu validieren, und das braucht die
+richtigen Zod-Bausteine:
+
+- **`z.record(Enum, …)` ist in Zod 4 exhaustiv.** Ein `widget_titles` mit nur einem Key
+  scheitert am Parse — und ein gescheiterter Parse verwirft die *ganze* Config, also auch
+  Reihenfolge und Schalter. Deshalb `z.partialRecord`.
+- **`z.array(Enum)` lehnt ein unbekanntes Element ab**, statt es die Transform verwerfen zu
+  lassen. Deshalb ist `widget_order` ein `z.array(z.string())`, das in der Transform gegen
+  `PortalWidgetKey` filtert. Sonst nimmt ein in einer späteren Version entfernter
+  Widget-Key das komplette Layout mit.
+
+Beide Fälle sind in `scripts/verify-forms.mts` abgedeckt (`npm test`). Sie haben kein
+sichtbares Fehlerbild: ein Portal, das still auf Default-Widgets zurückfällt, sieht aus wie
+ein Portal, das nie konfiguriert wurde.
 
 ## Design-System
 
@@ -387,6 +436,16 @@ npm run build        # Prod-Build
 npm test             # Schema-Compiler (offline)
 npm run dev          # http://localhost:3000
 ```
+
+**Test-Artefakte niemals ins Projektverzeichnis schreiben.** Tailwind v4 scannt das
+Verzeichnis nach Klassen-Kandidaten. Ein gespeicherter HTML-Dump — oder ein Dev-Log, das
+eine Fehlermeldung mit Klassennamen enthält — liefert dem Scanner Kandidaten, in denen die
+Apostrophe eines Attribut-Selektors als HTML-Entity vorliegen (`&#x27;` statt `'`; hier
+absichtlich nicht ausgeschrieben, damit diese Datei nicht selbst zum Kandidaten wird).
+Daraus baut Tailwind einen ungültigen Selektor — `Invalid value in attribute selector` —,
+der CSS-Build schlägt fehl, und **jede** Seite antwortet mit 500. Der Fehler ist
+selbstverstärkend: er wird ins Log geschrieben, das Log speist den Scanner. Dumps und Logs
+gehören nach `/tmp` bzw. in ein Scratchpad, nicht nach `./`.
 
 Auth manuell prüfen: gegen ein Wegwerf-Datenverzeichnis starten, sonst landen
 Testkonten in der echten Datenbank.

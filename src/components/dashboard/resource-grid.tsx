@@ -17,7 +17,14 @@ import { isSafeResourceHref, type PortalResource } from "@/types/mits";
    external documentation.
    ────────────────────────────────────────────────────────────────────────── */
 
-export function ResourceGrid({ resources }: { resources: PortalResource[] }) {
+export function ResourceGrid({
+  resources,
+  /** Overridden by the portal's widget_titles. */
+  title = "Schnellzugriffe",
+}: {
+  resources: PortalResource[];
+  title?: string;
+}) {
   // Belt and braces: the store already filters, but a tile is rendered as a link
   // and must never carry a javascript:/data: target.
   const safe = resources.filter((resource) => isSafeResourceHref(resource.href));
@@ -25,8 +32,8 @@ export function ResourceGrid({ resources }: { resources: PortalResource[] }) {
   if (safe.length === 0) return null;
 
   return (
-    <section aria-label="Schnellzugriffe" className="grid gap-3">
-      <h2 className="label-industrial">Schnellzugriffe</h2>
+    <section aria-label={title} className="grid gap-3">
+      <h2 className="label-industrial">{title}</h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {safe.map((resource) => {
           const Icon = iconFor(resource.icon);

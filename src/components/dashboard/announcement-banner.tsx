@@ -39,13 +39,24 @@ const LEVEL_STYLES: Record<
 
 export function AnnouncementBanner({
   announcements,
+  /**
+   * Optional heading. Left off where the banner sits at the very top of a page —
+   * a level-2 heading above the first thing on screen reads as clutter — and set
+   * from the portal's widget_titles when it appears as a widget among others.
+   */
+  title,
 }: {
   announcements: Announcement[];
+  title?: string;
 }) {
   if (announcements.length === 0) return null;
 
   return (
-    <section aria-label="Systemmeldungen" className="grid gap-3">
+    <section
+      aria-label={title ?? "Systemmeldungen"}
+      className="grid gap-3"
+    >
+      {title && <h2 className="label-industrial">{title}</h2>}
       {announcements.map((announcement) => {
         const level = LEVEL_STYLES[announcement.type];
         const Icon = level.icon;
