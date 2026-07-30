@@ -1,7 +1,23 @@
 # Enterprise-Helpdesk — Umsetzungsplan
 
-Arbeitsstand des Helpdesk-Ausbaus. **Part 1 bis 4 sind fertig und verifiziert.**
-Nächster und letzter Schritt ist **Part 5 (Formular-Builder)**.
+Arbeitsstand des Helpdesk-Ausbaus. **Part 1 bis 7 sind fertig und verifiziert** (bis
+Commit `d50b252`). Offen ist nur noch **Part 8 — der Formular-Builder**.
+
+| Part | Inhalt | Status |
+|---|---|---|
+| 1 | Ticket-Nummern, Standorte, Agenten-Workflow, Toggles, JSON-Cleanup | ✅ `0f68a17` |
+| 2 | E-Mail & SMTP | ✅ `217bee7` |
+| 3 | Suche & Deep-Filter | ✅ `b17ee8f` |
+| 4 | Agenten-Desk & Präsenz | ✅ `4fef5e6` |
+| 5+6 | Routentrennung `/customer` + `/mits`, Prioritäts-Migration | ✅ `900ad2e` |
+| 7 | Ticket-Verknüpfung + Textbausteine | ✅ `d50b252` |
+| 8 | Formular-Builder | ⬜ **letzter** |
+
+Die Detailbeschreibungen der abgeschlossenen Parts stehen weiter unten; **Part 8 ist der
+einzige Abschnitt, der noch Arbeit beschreibt.** Alles, was in der ursprünglichen
+Anforderung stand, ist damit umgesetzt außer dem Builder sowie Typing-Indicator,
+SLA-Countdown und Duplikat-Vorschlägen — deren Flags sind in der Maske als „noch ohne
+Funktion" markiert.
 
 Jeder Part ist so geschnitten, dass er allein baubar, testbar und committebar ist. Die
 Reihenfolge folgt den Abhängigkeiten: E-Mail macht den Agenten-Workflow rund, Suche und
