@@ -37,19 +37,26 @@ export function ResourceGrid({ resources }: { resources: PortalResource[] }) {
           return (
             <Card
               key={resource.id}
-              className="rounded-sm border-2 border-border shadow-brutal ring-0 transition-shadow hover:shadow-brutal-primary"
+              className="group rounded-3xl border border-border bg-card ring-0 shadow-elev-1 transition-[box-shadow,border-color] duration-300 hover:border-foreground/20 hover:shadow-elev-3"
             >
               <CardHeader>
-                <Icon className="size-6 text-primary" aria-hidden />
-                <CardTitle className="mt-3 uppercase">{resource.label}</CardTitle>
+                {/* Same tonal icon circle as the intake tiles — one shape
+                    language for every card that opens something. */}
+                <span className="grid size-11 place-items-center rounded-full bg-surface-elevated text-muted-foreground transition-colors duration-300 group-hover:text-foreground">
+                  <Icon className="size-5" strokeWidth={1.5} aria-hidden />
+                </span>
+                <CardTitle className="mt-4 font-medium">
+                  {resource.label}
+                </CardTitle>
                 {resource.description && (
-                  <CardDescription>{resource.description}</CardDescription>
+                  <CardDescription className="mt-1 leading-relaxed">
+                    {resource.description}
+                  </CardDescription>
                 )}
                 <Button
                   asChild
-                  variant="outline"
                   size="sm"
-                  className="mt-4 w-fit rounded-sm"
+                  className="mt-5 w-fit rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
                 >
                   <a
                     href={resource.href}
@@ -58,7 +65,11 @@ export function ResourceGrid({ resources }: { resources: PortalResource[] }) {
                       ? { target: "_blank", rel: "noopener noreferrer" }
                       : {})}
                   >
-                    {isDownload ? <DownloadIcon /> : <ExternalLinkIcon />}
+                    {isDownload ? (
+                      <DownloadIcon strokeWidth={1.5} />
+                    ) : (
+                      <ExternalLinkIcon strokeWidth={1.5} />
+                    )}
                     {isDownload ? "Herunterladen" : "Öffnen"}
                   </a>
                 </Button>

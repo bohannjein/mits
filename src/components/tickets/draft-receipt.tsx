@@ -28,33 +28,42 @@ export function DraftReceipt({
   onDismiss: () => void;
 }) {
   return (
-    <Card className="rounded-sm border-2 border-border shadow-brutal ring-0">
+    <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-2">
       <CardHeader>
-        <CheckCircle2Icon className="size-5 text-primary" aria-hidden />
-        <CardTitle className="mt-2 uppercase">Entwurf validiert</CardTitle>
-        <CardDescription>
+        <span className="grid size-11 place-items-center rounded-full bg-success/15 text-success">
+          <CheckCircle2Icon className="size-5" strokeWidth={1.5} aria-hidden />
+        </span>
+        <CardTitle className="mt-4 text-lg font-medium">
+          Entwurf validiert
+        </CardTitle>
+        <CardDescription className="mt-1 leading-relaxed">
           Das Schema hat die Eingaben akzeptiert. Persistenz und Versand folgen mit
           dem Backend.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3">
         <div className="flex flex-wrap gap-2">
-          <Badge variant="outline" className="rounded-sm font-mono">
+          <Badge variant="outline" className="rounded-full font-mono">
             source: {draft.source}
           </Badge>
-          <Badge variant="outline" className="rounded-sm font-mono">
+          <Badge variant="outline" className="rounded-full font-mono">
             schema: {draft.form_schema_id ?? "—"}
           </Badge>
-          <Badge className="rounded-sm font-mono">
+          <Badge className="rounded-full font-mono">
             priority: {draft.priority}
           </Badge>
         </div>
-        <pre className="max-h-72 overflow-auto rounded-sm border-2 border-border bg-muted p-3 font-mono text-xs">
+        {/* Mono stays: this is raw JSON, and a proportional font would misalign
+            the indentation that makes it readable. */}
+        <pre className="max-h-72 overflow-auto rounded-xl border border-border bg-muted p-4 font-mono text-xs">
           {JSON.stringify(draft.payload, jsonReplacer, 2)}
         </pre>
       </CardContent>
-      <CardFooter className="justify-end rounded-none border-t-2">
-        <Button variant="outline" className="rounded-sm" onClick={onDismiss}>
+      <CardFooter className="justify-end rounded-b-3xl border-t border-border bg-transparent">
+        <Button
+          className="rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
+          onClick={onDismiss}
+        >
           Weiteres Ticket erfassen
         </Button>
       </CardFooter>

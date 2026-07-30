@@ -29,7 +29,7 @@ export default async function MyTicketsPage() {
         <div className="w-full max-w-5xl">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold uppercase sm:text-3xl">
+              <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
                 Meine Tickets
               </h1>
               <p className="mt-2 text-muted-foreground">
@@ -37,9 +37,12 @@ export default async function MyTicketsPage() {
                 {tickets.length === 1 ? "Eintrag" : "Einträge"}.
               </p>
             </div>
-            <Button asChild className="rounded-sm">
+            <Button
+              asChild
+              className="h-10 rounded-full bg-inverse-surface px-5 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+            >
               <Link href="/tickets/new">
-                <PlusIcon />
+                <PlusIcon strokeWidth={1.5} />
                 Neues Ticket
               </Link>
             </Button>

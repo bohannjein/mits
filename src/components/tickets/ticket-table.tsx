@@ -35,14 +35,14 @@ export function TicketTable({
 }) {
   if (tickets.length === 0) {
     return (
-      <p className="rounded-sm border-2 border-border p-6 text-sm text-muted-foreground">
+      <p className="rounded-2xl border border-border p-6 text-sm text-muted-foreground">
         Noch keine Tickets erfasst.
       </p>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-sm border-2 border-border">
+    <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-elev-1">
       <Table>
         <TableHeader>
           <TableRow>
@@ -71,13 +71,13 @@ export function TicketTable({
                       ? "default"
                       : "outline"
                   }
-                  className="rounded-sm font-mono"
+                  className="rounded-full"
                 >
                   {PRIORITY_LABELS[ticket.priority]}
                 </Badge>
               </TableCell>
               <TableCell>
-                <Badge variant="secondary" className="rounded-sm font-mono">
+                <Badge variant="secondary" className="rounded-full">
                   {STATUS_LABELS[ticket.status]}
                 </Badge>
               </TableCell>

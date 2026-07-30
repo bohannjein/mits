@@ -13,9 +13,9 @@ export async function AppHeader() {
   const user = await getSessionUser();
 
   return (
-    <header className="border-b-2 border-border bg-card">
+    <header className="border-b border-border bg-card">
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-3">
-        <Link href="/" className="rounded-sm outline-ring/50 focus-visible:outline-2">
+        <Link href="/" className="rounded-xl outline-ring/50 focus-visible:outline-2">
           <MITSLogo />
         </Link>
 
@@ -23,10 +23,19 @@ export async function AppHeader() {
           <UserMenu user={user} />
         ) : (
           <div className="flex items-center gap-2">
-            <Button asChild variant="ghost" size="sm" className="rounded-sm">
+            <Button
+              asChild
+              variant="ghost"
+              size="sm"
+              className="h-9 rounded-full px-4"
+            >
               <Link href="/login">Anmelden</Link>
             </Button>
-            <Button asChild size="sm" className="rounded-sm">
+            <Button
+              asChild
+              size="sm"
+              className="h-9 rounded-full bg-inverse-surface px-4 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+            >
               <Link href="/register">Registrieren</Link>
             </Button>
           </div>

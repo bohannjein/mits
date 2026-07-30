@@ -93,7 +93,7 @@ function FieldShell({
 
   if (inline) {
     return (
-      <FormItem className="flex flex-row items-start gap-3 rounded-sm border-2 border-border p-3">
+      <FormItem className="flex flex-row items-start gap-3 rounded-2xl border border-border p-4">
         <div className="mt-0.5">{children}</div>
         <div className="grid gap-1">
           {labelRow}
@@ -138,7 +138,7 @@ function TextField({ field, disabled }: FieldProps) {
               step={field.widget === "number" ? (field.schema.multipleOf ?? undefined) : undefined}
               placeholder={field.hint.placeholder}
               disabled={disabled}
-              className="rounded-sm"
+              className="h-10 rounded-xl"
             />
           </FormControl>
         </FieldShell>
@@ -160,7 +160,7 @@ function TextareaField({ field, disabled }: FieldProps) {
               placeholder={field.hint.placeholder}
               disabled={disabled}
               rows={5}
-              className="rounded-sm"
+              className="rounded-xl"
             />
           </FormControl>
         </FieldShell>
@@ -181,7 +181,7 @@ function SelectField({ field, disabled }: FieldProps) {
             disabled={disabled}
           >
             <FormControl>
-              <SelectTrigger className="h-9 w-full rounded-sm">
+              <SelectTrigger className="h-10 w-full rounded-xl">
                 <SelectValue
                   placeholder={field.hint.placeholder ?? "Bitte wählen"}
                 />
@@ -250,7 +250,7 @@ function MultiSelectField({ field, disabled }: FieldProps) {
         return (
           <FieldShell field={field}>
             <FormControl>
-              <div className="grid gap-2 rounded-sm border-2 border-border p-3 sm:grid-cols-2">
+              <div className="grid gap-2 rounded-2xl border border-border p-4 sm:grid-cols-2">
                 {field.options?.map((option) => {
                   const id = `${field.name}-${option.value}`;
                   return (
@@ -340,7 +340,7 @@ function FileField({ field, disabled }: FieldProps) {
                 accept={accept}
                 multiple={multiple}
                 disabled={disabled}
-                className="h-9 rounded-sm py-1.5"
+                className="h-10 rounded-xl py-2"
                 onChange={(event) => {
                   const picked = Array.from(event.target.files ?? []);
                   rhf.onChange(multiple ? [...files, ...picked] : picked);
@@ -352,11 +352,14 @@ function FileField({ field, disabled }: FieldProps) {
                 {files.map((file, index) => (
                   <li
                     key={`${file.name}-${index}`}
-                    className="flex items-center gap-2 rounded-sm border-2 border-border px-2.5 py-1.5"
+                    className="flex items-center gap-2 rounded-xl border border-border px-3 py-2"
                   >
-                    <PaperclipIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                    <PaperclipIcon
+                      className="size-3.5 shrink-0 text-muted-foreground"
+                      strokeWidth={1.5}
+                    />
                     <span className="truncate text-sm">{file.name}</span>
-                    <Badge variant="outline" className="ml-auto rounded-sm font-mono">
+                    <Badge variant="outline" className="ml-auto rounded-full">
                       {Math.max(1, Math.round(file.size / 1024))} KB
                     </Badge>
                     <Button

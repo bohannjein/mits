@@ -33,7 +33,7 @@ export default async function BoardPage() {
         <div className="w-full max-w-6xl">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold uppercase sm:text-3xl">
+              <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
                 Ticket-Board
               </h1>
               <p className="mt-2 text-muted-foreground">
@@ -41,19 +41,19 @@ export default async function BoardPage() {
               </p>
             </div>
             <div className="flex gap-2">
-              <Badge variant="outline" className="rounded-sm font-mono">
+              <Badge variant="outline" className="rounded-full">
                 {total} gesamt
               </Badge>
-              <Badge className="rounded-sm font-mono">{open} offen</Badge>
+              <Badge className="rounded-full">{open} offen</Badge>
             </div>
           </div>
 
           <Separator className="my-8 bg-border" />
 
           {tickets.length === 0 ? (
-            <Card className="rounded-sm border-2 border-border ring-0">
+            <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
               <CardHeader>
-                <CardTitle className="uppercase">Board ist leer</CardTitle>
+                <CardTitle className="text-lg font-medium">Board ist leer</CardTitle>
                 <CardDescription>
                   Sobald Meldungen eingehen, erscheinen sie hier.
                 </CardDescription>

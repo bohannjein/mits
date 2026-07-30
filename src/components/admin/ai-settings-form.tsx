@@ -101,9 +101,9 @@ export function AISettingsForm({
 
   return (
     <form action={formAction} className="grid gap-6">
-      <Card className="rounded-sm border-2 border-border ring-0">
+      <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
         <CardHeader>
-          <CardTitle className="uppercase">Ollama-Verbindung</CardTitle>
+          <CardTitle className="text-lg font-medium">Ollama-Verbindung</CardTitle>
           <CardDescription>
             Adresse der Ollama-Instanz. Läuft sie auf demselben Docker-Host, ist{" "}
             <code>http://host.docker.internal:11434</code> richtig.
@@ -124,12 +124,12 @@ export function AISettingsForm({
                 placeholder="http://host.docker.internal:11434"
                 aria-invalid={!urlValid}
                 disabled={saving}
-                className="min-w-64 flex-1 rounded-sm font-mono"
+                className="min-w-64 flex-1 rounded-xl font-mono"
               />
               <Button
                 type="button"
                 variant="outline"
-                className="rounded-sm"
+                className="h-10 rounded-full px-4"
                 disabled={probing || !urlValid}
                 onClick={() => void testConnection()}
               >
@@ -153,7 +153,7 @@ export function AISettingsForm({
           </div>
 
           {probe?.ok === true && (
-            <Alert className="rounded-sm border-2">
+            <Alert className="rounded-2xl border-border px-4 py-3">
               <CheckCircle2Icon />
               <AlertTitle>Verbindung steht</AlertTitle>
               <AlertDescription>
@@ -164,7 +164,7 @@ export function AISettingsForm({
             </Alert>
           )}
           {probe?.ok === false && (
-            <Alert variant="destructive" className="rounded-sm border-2">
+            <Alert variant="destructive" className="rounded-2xl border-border px-4 py-3">
               <TriangleAlertIcon />
               <AlertTitle>Keine Verbindung</AlertTitle>
               <AlertDescription>{probe.message}</AlertDescription>
@@ -173,9 +173,9 @@ export function AISettingsForm({
         </CardContent>
       </Card>
 
-      <Card className="rounded-sm border-2 border-border ring-0">
+      <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
         <CardHeader>
-          <CardTitle className="uppercase">Modelle</CardTitle>
+          <CardTitle className="text-lg font-medium">Modelle</CardTitle>
           <CardDescription>
             Erst „Verbindung testen“ — dann stehen hier die installierten Modelle zur
             Auswahl. Ohne Test lässt sich der Tag auch direkt eintippen.
@@ -205,11 +205,11 @@ export function AISettingsForm({
             disabled={saving}
           />
         </CardContent>
-        <CardFooter className="grid gap-3 rounded-none border-t-2">
+        <CardFooter className="grid gap-3 rounded-b-3xl border-t border-border bg-transparent">
           {result && (
             <Alert
               variant={result.ok ? "default" : "destructive"}
-              className="rounded-sm border-2"
+              className="rounded-2xl border-border px-4 py-3"
             >
               {result.ok ? <CheckCircle2Icon /> : <TriangleAlertIcon />}
               <AlertDescription>
@@ -220,7 +220,7 @@ export function AISettingsForm({
           <Button
             type="submit"
             size="lg"
-            className="w-fit rounded-sm"
+            className="w-fit rounded-full px-4"
             disabled={saving || !urlValid}
           >
             {saving ? <Loader2Icon className="animate-spin" /> : <SaveIcon />}
@@ -287,7 +287,7 @@ function ModelField({
             onChange(next);
           }}
         >
-          <SelectTrigger id={id} className="h-9 w-full rounded-sm font-mono">
+          <SelectTrigger id={id} className="h-10 w-full rounded-xl font-mono">
             <SelectValue placeholder="Modell wählen" />
           </SelectTrigger>
           <SelectContent>
@@ -307,13 +307,13 @@ function ModelField({
             onChange={(event) => onChange(event.target.value)}
             placeholder={fallback}
             disabled={disabled}
-            className="min-w-56 flex-1 rounded-sm font-mono"
+            className="min-w-56 flex-1 rounded-xl font-mono"
           />
           {models !== null && models.length > 0 && (
             <Button
               type="button"
               variant="ghost"
-              className="rounded-sm"
+              className="h-10 rounded-full px-4"
               onClick={() => setFreeText(false)}
             >
               Aus Liste wählen
@@ -333,7 +333,7 @@ function SourceBadge({ source }: { source: "db" | "env" }) {
   return (
     <Badge
       variant={source === "db" ? "default" : "outline"}
-      className="rounded-sm font-mono"
+      className="rounded-full"
     >
       {source === "db" ? "aus der UI" : "aus der Umgebung"}
     </Badge>

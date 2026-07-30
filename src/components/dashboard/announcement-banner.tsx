@@ -53,9 +53,12 @@ export function AnnouncementBanner({
         return (
           <Alert
             key={announcement.id}
-            className={cn("rounded-sm border-2 shadow-brutal", level.className)}
+            className={cn(
+              "rounded-2xl px-4 py-3 shadow-elev-1",
+              level.className,
+            )}
           >
-            <Icon aria-hidden />
+            <Icon strokeWidth={1.5} aria-hidden />
             <AlertTitle>
               <span className="sr-only">{level.label}: </span>
               {announcement.title}

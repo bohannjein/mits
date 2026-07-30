@@ -45,7 +45,7 @@ export function UserRoleForm({
         onValueChange={(value) => setRole(value as MITSRole)}
         disabled={disabled || pending}
       >
-        <SelectTrigger className="h-8 w-44 rounded-sm" aria-label="Rolle">
+        <SelectTrigger className="h-9 w-44 rounded-xl" aria-label="Rolle">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -58,7 +58,12 @@ export function UserRoleForm({
       </Select>
 
       {changed && !disabled && (
-        <Button type="submit" size="sm" className="rounded-sm" disabled={pending}>
+        <Button
+          type="submit"
+          size="sm"
+          className="h-9 rounded-full bg-inverse-surface px-4 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+          disabled={pending}
+        >
           {pending ? <Loader2Icon className="animate-spin" /> : <SaveIcon />}
           Übernehmen
         </Button>

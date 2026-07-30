@@ -271,9 +271,9 @@ export function SchemaBuilder({
     <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
       {/* ── left: configurator ─────────────────────────────────────────── */}
       <div className="grid gap-5">
-        <Card className="rounded-sm border-2 border-border ring-0">
+        <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
           <CardHeader>
-            <CardTitle className="uppercase">Formular</CardTitle>
+            <CardTitle className="text-lg font-medium">Formular</CardTitle>
             <CardDescription>
               Kopfdaten. Die ID landet als <code>form_schema_id</code> im Ticket und
               darf sich später nicht mehr ändern.
@@ -284,7 +284,7 @@ export function SchemaBuilder({
               <div className="grid gap-2">
                 <Label>Vorhandenes Formular laden</Label>
                 <Select disabled={loading} onValueChange={loadExisting}>
-                  <SelectTrigger className="h-9 w-full rounded-sm">
+                  <SelectTrigger className="h-10 w-full rounded-xl">
                     <SelectValue placeholder="Zum Bearbeiten auswählen" />
                   </SelectTrigger>
                   <SelectContent>
@@ -305,7 +305,7 @@ export function SchemaBuilder({
                   id="schema-id"
                   value={draft.id}
                   placeholder="z. B. monitor-defekt"
-                  className="rounded-sm font-mono"
+                  className="h-10 rounded-xl font-mono"
                   onChange={(event) =>
                     applyDraft({ ...draft, id: event.target.value.toLowerCase() })
                   }
@@ -321,7 +321,7 @@ export function SchemaBuilder({
                 <Input
                   id="schema-category"
                   value={draft.category}
-                  className="rounded-sm"
+                  className="h-10 rounded-xl"
                   onChange={(event) =>
                     applyDraft({ ...draft, category: event.target.value })
                   }
@@ -335,7 +335,7 @@ export function SchemaBuilder({
                 id="schema-title"
                 value={draft.title}
                 placeholder="z. B. Monitor defekt melden"
-                className="rounded-sm"
+                className="h-10 rounded-xl"
                 onChange={(event) =>
                   applyDraft({ ...draft, title: event.target.value })
                 }
@@ -348,7 +348,7 @@ export function SchemaBuilder({
                 id="schema-description"
                 rows={2}
                 value={draft.description ?? ""}
-                className="rounded-sm"
+                className="rounded-xl"
                 onChange={(event) =>
                   applyDraft({ ...draft, description: event.target.value })
                 }
@@ -362,7 +362,7 @@ export function SchemaBuilder({
                 rows={2}
                 value={draft.aiHint ?? ""}
                 placeholder="Wann passt dieses Formular? Wird dem Routing-Modell vorgelegt."
-                className="rounded-sm"
+                className="rounded-xl"
                 onChange={(event) => applyDraft({ ...draft, aiHint: event.target.value })}
               />
             </div>
@@ -374,7 +374,7 @@ export function SchemaBuilder({
                   value={draft.icon ?? "Ticket"}
                   onValueChange={(icon) => applyDraft({ ...draft, icon })}
                 >
-                  <SelectTrigger className="h-9 w-full rounded-sm">
+                  <SelectTrigger className="h-10 w-full rounded-xl">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -391,7 +391,7 @@ export function SchemaBuilder({
                 <Input
                   id="schema-submit"
                   value={draft.submitLabel ?? ""}
-                  className="rounded-sm"
+                  className="h-10 rounded-xl"
                   onChange={(event) =>
                     applyDraft({ ...draft, submitLabel: event.target.value })
                   }
@@ -401,9 +401,9 @@ export function SchemaBuilder({
           </CardContent>
         </Card>
 
-        <Card className="rounded-sm border-2 border-border ring-0">
+        <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
           <CardHeader>
-            <CardTitle className="uppercase">Felder</CardTitle>
+            <CardTitle className="text-lg font-medium">Felder</CardTitle>
             <CardDescription>
               {fields.length === 0
                 ? "Noch keine Felder — unten einen Typ hinzufügen."
@@ -424,14 +424,14 @@ export function SchemaBuilder({
                   : undefined);
 
               return (
-                <div key={name} className="grid gap-3 rounded-sm border-2 border-border p-3">
+                <div key={name} className="grid gap-3 rounded-2xl border border-border p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="rounded-sm font-mono">
+                      <Badge variant="outline" className="rounded-full">
                         {name}
                       </Badge>
                       {widget && (
-                        <Badge variant="secondary" className="rounded-sm font-mono">
+                        <Badge variant="secondary" className="rounded-full">
                           {widget}
                         </Badge>
                       )}
@@ -474,7 +474,7 @@ export function SchemaBuilder({
                     <Input
                       id={`title-${name}`}
                       value={schemaProperty.title ?? ""}
-                      className="rounded-sm"
+                      className="h-10 rounded-xl"
                       onChange={(event) =>
                         updateField(name, { title: event.target.value })
                       }
@@ -489,7 +489,7 @@ export function SchemaBuilder({
                       <Input
                         id={`options-${name}`}
                         defaultValue={enumValues.join(", ")}
-                        className="rounded-sm font-mono"
+                        className="h-10 rounded-xl font-mono"
                         onBlur={(event) =>
                           updateField(name, { options: event.target.value })
                         }
@@ -522,10 +522,10 @@ export function SchemaBuilder({
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="rounded-sm"
+                    className="h-9 rounded-full px-4"
                     onClick={() => addField(type.widget)}
                   >
-                    <PlusIcon />
+                    <PlusIcon strokeWidth={1.5} />
                     {type.label}
                   </Button>
                 ))}
@@ -534,9 +534,9 @@ export function SchemaBuilder({
           </CardContent>
         </Card>
 
-        <Card className="rounded-sm border-2 border-border ring-0">
+        <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
           <CardHeader>
-            <CardTitle className="uppercase">JSON</CardTitle>
+            <CardTitle className="text-lg font-medium">JSON</CardTitle>
             <CardDescription>
               Dieselbe Definition, direkt editierbar. Ungültiges JSON lässt die
               Vorschau auf dem letzten gültigen Stand.
@@ -548,11 +548,11 @@ export function SchemaBuilder({
               onChange={(event) => onJsonChange(event.target.value)}
               rows={18}
               spellCheck={false}
-              className="rounded-sm font-mono text-xs"
+              className="rounded-xl font-mono text-xs"
               aria-label="Schema als JSON"
             />
             {jsonError && (
-              <Alert variant="destructive" className="rounded-sm border-2">
+              <Alert variant="destructive" className="rounded-2xl border-border px-4 py-3">
                 <TriangleAlertIcon />
                 <AlertTitle>JSON ungültig</AlertTitle>
                 <AlertDescription>{jsonError}</AlertDescription>
@@ -566,7 +566,7 @@ export function SchemaBuilder({
           {result && (
             <Alert
               variant={result.ok ? "default" : "destructive"}
-              className="rounded-sm border-2"
+              className="rounded-2xl border-border px-4 py-3"
             >
               {result.ok ? <CheckCircle2Icon /> : <TriangleAlertIcon />}
               <AlertDescription>
@@ -577,7 +577,7 @@ export function SchemaBuilder({
           <Button
             type="submit"
             size="lg"
-            className="w-fit rounded-sm"
+            className="w-fit rounded-full px-4"
             disabled={!canSave || saving}
           >
             {saving ? <Loader2Icon className="animate-spin" /> : <SaveIcon />}
@@ -594,10 +594,10 @@ export function SchemaBuilder({
 
       {/* ── right: live preview ────────────────────────────────────────── */}
       <div className="lg:sticky lg:top-6">
-        <Card className="rounded-sm border-2 border-border shadow-brutal ring-0">
+        <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-2">
           <CardHeader>
             <EyeIcon className="size-5 text-primary" aria-hidden />
-            <CardTitle className="mt-2 uppercase">Live-Vorschau</CardTitle>
+            <CardTitle className="mt-4 text-lg font-medium">Live-Vorschau</CardTitle>
             <CardDescription>
               Gerendert von derselben <code>&lt;SchemaForm /&gt;</code> wie im
               Ticket-Eingang. Absenden ist hier abgeschaltet.
@@ -650,7 +650,7 @@ function SchemaPreview({ draft }: { draft: MITSFormSchema }) {
       {submitted && (
         <div className="grid gap-1.5">
           <span className="label-industrial">Validierte Vorschau-Payload</span>
-          <pre className="max-h-60 overflow-auto rounded-sm border-2 border-border bg-muted p-3 font-mono text-xs">
+          <pre className="max-h-60 overflow-auto rounded-xl border border-border bg-muted p-3 font-mono text-xs">
             {JSON.stringify(submitted.payload, null, 2)}
           </pre>
         </div>

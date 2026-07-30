@@ -33,7 +33,7 @@ export default async function AISettingsPage() {
         <div className="w-full max-w-3xl">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold uppercase sm:text-3xl">
+              <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
                 KI-Einstellungen
               </h1>
               <p className="mt-2 max-w-2xl text-muted-foreground">
@@ -41,7 +41,7 @@ export default async function AISettingsPage() {
                 Umgebungsvariablen. Änderungen greifen ab der nächsten Anfrage.
               </p>
             </div>
-            <Button asChild variant="outline" size="sm" className="rounded-sm">
+            <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
               <Link href="/admin">
                 <ArrowLeftIcon />
                 Admin-Desk
@@ -51,7 +51,7 @@ export default async function AISettingsPage() {
 
           <Separator className="my-8 bg-border" />
 
-          <Alert className="mb-6 rounded-sm border-2">
+          <Alert className="mb-6 rounded-2xl border-border px-4 py-3">
             <InfoIcon />
             <AlertTitle>Wie die Werte gelesen werden</AlertTitle>
             <AlertDescription>

@@ -25,10 +25,10 @@ export default async function LoginPage({
   const { next } = await searchParams;
 
   return (
-    <Card className="rounded-sm border-2 border-border shadow-brutal ring-0">
+    <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-2">
       <CardHeader>
-        <CardTitle className="uppercase">Anmelden</CardTitle>
-        <CardDescription>
+        <CardTitle className="text-lg font-medium">Anmelden</CardTitle>
+        <CardDescription className="mt-1 leading-relaxed">
           Mit deinem MITS-Konto anmelden, um Tickets zu erfassen.
         </CardDescription>
       </CardHeader>

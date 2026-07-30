@@ -92,9 +92,9 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
 
   return (
     <div className="grid gap-6">
-      <Card className="rounded-sm border-2 border-border ring-0">
+      <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
         <CardHeader>
-          <CardTitle className="uppercase">Systemmeldungen</CardTitle>
+          <CardTitle className="text-lg font-medium">Systemmeldungen</CardTitle>
           <CardDescription>
             Erscheinen als Banner über dem Portal und über dem Ticket-Eingang.
             Ausgeschaltete Meldungen bleiben gespeichert, ohne angezeigt zu werden.
@@ -110,7 +110,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
           {announcements.map((announcement) => (
             <div
               key={announcement.id}
-              className="grid gap-3 rounded-sm border-2 border-border p-3"
+              className="grid gap-3 rounded-2xl border border-border p-4"
             >
               <div className="grid gap-2 sm:grid-cols-[1fr_12rem]">
                 <div className="grid gap-2">
@@ -119,7 +119,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
                     id={`title-${announcement.id}`}
                     value={announcement.title}
                     placeholder="z. B. Wartung am Samstag"
-                    className="rounded-sm"
+                    className="h-10 rounded-xl"
                     onChange={(event) =>
                       patchAnnouncement(announcement.id, { title: event.target.value })
                     }
@@ -135,7 +135,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
                       })
                     }
                   >
-                    <SelectTrigger className="h-9 w-full rounded-sm">
+                    <SelectTrigger className="h-10 w-full rounded-xl">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -155,7 +155,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
                   id={`message-${announcement.id}`}
                   rows={3}
                   value={announcement.message}
-                  className="rounded-sm"
+                  className="rounded-xl"
                   onChange={(event) =>
                     patchAnnouncement(announcement.id, { message: event.target.value })
                   }
@@ -177,7 +177,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="rounded-sm"
+                  className="h-9 rounded-full px-3"
                   onClick={() =>
                     setAnnouncements((current) =>
                       current.filter((entry) => entry.id !== announcement.id),
@@ -194,7 +194,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
           <Button
             type="button"
             variant="outline"
-            className="w-fit rounded-sm"
+            className="w-fit rounded-full px-4"
             onClick={() =>
               setAnnouncements((current) => [
                 ...current,
@@ -214,9 +214,9 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
         </CardContent>
       </Card>
 
-      <Card className="rounded-sm border-2 border-border ring-0">
+      <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
         <CardHeader>
-          <CardTitle className="uppercase">Schnellzugriffe</CardTitle>
+          <CardTitle className="text-lg font-medium">Schnellzugriffe</CardTitle>
           <CardDescription>
             Kacheln für Downloads und Anleitungen. Ziel muss <code>http</code>,{" "}
             <code>https</code> oder ein Pfad wie <code>/api/uploads/…</code> sein.
@@ -236,7 +236,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
             return (
               <div
                 key={resource.id}
-                className="grid gap-3 rounded-sm border-2 border-border p-3"
+                className="grid gap-3 rounded-2xl border border-border p-4"
               >
                 <div className="grid gap-2 sm:grid-cols-[1fr_10rem_12rem]">
                   <div className="grid gap-2">
@@ -245,7 +245,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
                       id={`label-${resource.id}`}
                       value={resource.label}
                       placeholder="z. B. TeamViewer QuickSupport"
-                      className="rounded-sm"
+                      className="h-10 rounded-xl"
                       onChange={(event) =>
                         patchResource(resource.id, { label: event.target.value })
                       }
@@ -259,7 +259,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
                         patchResource(resource.id, { kind: value as ResourceKind })
                       }
                     >
-                      <SelectTrigger className="h-9 w-full rounded-sm">
+                      <SelectTrigger className="h-10 w-full rounded-xl">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -277,7 +277,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
                       value={resource.icon}
                       onValueChange={(icon) => patchResource(resource.id, { icon })}
                     >
-                      <SelectTrigger className="h-9 w-full rounded-sm">
+                      <SelectTrigger className="h-10 w-full rounded-xl">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -297,7 +297,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
                     id={`href-${resource.id}`}
                     value={resource.href}
                     placeholder="https://get.teamviewer.com/…"
-                    className="rounded-sm font-mono"
+                    className="h-10 rounded-xl font-mono"
                     aria-invalid={hrefBad}
                     onChange={(event) =>
                       patchResource(resource.id, { href: event.target.value })
@@ -315,7 +315,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
                   <Input
                     id={`desc-${resource.id}`}
                     value={resource.description}
-                    className="rounded-sm"
+                    className="h-10 rounded-xl"
                     onChange={(event) =>
                       patchResource(resource.id, { description: event.target.value })
                     }
@@ -326,7 +326,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="w-fit rounded-sm"
+                  className="w-fit rounded-full px-4"
                   onClick={() =>
                     setResources((current) =>
                       current.filter((entry) => entry.id !== resource.id),
@@ -343,7 +343,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
           <Button
             type="button"
             variant="outline"
-            className="w-fit rounded-sm"
+            className="w-fit rounded-full px-4"
             onClick={() =>
               setResources((current) => [
                 ...current,
@@ -373,7 +373,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
         {result && (
           <Alert
             variant={result.ok ? "default" : "destructive"}
-            className="rounded-sm border-2"
+            className="rounded-2xl border-border px-4 py-3"
           >
             {result.ok ? <CheckCircle2Icon /> : <TriangleAlertIcon />}
             <AlertDescription>
@@ -384,7 +384,7 @@ export function PortalContentForm({ content }: { content: PortalContent }) {
         <Button
           type="submit"
           size="lg"
-          className="w-fit rounded-sm"
+          className="w-fit rounded-full px-4"
           disabled={saving || invalidHrefs.length > 0}
         >
           {saving ? <Loader2Icon className="animate-spin" /> : <SaveIcon />}

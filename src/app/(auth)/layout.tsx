@@ -7,7 +7,7 @@ export default function AuthLayout({
   children: React.ReactNode;
 }) {
   return (
-    <main className="bg-grid flex flex-1 items-center justify-center px-6 py-16">
+    <main className="bg-aurora flex flex-1 items-center justify-center px-6 py-16">
       <div className="w-full max-w-md">
         <div className="mb-8 flex justify-center">
           <MITSLogo showTagline />

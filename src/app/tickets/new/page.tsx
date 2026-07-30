@@ -42,7 +42,7 @@ export default async function NewTicketPage() {
 
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold uppercase sm:text-3xl">
+              <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
                 Neues Ticket
               </h1>
               <p className="mt-2 text-muted-foreground">
@@ -50,7 +50,7 @@ export default async function NewTicketPage() {
                 strukturierte Payload — gemeldet als {user.email}.
               </p>
             </div>
-            <Button asChild variant="outline" size="sm" className="rounded-sm">
+            <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
               <Link href="/tickets">
                 <ListIcon />
                 Meine Tickets

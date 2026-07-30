@@ -51,9 +51,17 @@ export function UserMenu({ user }: { user: SessionUser }) {
     <div className="flex items-center gap-2">
       {/* Elevated roles get a one-click switcher, not just a menu entry. */}
       {showBoard && (
-        <Button asChild variant="outline" size="sm" className="rounded-sm">
+        <Button
+          asChild
+          size="sm"
+          className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
+        >
           <Link href={showAdmin ? "/admin" : "/board"}>
-            {showAdmin ? <ShieldIcon /> : <LayoutDashboardIcon />}
+            {showAdmin ? (
+              <ShieldIcon strokeWidth={1.5} />
+            ) : (
+              <LayoutDashboardIcon strokeWidth={1.5} />
+            )}
             {showAdmin ? "Admin-Desk" : "Ticket-Board"}
           </Link>
         </Button>
@@ -61,19 +69,22 @@ export function UserMenu({ user }: { user: SessionUser }) {
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" className="rounded-sm">
+          <Button variant="ghost" size="sm" className="h-9 rounded-full px-3">
             <span className="max-w-40 truncate">{user.name}</span>
             <Badge
               variant={showAdmin ? "default" : "outline"}
-              className="rounded-sm font-mono"
+              className="rounded-full"
             >
               {ROLE_LABELS[user.role]}
             </Badge>
-            <ChevronDownIcon />
+            <ChevronDownIcon strokeWidth={1.5} />
           </Button>
         </DropdownMenuTrigger>
 
-        <DropdownMenuContent align="end" className="w-60 rounded-sm border-2">
+        <DropdownMenuContent
+          align="end"
+          className="w-60 rounded-2xl border border-border shadow-elev-2"
+        >
           <DropdownMenuLabel className="grid gap-0.5">
             <span className="truncate font-medium">{user.name}</span>
             <span className="truncate text-xs font-normal text-muted-foreground">

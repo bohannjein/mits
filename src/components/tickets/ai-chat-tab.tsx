@@ -180,7 +180,7 @@ export function AiChatTab({
 
   return (
     <div className="grid gap-4">
-      <ScrollArea className="h-72 rounded-sm border-2 border-border">
+      <ScrollArea className="h-72 rounded-2xl border border-border bg-background">
         <div className="grid gap-3 p-4">
           {messages.length === 0 && (
             <p className="text-sm text-muted-foreground">
@@ -193,10 +193,12 @@ export function AiChatTab({
             <div
               key={message.id}
               className={cn(
-                "max-w-[85%] rounded-sm border-2 border-border px-3 py-2 text-sm",
+                // One squared-off corner on the sender's side is the chat
+                // convention Google uses — it points the bubble at its author.
+                "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm shadow-elev-1",
                 message.role === "user"
-                  ? "justify-self-end bg-secondary text-secondary-foreground"
-                  : "justify-self-start bg-card text-card-foreground",
+                  ? "justify-self-end rounded-br-md bg-surface-elevated text-foreground"
+                  : "justify-self-start rounded-bl-md border border-border bg-card text-card-foreground",
               )}
             >
               {message.text && <p className="whitespace-pre-wrap">{message.text}</p>}
@@ -208,7 +210,7 @@ export function AiChatTab({
                       key={src}
                       src={src}
                       alt="Angehängter Screenshot"
-                      className="size-20 rounded-sm border-2 border-border object-cover"
+                      className="size-20 rounded-xl border border-border object-cover"
                     />
                   ))}
                 </div>
@@ -225,8 +227,11 @@ export function AiChatTab({
       </ScrollArea>
 
       {error && (
-        <Alert variant="destructive" className="rounded-sm border-2">
-          <TriangleAlertIcon />
+        <Alert
+          variant="destructive"
+          className="rounded-2xl border-border px-4 py-3 shadow-elev-1"
+        >
+          <TriangleAlertIcon strokeWidth={1.5} />
           <AlertTitle>Analyse fehlgeschlagen</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
@@ -250,8 +255,8 @@ export function AiChatTab({
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
         className={cn(
-          "grid gap-2 rounded-sm border-2 border-dashed p-3 transition-colors",
-          dragging ? "border-primary bg-muted" : "border-border",
+          "grid gap-2 rounded-3xl border border-dashed p-3 transition-colors duration-300",
+          dragging ? "border-primary bg-primary/5" : "border-border bg-card",
         )}
       >
         {attachments.length > 0 && (
@@ -259,18 +264,18 @@ export function AiChatTab({
             {attachments.map((attachment, index) => (
               <div
                 key={attachment.previewUrl}
-                className="flex items-center gap-2 rounded-sm border-2 border-border px-2 py-1"
+                className="flex items-center gap-2 rounded-full border border-border py-1 pr-1 pl-1.5"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element -- blob: URL preview */}
                 <img
                   src={attachment.previewUrl}
                   alt=""
-                  className="size-8 rounded-sm object-cover"
+                  className="size-7 rounded-full object-cover"
                 />
                 <span className="max-w-40 truncate text-xs">
                   {attachment.file.name}
                 </span>
-                <Badge variant="outline" className="rounded-sm font-mono">
+                <Badge variant="outline" className="rounded-full">
                   {Math.max(1, Math.round(attachment.file.size / 1024))} KB
                 </Badge>
                 <Button
@@ -304,7 +309,7 @@ export function AiChatTab({
           }
           rows={3}
           disabled={pending}
-          className="rounded-sm"
+          className="resize-none rounded-2xl border-transparent bg-transparent shadow-none focus-visible:border-transparent focus-visible:ring-0"
         />
 
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -320,12 +325,11 @@ export function AiChatTab({
             />
             <Button
               type="button"
-              variant="outline"
-              className="rounded-sm"
+              className="h-10 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
               disabled={pending}
               onClick={() => fileInputRef.current?.click()}
             >
-              <ImagePlusIcon />
+              <ImagePlusIcon strokeWidth={1.5} />
               Screenshot
             </Button>
             <span className="text-xs text-muted-foreground">
@@ -334,11 +338,15 @@ export function AiChatTab({
           </div>
           <Button
             type="button"
-            className="rounded-sm"
+            className="h-10 rounded-full bg-inverse-surface px-5 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
             disabled={!canSend}
             onClick={() => void send()}
           >
-            {pending ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
+            {pending ? (
+              <Loader2Icon className="animate-spin" />
+            ) : (
+              <SendIcon strokeWidth={1.5} />
+            )}
             Analysieren
           </Button>
         </div>
@@ -365,8 +373,11 @@ function TriagePreview({
 
   if (!schema) {
     return (
-      <Alert variant="destructive" className="rounded-sm border-2">
-        <TriangleAlertIcon />
+      <Alert
+        variant="destructive"
+        className="rounded-2xl border-border px-4 py-3 shadow-elev-1"
+      >
+        <TriangleAlertIcon strokeWidth={1.5} />
         <AlertTitle>Unbekanntes Formular</AlertTitle>
         <AlertDescription>
           Die KI hat „{result.suggested_category_id}“ vorgeschlagen — dieses
@@ -387,24 +398,27 @@ function TriagePreview({
   const lowConfidence = result.confidence < 0.5;
 
   return (
-    <Card className="rounded-sm border-2 border-border shadow-brutal ring-0">
+    <Card className="rounded-3xl border border-border bg-card ring-0 shadow-glow-gemini">
       <CardHeader>
-        <SparklesIcon className="size-5 text-primary" aria-hidden />
-        <CardTitle className="mt-2 uppercase">
+        {/* The Gemini sheen marks the one card whose content a model produced. */}
+        <span className="bg-gemini-sheen grid size-11 place-items-center rounded-full text-foreground">
+          <SparklesIcon className="size-5" strokeWidth={1.5} aria-hidden />
+        </span>
+        <CardTitle className="mt-4 text-lg font-medium">
           Die KI hat folgendes Ticket für dich ausgefüllt
         </CardTitle>
-        <CardDescription>
+        <CardDescription className="mt-1 leading-relaxed">
           Formular „{schema.title}“ — {filled.length} von{" "}
           {labels.size} Feldern erkannt. Bitte vor dem Absenden prüfen.
         </CardDescription>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
           <Badge
             variant={lowConfidence ? "destructive" : "default"}
-            className="rounded-sm font-mono"
+            className="rounded-full"
           >
             Konfidenz {percent} %
           </Badge>
-          <Badge variant="outline" className="rounded-sm font-mono">
+          <Badge variant="outline" className="rounded-full font-mono">
             {schema.id}
           </Badge>
         </div>
@@ -412,8 +426,8 @@ function TriagePreview({
 
       <CardContent className="grid gap-4">
         {lowConfidence && (
-          <Alert className="rounded-sm border-2">
-            <TriangleAlertIcon />
+          <Alert className="rounded-2xl border-border px-4 py-3">
+            <TriangleAlertIcon strokeWidth={1.5} />
             <AlertTitle>Unsichere Zuordnung</AlertTitle>
             <AlertDescription>
               Die KI ist sich beim Formular nicht sicher. Wenn es nicht passt, nutze
@@ -425,10 +439,12 @@ function TriagePreview({
         {result.transcribed_text && (
           <div className="grid gap-1.5">
             <span className="label-industrial flex items-center gap-1.5">
-              <ScanTextIcon className="size-3.5" />
+              <ScanTextIcon className="size-3.5" strokeWidth={1.5} />
               Aus dem Screenshot gelesen
             </span>
-            <p className="max-h-32 overflow-auto rounded-sm border-2 border-border bg-muted p-2.5 font-mono text-xs whitespace-pre-wrap">
+            {/* Mono on purpose: this is verbatim OCR output, where a shifted
+                character matters more than the typeface. */}
+            <p className="max-h-32 overflow-auto rounded-xl border border-border bg-muted p-3 font-mono text-xs whitespace-pre-wrap">
               {result.transcribed_text}
             </p>
           </div>
@@ -439,9 +455,9 @@ function TriagePreview({
             Kein Feld konnte sicher gefüllt werden — das Formular öffnet leer.
           </p>
         ) : (
-          <dl className="grid gap-0 divide-y-2 divide-border rounded-sm border-2 border-border">
+          <dl className="grid gap-0 divide-y divide-border overflow-hidden rounded-2xl border border-border">
             {filled.map(([name, value]) => (
-              <div key={name} className="grid gap-0.5 p-2.5 sm:grid-cols-[12rem_1fr]">
+              <div key={name} className="grid gap-0.5 p-3 sm:grid-cols-[12rem_1fr]">
                 <dt className="text-xs font-medium text-muted-foreground">
                   {labels.get(name) ?? name}
                 </dt>
@@ -452,11 +468,14 @@ function TriagePreview({
         )}
       </CardContent>
 
-      <CardFooter className="flex-wrap justify-end gap-2 rounded-none border-t-2">
-        <Button variant="ghost" className="rounded-sm" onClick={onDismiss}>
+      <CardFooter className="flex-wrap justify-end gap-2 rounded-b-3xl border-t border-border bg-transparent">
+        <Button variant="ghost" className="rounded-full px-4" onClick={onDismiss}>
           Verwerfen
         </Button>
-        <Button className="rounded-sm" onClick={() => onAccept(schema.id, payload)}>
+        <Button
+          className="rounded-full bg-inverse-surface px-5 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+          onClick={() => onAccept(schema.id, payload)}
+        >
           Prüfen und absenden
         </Button>
       </CardFooter>

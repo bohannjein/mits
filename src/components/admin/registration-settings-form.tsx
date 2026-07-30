@@ -37,9 +37,9 @@ export function RegistrationSettingsForm({
 
   return (
     <form action={formAction}>
-      <Card className="rounded-sm border-2 border-border shadow-brutal ring-0">
+      <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-2">
         <CardHeader>
-          <CardTitle className="uppercase">Registrierung</CardTitle>
+          <CardTitle className="text-lg font-medium">Registrierung</CardTitle>
           <CardDescription>
             Steuert, ob sich neue Nutzer selbst anlegen dürfen und aus welchen
             E-Mail-Domains.
@@ -47,7 +47,7 @@ export function RegistrationSettingsForm({
         </CardHeader>
 
         <CardContent className="grid gap-5">
-          <div className="flex items-start gap-3 rounded-sm border-2 border-border p-3">
+          <div className="flex items-start gap-3 rounded-2xl border border-border p-4">
             <Switch
               id="registrationEnabled"
               name="registrationEnabled"
@@ -72,7 +72,7 @@ export function RegistrationSettingsForm({
               disabled={pending}
               defaultValue={settings.allowedEmailDomains.join("\n")}
               placeholder={"firma.de\ntochtergesellschaft.de"}
-              className="rounded-sm font-mono"
+              className="rounded-xl font-mono"
             />
             <p className="text-xs text-muted-foreground">
               Eine Domain pro Zeile, ohne „@“. Leer lassen für beliebige Domains.
@@ -84,7 +84,7 @@ export function RegistrationSettingsForm({
           {result && (
             <Alert
               variant={result.ok ? "default" : "destructive"}
-              className="rounded-sm border-2"
+              className="rounded-2xl border-border px-4 py-3"
             >
               {result.ok ? <CheckCircle2Icon /> : <TriangleAlertIcon />}
               <AlertDescription>
@@ -94,8 +94,12 @@ export function RegistrationSettingsForm({
           )}
         </CardContent>
 
-        <CardFooter className="justify-end rounded-none border-t-2">
-          <Button type="submit" className="rounded-sm" disabled={pending}>
+        <CardFooter className="justify-end rounded-b-3xl border-t border-border bg-transparent">
+          <Button
+            type="submit"
+            className="h-10 rounded-full bg-inverse-surface px-5 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+            disabled={pending}
+          >
             {pending && <Loader2Icon className="animate-spin" />}
             {pending ? "Speichern …" : "Speichern"}
           </Button>

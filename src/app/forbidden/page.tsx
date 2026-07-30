@@ -29,22 +29,30 @@ export default async function ForbiddenPage() {
   return (
     <>
       <AppHeader />
-      <main className="bg-grid flex flex-1 items-center justify-center px-6 py-16">
-        <Card className="w-full max-w-md rounded-sm border-2 border-border shadow-brutal ring-0">
+      <main className="bg-aurora flex flex-1 items-center justify-center px-6 py-16">
+        <Card className="w-full max-w-md rounded-3xl border border-border bg-card ring-0 shadow-elev-2">
           <CardHeader>
-            <ShieldAlertIcon className="size-5 text-destructive" aria-hidden />
-            <CardTitle className="mt-2 uppercase">Kein Zugriff</CardTitle>
-            <CardDescription>
+            <span className="grid size-11 place-items-center rounded-full bg-destructive/15 text-destructive">
+              <ShieldAlertIcon className="size-5" strokeWidth={1.5} aria-hidden />
+            </span>
+            <CardTitle className="mt-4 font-medium">Kein Zugriff</CardTitle>
+            <CardDescription className="mt-1 leading-relaxed">
               {user
                 ? `Dein Konto hat die Rolle „${ROLE_LABELS[user.role]}“ und darf diesen Bereich nicht öffnen.`
                 : "Für diesen Bereich fehlen die Rechte."}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
-            <Button asChild className="rounded-sm">
+            <Button
+              asChild
+              className="rounded-full bg-inverse-surface px-4 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+            >
               <Link href="/tickets/new">Ticket erfassen</Link>
             </Button>
-            <Button asChild variant="outline" className="rounded-sm">
+            <Button
+              asChild
+              className="rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
+            >
               <Link href="/tickets">Meine Tickets</Link>
             </Button>
           </CardContent>

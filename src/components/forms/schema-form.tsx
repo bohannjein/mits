@@ -95,9 +95,14 @@ export function SchemaForm({
             </fieldset>
           ))}
 
-          <div className="flex items-center justify-end gap-2 border-t-2 border-border pt-5">
+          <div className="flex items-center justify-end gap-2 border-t border-border pt-5">
             {secondaryAction}
-            <Button type="submit" size="lg" className="rounded-sm" disabled={submitting}>
+            <Button
+              type="submit"
+              size="lg"
+              className="h-11 rounded-full bg-inverse-surface px-6 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+              disabled={submitting}
+            >
               {submitting && <Loader2Icon className="animate-spin" />}
               {submitting ? "Wird gesendet …" : (schema.submitLabel ?? "Ticket senden")}
             </Button>

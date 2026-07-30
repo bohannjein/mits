@@ -98,16 +98,11 @@
   --shadow-glow-gemini:
     0 0 0 1px color-mix(in oklch, var(--gemini-2) 35%, transparent),
     0 8px 40px -8px color-mix(in oklch, var(--gemini-2) 30%, transparent);
-
-  /* Kept under the old names because ~10 call sites still reference them
-     (auth cards, resource grid, announcement banner). They now resolve to the
-     Material elevations so nothing renders as a half-migrated hard shadow. */
-  --shadow-brutal-sm: var(--shadow-elev-1);
-  --shadow-brutal: var(--shadow-elev-2);
-  --shadow-brutal-lg: var(--shadow-elev-3);
-  --shadow-brutal-primary:
+  /* Accent-tinted edge for the one element that carries the brand: the logo
+     mark. Luminous rim plus a wide soft falloff, both derived from --primary. */
+  --shadow-glow-primary:
     0 0 0 1px color-mix(in oklch, var(--primary) 40%, transparent),
-    0 8px 28px -8px color-mix(in oklch, var(--primary) 25%, transparent);
+    0 6px 24px -6px color-mix(in oklch, var(--primary) 30%, transparent);
 }
 
 :root {

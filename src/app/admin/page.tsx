@@ -48,37 +48,37 @@ export default async function AdminPage() {
         <div className="w-full max-w-5xl">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold uppercase sm:text-3xl">Admin-Desk</h1>
+              <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">Admin-Desk</h1>
               <p className="mt-2 text-muted-foreground">
                 Registrierung, Rollen und Bestand dieser Instanz.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="rounded-sm font-mono">
+              <Badge variant="outline" className="rounded-full">
                 {users.length} Konten
               </Badge>
-              <Badge variant="outline" className="rounded-sm font-mono">
+              <Badge variant="outline" className="rounded-full">
                 {total} Tickets · {open} offen
               </Badge>
-              <Button asChild variant="outline" size="sm" className="rounded-sm">
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
                 <Link href="/admin/settings/ai">
                   <BrainIcon />
                   KI-Einstellungen
                 </Link>
               </Button>
-              <Button asChild variant="outline" size="sm" className="rounded-sm">
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
                 <Link href="/admin/portal">
                   <MegaphoneIcon />
                   Portal-Inhalte
                 </Link>
               </Button>
-              <Button asChild variant="outline" size="sm" className="rounded-sm">
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
                 <Link href="/admin/forms/builder">
                   <WandSparklesIcon />
                   Formular-Builder
                 </Link>
               </Button>
-              <Button asChild variant="outline" size="sm" className="rounded-sm">
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
                 <Link href="/board">
                   <LayoutDashboardIcon />
                   Board
@@ -92,7 +92,7 @@ export default async function AdminPage() {
           <RegistrationSettingsForm settings={settings} />
 
           <h2 className="label-industrial mt-10 mb-3">Benutzer & Rollen</h2>
-          <div className="overflow-x-auto rounded-sm border-2 border-border">
+          <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-elev-1">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -113,7 +113,7 @@ export default async function AdminPage() {
                         {isSelf && (
                           <Badge
                             variant="outline"
-                            className="ml-2 rounded-sm font-mono"
+                            className="ml-2 rounded-full"
                           >
                             du
                           </Badge>

@@ -33,7 +33,7 @@ export default async function FormBuilderPage() {
         <div className="w-full max-w-7xl">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold uppercase sm:text-3xl">
+              <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
                 Formular-Builder
               </h1>
               <p className="mt-2 max-w-2xl text-muted-foreground">
@@ -43,10 +43,10 @@ export default async function FormBuilderPage() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="rounded-sm font-mono">
+              <Badge variant="outline" className="rounded-full">
                 {infos.length} Formulare · {stored} aus der Datenbank
               </Badge>
-              <Button asChild variant="outline" size="sm" className="rounded-sm">
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
                 <Link href="/admin">
                   <ArrowLeftIcon />
                   Admin-Desk

@@ -61,7 +61,7 @@ export function LoginForm({ next }: { next: string }) {
     <Form {...form}>
       <form onSubmit={submit} className="grid gap-5" noValidate>
         {error && (
-          <Alert variant="destructive" className="rounded-sm border-2">
+          <Alert variant="destructive" className="rounded-2xl border-border px-4 py-3">
             <AlertTitle>Nicht angemeldet</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
@@ -79,7 +79,7 @@ export function LoginForm({ next }: { next: string }) {
                   autoComplete="username"
                   placeholder="vorname.nachname@firma.de"
                   disabled={busy}
-                  className="rounded-sm"
+                  className="h-10 rounded-xl"
                 />
               </FormControl>
               <FormMessage />
@@ -98,7 +98,7 @@ export function LoginForm({ next }: { next: string }) {
                   type="password"
                   autoComplete="current-password"
                   disabled={busy}
-                  className="rounded-sm"
+                  className="h-10 rounded-xl"
                 />
               </FormControl>
               <FormMessage />
@@ -106,7 +106,12 @@ export function LoginForm({ next }: { next: string }) {
           )}
         />
 
-        <Button type="submit" size="lg" className="rounded-sm" disabled={busy}>
+        <Button
+          type="submit"
+          size="lg"
+          className="h-11 rounded-full bg-inverse-surface px-6 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+          disabled={busy}
+        >
           {busy ? <Loader2Icon className="animate-spin" /> : <LogInIcon />}
           {busy ? "Anmelden …" : "Anmelden"}
         </Button>

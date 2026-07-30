@@ -69,7 +69,7 @@ export function RegisterForm({ allowedDomains }: { allowedDomains: string[] }) {
     <Form {...form}>
       <form onSubmit={submit} className="grid gap-5" noValidate>
         {error && (
-          <Alert variant="destructive" className="rounded-sm border-2">
+          <Alert variant="destructive" className="rounded-2xl border-border px-4 py-3">
             <AlertTitle>Registrierung abgelehnt</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
@@ -86,7 +86,7 @@ export function RegisterForm({ allowedDomains }: { allowedDomains: string[] }) {
                   autoComplete="name"
                   placeholder="Jana Berger"
                   disabled={busy}
-                  className="rounded-sm"
+                  className="h-10 rounded-xl"
                 />
               </FormControl>
               <FormMessage />
@@ -106,7 +106,7 @@ export function RegisterForm({ allowedDomains }: { allowedDomains: string[] }) {
                   autoComplete="username"
                   placeholder="vorname.nachname@firma.de"
                   disabled={busy}
-                  className="rounded-sm"
+                  className="h-10 rounded-xl"
                 />
               </FormControl>
               {allowedDomains.length > 0 && (
@@ -130,7 +130,7 @@ export function RegisterForm({ allowedDomains }: { allowedDomains: string[] }) {
                   type="password"
                   autoComplete="new-password"
                   disabled={busy}
-                  className="rounded-sm"
+                  className="h-10 rounded-xl"
                 />
               </FormControl>
               <FormDescription>Mindestens 10 Zeichen.</FormDescription>
@@ -150,7 +150,7 @@ export function RegisterForm({ allowedDomains }: { allowedDomains: string[] }) {
                   type="password"
                   autoComplete="new-password"
                   disabled={busy}
-                  className="rounded-sm"
+                  className="h-10 rounded-xl"
                 />
               </FormControl>
               <FormMessage />
@@ -158,7 +158,12 @@ export function RegisterForm({ allowedDomains }: { allowedDomains: string[] }) {
           )}
         />
 
-        <Button type="submit" size="lg" className="rounded-sm" disabled={busy}>
+        <Button
+          type="submit"
+          size="lg"
+          className="h-11 rounded-full bg-inverse-surface px-6 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+          disabled={busy}
+        >
           {busy ? <Loader2Icon className="animate-spin" /> : <UserPlusIcon />}
           {busy ? "Konto wird erstellt …" : "Konto erstellen"}
         </Button>

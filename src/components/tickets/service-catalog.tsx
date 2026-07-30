@@ -39,16 +39,20 @@ export function ServiceCatalog({
     return (
       <div className="grid gap-6">
         <div className="flex items-start gap-3">
-          <Icon className="mt-0.5 size-6 shrink-0 text-primary" aria-hidden />
+          <span className="grid size-11 shrink-0 place-items-center rounded-full bg-surface-elevated text-muted-foreground">
+            <Icon className="size-5" strokeWidth={1.5} aria-hidden />
+          </span>
           <div className="grid gap-1">
-            <h2 className="text-xl font-bold uppercase">{selected.title}</h2>
+            <h2 className="text-xl font-medium tracking-tight">
+              {selected.title}
+            </h2>
             {selected.description && (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm leading-relaxed text-muted-foreground">
                 {selected.description}
               </p>
             )}
           </div>
-          <Badge variant="outline" className="ml-auto rounded-sm font-mono">
+          <Badge variant="outline" className="ml-auto rounded-full">
             v{selected.version}
           </Badge>
         </div>
@@ -62,10 +66,10 @@ export function ServiceCatalog({
             <Button
               type="button"
               variant="ghost"
-              className="rounded-sm"
+              className="h-11 rounded-full px-4"
               onClick={() => selectSchema(null)}
             >
-              <ArrowLeftIcon />
+              <ArrowLeftIcon strokeWidth={1.5} />
               Katalog
             </Button>
           }
@@ -76,7 +80,7 @@ export function ServiceCatalog({
 
   if (schemas.length === 0) {
     return (
-      <p className="rounded-sm border-2 border-border p-6 text-sm text-muted-foreground">
+      <p className="rounded-2xl border border-border p-6 text-sm text-muted-foreground">
         Es ist noch kein Formular veröffentlicht. Die Administration kann im
         Formular-Builder eines anlegen.
       </p>
@@ -94,24 +98,27 @@ export function ServiceCatalog({
               return (
                 <Card
                   key={schema.id}
-                  className="rounded-sm border-2 border-border shadow-brutal ring-0 transition-shadow hover:shadow-brutal-primary"
+                  className="group rounded-3xl border border-border bg-card ring-0 shadow-elev-1 transition-[box-shadow,border-color] duration-300 hover:border-foreground/20 hover:shadow-elev-3"
                 >
                   <CardHeader>
-                    <Icon className="size-6 text-primary" aria-hidden />
-                    <CardTitle className="mt-3 uppercase">
+                    <span className="grid size-11 place-items-center rounded-full bg-surface-elevated text-muted-foreground transition-colors duration-300 group-hover:text-foreground">
+                      <Icon className="size-5" strokeWidth={1.5} aria-hidden />
+                    </span>
+                    <CardTitle className="mt-4 font-medium">
                       {schema.title}
                     </CardTitle>
                     {schema.description && (
-                      <CardDescription>{schema.description}</CardDescription>
+                      <CardDescription className="mt-1 leading-relaxed">
+                        {schema.description}
+                      </CardDescription>
                     )}
                     <Button
                       type="button"
-                      variant="outline"
-                      className="mt-4 w-fit rounded-sm"
+                      className="mt-5 w-fit rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
                       onClick={() => selectSchema(schema.id)}
                     >
                       Formular öffnen
-                      <ChevronRightIcon />
+                      <ChevronRightIcon strokeWidth={1.5} />
                     </Button>
                   </CardHeader>
                 </Card>

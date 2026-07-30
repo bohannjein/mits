@@ -36,23 +36,30 @@ export default async function RegisterPage() {
 
   if (!registrationOpen) {
     return (
-      <Card className="rounded-sm border-2 border-border shadow-brutal ring-0">
+      <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-2">
         <CardHeader>
-          <LockIcon className="size-5 text-muted-foreground" aria-hidden />
-          <CardTitle className="mt-2 uppercase">Registrierung geschlossen</CardTitle>
-          <CardDescription>
+          <span className="grid size-11 place-items-center rounded-full bg-surface-elevated text-muted-foreground">
+            <LockIcon className="size-5" strokeWidth={1.5} aria-hidden />
+          </span>
+          <CardTitle className="mt-4 text-lg font-medium">
+            Registrierung geschlossen
+          </CardTitle>
+          <CardDescription className="mt-1 leading-relaxed">
             Die Selbstregistrierung wurde von der Administration deaktiviert.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <Alert className="rounded-sm border-2">
-            <InfoIcon />
+          <Alert className="rounded-2xl border-border px-4 py-3">
+            <InfoIcon strokeWidth={1.5} />
             <AlertTitle>Konto nötig?</AlertTitle>
             <AlertDescription>
               Wende dich an die IT-Administration — Konten werden dort angelegt.
             </AlertDescription>
           </Alert>
-          <Button asChild variant="outline" className="w-fit rounded-sm">
+          <Button
+            asChild
+            className="w-fit rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
+          >
             <Link href="/login">Zur Anmeldung</Link>
           </Button>
         </CardContent>
@@ -61,10 +68,10 @@ export default async function RegisterPage() {
   }
 
   return (
-    <Card className="rounded-sm border-2 border-border shadow-brutal ring-0">
+    <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-2">
       <CardHeader>
-        <CardTitle className="uppercase">Konto erstellen</CardTitle>
-        <CardDescription>
+        <CardTitle className="text-lg font-medium">Konto erstellen</CardTitle>
+        <CardDescription className="mt-1 leading-relaxed">
           {isBootstrap
             ? "Erstes Konto dieser Instanz — es erhält automatisch Administrationsrechte."
             : "Registriere dich, um Tickets zu erfassen und ihren Stand zu verfolgen."}

@@ -13,20 +13,21 @@ export function MITSLogo({
 }) {
   return (
     <span className={cn("inline-flex items-center gap-2.5", className)}>
+      {/* Squircle mark with an accent-tinted glow edge instead of the old hard
+          border. shadow-glow-primary derives its rim from --primary, so the
+          mark still needs no second asset per theme. */}
       <span
         aria-hidden
-        className="grid size-8 shrink-0 place-items-center rounded-sm border-2 border-current bg-primary font-mono text-sm font-bold leading-none text-primary-foreground"
+        className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-sm font-semibold leading-none text-primary-foreground shadow-glow-primary"
       >
         M
       </span>
       <span className="flex flex-col leading-none">
-        <span className="font-heading text-lg font-bold uppercase tracking-[0.14em]">
+        <span className="font-heading text-lg font-semibold tracking-tight">
           MITS
         </span>
         {showTagline && (
-          <span className="label-industrial mt-1 tracking-[0.12em]">
-            Modular IT Ticketing
-          </span>
+          <span className="label-industrial mt-1.5">Modular IT Ticketing</span>
         )}
       </span>
     </span>

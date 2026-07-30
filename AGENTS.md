@@ -170,16 +170,32 @@ Seite; sie dürfen den Store nicht selbst lesen (`server-only`).
 | Gemini-Gradient | `--gemini-1/2/3` (#4285f4 → #9b72cb → #d96570) |
 | Utilities | `bg-aurora` (weiches Radial-Wash), `bg-gemini-sheen`, `text-gemini`, `label-industrial` |
 
-Alles leitet sich aus Tokens in `globals.css` ab und folgt dem Theme automatisch. Zwei Punkte,
-die man kennen muss:
+Alles leitet sich aus Tokens in `globals.css` ab und folgt dem Theme automatisch.
 
-- **`bg-white`/`text-black` ist kein Ersatz für `bg-inverse-surface`.** Der Gemini-Pill-Button
-  ist im Light-Theme invertiert (dunkel auf hell). Eine literale Farbe wäre dort unlesbar —
-  und würde Regel 2 brechen.
-- **`shadow-brutal*` existiert nur noch als Alias** auf `shadow-elev-*`. Rund zehn Call-Sites
-  (Auth-Karten, `resource-grid`, `announcement-banner`) benutzen die alten Namen; sie rendern
-  dadurch weiche Material-Schatten statt halb migrierter Hartkanten. Beim Anfassen dieser
-  Dateien auf `shadow-elev-*` umstellen.
+**`bg-white`/`text-black` ist kein Ersatz für `bg-inverse-surface`.** Der Gemini-Pill-Button
+ist im Light-Theme invertiert (dunkel auf hell). Eine literale Farbe wäre dort unlesbar — und
+würde Regel 2 brechen.
+
+Das Neobrutalism-Vokabular ist vollständig entfernt: `shadow-brutal*`, `border-2`, `rounded-sm`,
+`rounded-none` und `uppercase`-Headings kommen in `src/` nicht mehr vor (außer in
+`components/ui/`, wo `rounded-none` legitime Variantenlogik der Primitives ist). Die
+Zuordnung, falls doch etwas auftaucht:
+
+| Element | Klassen |
+|---|---|
+| Karte, oberste Ebene | `rounded-3xl border border-border bg-card ring-0 shadow-elev-1` |
+| Karte mit Fokus (Auth, Dialog) | dieselbe, aber `shadow-elev-2` |
+| Verschachtelte Box, Alert, Tabelle | `rounded-2xl border border-border` |
+| Input, Textarea, Select, Code-Block | `h-10 rounded-xl` bzw. `rounded-xl` |
+| Button primär | `rounded-full bg-inverse-surface text-inverse-surface-foreground hover:bg-inverse-surface-hover` |
+| Button sekundär | `rounded-full bg-surface-elevated text-foreground hover:bg-accent` |
+| Badge, Chip, Tab | `rounded-full` |
+| CardFooter | `rounded-b-3xl border-t border-border bg-transparent` |
+| Hover auf klickbarer Karte | `hover:border-foreground/20 hover:shadow-elev-3` |
+| Icon in Karte | `size-11 rounded-full bg-surface-elevated text-muted-foreground` + `strokeWidth={1.5}` |
+
+`font-mono` bleibt nur, wo Zeichenraster Bedeutung trägt: JSON-Payloads, OCR-Rohtext,
+Schema-IDs, Modell-Tags. Zählwerte und Labels sind Sans.
 
 Bewegung läuft über `framer-motion` mit **Spring-Physics**, nie mit `duration`-Easing.
 Referenz-Werte in `components/dashboard/intake-modes.tsx` (`ENTRANCE`, `LIFT`) und
