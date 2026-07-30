@@ -3,7 +3,6 @@
 import {
   ChevronDownIcon,
   HeadsetIcon,
-  LayoutDashboardIcon,
   LogOutIcon,
   ShieldIcon,
   TicketIcon,
@@ -23,7 +22,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { signOut } from "@/lib/auth/client";
-import { ROLE_LABELS, canAdminister, canViewBoard } from "@/lib/auth/roles";
+import {
+  AGENT_HOME,
+  ROLE_LABELS,
+  canAdminister,
+  canViewBoard,
+} from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/session";
 
 /**
@@ -32,6 +36,14 @@ import type { SessionUser } from "@/lib/auth/session";
  * The user is passed in from the server rather than fetched with `useSession`:
  * the header is server-rendered, so there is no loading flash and no second
  * round-trip. The client is only needed to end the session.
+ *
+ * This menu is the only place in MITS that offers a cross-area link, which makes
+ * it the one place a reporter could be handed a way out of `/customer`. Both
+ * staff entries hang off `canViewBoard`/`canAdminister` — the same predicates the
+ * server guard uses — so a `user` is offered nothing but their own tickets. Any
+ * new entry here needs the same gate; an ungated one puts a dead-end link on the
+ * customer portal, and the redirect that catches it is a worse answer than never
+ * showing the link.
  */
 export function UserMenu({ user }: { user: SessionUser }) {
   const router = useRouter();
@@ -57,13 +69,13 @@ export function UserMenu({ user }: { user: SessionUser }) {
           size="sm"
           className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
         >
-          <Link href={showAdmin ? "/admin" : "/mits"}>
+          <Link href={showAdmin ? "/admin" : AGENT_HOME}>
             {showAdmin ? (
               <ShieldIcon strokeWidth={1.5} />
             ) : (
-              <LayoutDashboardIcon strokeWidth={1.5} />
+              <HeadsetIcon strokeWidth={1.5} />
             )}
-            {showAdmin ? "Admin-Desk" : "Ticket-Board"}
+            {showAdmin ? "Admin-Desk" : "Agenten-Desk"}
           </Link>
         </Button>
       )}
@@ -102,20 +114,12 @@ export function UserMenu({ user }: { user: SessionUser }) {
           </DropdownMenuItem>
 
           {showBoard && (
-            <>
-              <DropdownMenuItem asChild>
-                <Link href="/mits">
-                  <HeadsetIcon />
-                  Agenten-Desk
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/mits">
-                  <LayoutDashboardIcon />
-                  Ticket-Board
-                </Link>
-              </DropdownMenuItem>
-            </>
+            <DropdownMenuItem asChild>
+              <Link href={AGENT_HOME}>
+                <HeadsetIcon />
+                Agenten-Desk
+              </Link>
+            </DropdownMenuItem>
           )}
 
           {showAdmin && (

@@ -12,7 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getSessionUser } from "@/lib/auth/session";
-import { ROLE_LABELS } from "@/lib/auth/roles";
+import { ROLE_LABELS, canViewBoard, homeFor } from "@/lib/auth/roles";
 
 export const metadata: Metadata = {
   title: "Kein Zugriff — MITS",
@@ -42,12 +42,18 @@ export default async function ForbiddenPage() {
                 : "Für diesen Bereich fehlen die Rechte."}
             </CardDescription>
           </CardHeader>
+          {/* Back to the visitor's own area, not a fixed target: a reporter belongs
+              in the portal, a technician who overreached into `/admin` belongs in the
+              queue. Sending everyone to `/customer/new` would answer "wrong rights"
+              with "here, file a ticket". */}
           <CardContent className="flex flex-wrap gap-2">
             <Button
               asChild
               className="rounded-full bg-inverse-surface px-4 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
             >
-              <Link href="/customer/new">Ticket erfassen</Link>
+              <Link href={homeFor(user?.role)}>
+                {user && canViewBoard(user.role) ? "Zur Queue" : "Zum Portal"}
+              </Link>
             </Button>
             <Button
               asChild

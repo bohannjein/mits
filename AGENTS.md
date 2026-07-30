@@ -326,6 +326,24 @@ bestätigt die Technik — dieselbe Regel wie bei der KI-Triage.
 **Ein `user` auf `/mits/*` landet auf `/customer`, nicht auf `/forbidden`.** Das steuert
 `deniedPathFor` in `lib/auth/roles.ts`; alles ohne kleinere Sicht behält `/forbidden`.
 
+**Ein Anwender bekommt keinen Weg aus `/customer` heraus.** Nicht nur keinen erlaubten — gar
+keinen: es wird ihm kein Link nach `/mits` oder `/admin` angezeigt. Der Guard fängt den
+Direktaufruf ab, aber ein sichtbarer Link, der in einen Redirect läuft, ist eine schlechtere
+Antwort als kein Link. `components/auth/user-menu.tsx` ist die **einzige** Stelle mit
+Bereichswechsel-Links, und jeder Eintrag dort hängt an `canViewBoard`/`canAdminister` — den
+Prädikaten, die auch der Server-Guard benutzt. Neue Navigation in einer Anwenderseite darf
+kein `/mits`- oder `/admin`-Ziel ohne dieses Gate enthalten. Auch das Logo zeigt auf
+`homeFor(role)` statt auf `/`, damit ein Anwender nicht durch den Dispatcher läuft. Prüfbar
+am gerenderten HTML, nicht am Quelltext:
+
+```bash
+curl -s -b <anwender-cookie> http://127.0.0.1:3112/customer | grep -E 'href="/(mits|admin)'
+```
+
+Ausnahme sind admin-gepflegte Schnellzugriffe: `isSafeResourceHref` lässt Pfade ab `/` zu,
+ein Admin kann dort also bewusst auf einen Technikbereich zeigen. Das ist redaktioneller
+Inhalt, kein Navigationsdefekt.
+
 **Die zwei Detailansichten sind zwei Routen mit je eigenem Guard**, keine gemeinsame Seite
 mit `isAgent`-Bedingung. Gemeinsam ist nur `components/tickets/ticket-detail.tsx` — Kopf,
 Badges, Angaben. Zwei geschützte Routen sind schwerer versehentlich zu öffnen als eine

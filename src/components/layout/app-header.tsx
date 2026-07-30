@@ -5,7 +5,7 @@ import { MITSLogo } from "@/components/branding/mits-logo";
 import { PresenceHeartbeat } from "@/components/dashboard/presence-heartbeat";
 import { TicketSearch } from "@/components/tickets/ticket-search";
 import { Button } from "@/components/ui/button";
-import { canViewBoard } from "@/lib/auth/roles";
+import { canViewBoard, homeFor } from "@/lib/auth/roles";
 import { getSessionUser } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
 
@@ -43,7 +43,13 @@ export async function AppHeader() {
     <header className="border-b border-border bg-card">
       {trackPresence && <PresenceHeartbeat />}
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-3">
-        <Link href="/" className="rounded-xl outline-ring/50 focus-visible:outline-2">
+        {/* Straight to the signed-in user's own area instead of through the `/`
+            dispatcher: a reporter clicking the logo lands in their portal without
+            a redirect hop that briefly resolves a staff route. */}
+        <Link
+          href={user ? homeFor(user.role) : "/"}
+          className="rounded-xl outline-ring/50 focus-visible:outline-2"
+        >
           <MITSLogo />
         </Link>
 
