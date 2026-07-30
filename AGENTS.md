@@ -47,7 +47,7 @@ Diese drei Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
 | Auth | Better Auth 1.6 (E-Mail/Passwort), Rollen `user` < `technician` < `admin` |
 | Persistenz | SQLite (`better-sqlite3`, WAL) in `<data dir>/mits.db` |
 | KI-Backend | FastAPI in `backend/` — nur `fastapi`, `uvicorn`, `httpx`, `pydantic` |
-| LLM | bestehende Ollama-Instanz per `OLLAMA_BASE_URL` (nicht Teil des Stacks) |
+| LLM | bestehende Ollama-Instanz, Adresse und Modelle **in der UI** konfiguriert |
 | Deployment | `docker-compose.yml` im Root, Services `mits-web` + `mits-backend` |
 
 `@shadcn/form` ist in der Registry vorhanden, aber ein leerer Stub (nur `name` + `type`,
@@ -79,6 +79,7 @@ src/
     board/page.tsx         alle Tickets (technician + admin)
     admin/page.tsx         Registrierungspolicy + Rollen (admin)
     admin/portal/          Systemmeldungen + Schnellzugriffe (admin)
+    admin/settings/ai/     Ollama-URL + Modellauswahl (admin)
     admin/forms/builder/   Split-Screen-Formular-Builder (admin)
     admin/actions.ts       Server Actions, prüfen die Rolle selbst
     api/auth/[...all]/     Better-Auth-Endpoints
@@ -86,6 +87,7 @@ src/
     api/tickets/upload/    Multipart-Upload für Anhänge
     api/uploads/[fileId]/  Download, pro Anfrage zugriffsgeprüft
     api/ai/triage/         Session-geprüftes Gateway zum FastAPI-Backend
+    api/admin/ai-models/   fragt Ollama nach installierten Modellen (admin)
     api/admin/form-schemas/[id]/  lädt ein Schema in den Builder (admin)
   components/
     branding/              ThemeProvider, MITSLogo
@@ -113,6 +115,7 @@ src/
     auth/client.ts          Browser-Client (signIn/signUp/signOut)
     db/sqlite.ts            Verbindung + MITS-Tabellen
     settings.ts             Registrierungspolicy (mits_setting)
+    ai-settings.ts          Ollama-URL + Modelle (mits_setting), Env als Fallback
     portal.ts               Banner + Schnellzugriffe (mits_setting)
     form-schemas.ts         Schema-Store: Built-ins + DB-Overrides
     storage.ts              Datei-Ablage auf Platte + Zugriffsprüfung
@@ -184,6 +187,34 @@ Drei Ollama-Aufrufe, jeder einzeln eingegrenzt — `backend/main.py`:
    Formulars selbst**. `required` wird dabei entfernt: das Modell soll Felder leer
    lassen dürfen statt Werte zu erfinden. Die echte Pflichtfeldprüfung macht MITS
    beim Absenden.
+
+### Konfiguration: UI-First, kein Backend-Config
+
+Ollama-Adresse und beide Modellnamen stehen in `mits_setting` und werden unter
+`/admin/settings/ai` gepflegt. **Umgebungsvariablen sind nur Fallback**, pro Feld:
+
+```
+UI-Einstellung  →  Umgebungsvariable  →  eingebauter Standard
+```
+
+Warum das Backend die DB nicht selbst liest: es läuft in einem eigenen Container und
+hat keinen Zugriff auf die SQLite-Datei der Web-App. Das Gateway liest die Settings
+**pro Anfrage** und schickt `ollama_base_url`, `text_model` und `vision_model` mit —
+das Backend bleibt zustandslos und ohne eigene Konfiguration. Eine Änderung in der UI
+greift damit ab der nächsten Anfrage, ohne Neustart.
+
+Konsequenzen, die man kennen muss:
+
+- `GET /api/v1/health` kennt die UI-Werte **nicht** und prüft die Env-Fallbacks. Die
+  Felder heißen deshalb `fallback_*`. Die real benutzte Adresse prüft „Verbindung
+  testen" in der Einstellungsmaske (`POST /api/v1/models`).
+- Beide Werte kommen aus dem Request und werden im Backend validiert:
+  `resolve_base_url` lässt nur `http`/`https` zu, `resolve_model` nur
+  `[A-Za-z0-9._-/]` plus optionalen `:tag`. Ohne das wäre eine
+  admin-gesetzte URL ein `file:`-Ziel für httpx.
+- Dass ein Admin MITS auf jeden erreichbaren Host zeigen lassen kann, ist gewollt —
+  aber deshalb ist `/admin/settings/ai` admin-only und `/api/admin/ai-models`
+  ebenfalls.
 
 Grenzen und Regeln:
 

@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { LayoutDashboardIcon, MegaphoneIcon, WandSparklesIcon } from "lucide-react";
+import {
+  BrainIcon,
+  LayoutDashboardIcon,
+  MegaphoneIcon,
+  WandSparklesIcon,
+} from "lucide-react";
 
 import { RegistrationSettingsForm } from "@/components/admin/registration-settings-form";
 import { UserRoleForm } from "@/components/admin/user-role-form";
@@ -55,6 +60,12 @@ export default async function AdminPage() {
               <Badge variant="outline" className="rounded-sm font-mono">
                 {total} Tickets · {open} offen
               </Badge>
+              <Button asChild variant="outline" size="sm" className="rounded-sm">
+                <Link href="/admin/settings/ai">
+                  <BrainIcon />
+                  KI-Einstellungen
+                </Link>
+              </Button>
               <Button asChild variant="outline" size="sm" className="rounded-sm">
                 <Link href="/admin/portal">
                   <MegaphoneIcon />

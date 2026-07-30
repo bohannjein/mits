@@ -89,17 +89,22 @@ Vollständige Vorlage mit Kommentaren: [.env.example](.env.example).
 
 | Variable | Pflicht | Gilt für | Standard | Bedeutung |
 |---|---|---|---|---|
+**Nur zwei Variablen sind Pflicht.** Alles zur KI wird in der UI gepflegt, nicht in
+der Umgebung.
+
+| Variable | Pflicht | Gilt für | Standard | Bedeutung |
+|---|---|---|---|---|
 | `BETTER_AUTH_SECRET` | **ja** (Docker) | web | generiert | HMAC-Schlüssel für Session-Cookies. `openssl rand -hex 32`. Außerhalb von Docker optional: MITS legt sonst einen Schlüssel unter `<Datenverzeichnis>/auth-secret` ab. Im Stack Pflicht, weil er sonst bei jedem Rebuild neu wäre und alle Sessions verfielen. |
 | `MITS_SERVICE_TOKEN` | **ja** | web + backend | — | Gemeinsames Geheimnis. Das Backend weist jede Anfrage ohne diesen Header ab und verweigert bei fehlender Konfiguration alles (fail closed). Beide Services brauchen denselben Wert. |
-| `OLLAMA_BASE_URL` | **ja** | backend | — | Adresse der bestehenden Ollama-Instanz, z. B. `http://host.docker.internal:11434` für Ollama auf dem Docker-Host. |
 | `BETTER_AUTH_URL` | empfohlen | web | aus Request | Öffentliche URL, z. B. `https://mits.firma.de`. Ohne den Wert leitet Better Auth den Origin aus dem Request ab — hinter einem Proxy, der `Host` umschreibt, falsch. |
 | `MITS_TRUSTED_ORIGINS` | nein | web | leer | Weitere erlaubte Origins für die Auth-Endpoints, kommagetrennt. |
 | `MITS_WEB_PORT` | nein | compose | `3000` | Host-Port, auf dem `mits-web` veröffentlicht wird. |
 | `MITS_DATA_DIR` | nein | web | `./data` bzw. `/app/data` | Wohin `mits.db`, `uploads/` und `auth-secret` schreiben. Im Container das gemountete Volume. |
 | `MITS_BACKEND_URL` | nein | web | `http://localhost:8000` | Adresse des KI-Backends. Im Stack von Compose gesetzt (`http://mits-backend:8000`); nur für lokale Entwicklung nötig. |
-| `OLLAMA_TEXT_MODEL` | nein | backend | `llama3.1` | Modell für Routing und Feldextraktion. |
-| `OLLAMA_VISION_MODEL` | nein | backend | `llava` | Modell für die Texterkennung in Screenshots. |
-| `OLLAMA_TIMEOUT_SECONDS` | nein | backend | `120` | Zeitlimit pro Ollama-Aufruf. Bei CPU-Inferenz eher erhöhen als senken. |
+| `OLLAMA_BASE_URL` | nein | backend | `http://host.docker.internal:11434` | **Nur Fallback.** Gilt, solange in der UI keine URL gesetzt ist. |
+| `OLLAMA_TEXT_MODEL` | nein | backend | `llama3.1` | **Nur Fallback** für das Routing-/Extraktionsmodell. |
+| `OLLAMA_VISION_MODEL` | nein | backend | `llava` | **Nur Fallback** für die Texterkennung in Screenshots. |
+| `OLLAMA_TIMEOUT_SECONDS` | nein | backend | `120` | Zeitlimit pro Ollama-Aufruf. Bei CPU-Inferenz eher erhöhen als senken. Nicht in der UI einstellbar. |
 
 ## Deployment mit Portainer (direkt aus der Repo-URL)
 
@@ -170,22 +175,14 @@ Unter *Environment variables* → **Advanced mode** einfügen und die Werte erse
 ```
 BETTER_AUTH_SECRET=<hex-aus-schritt-2>
 MITS_SERVICE_TOKEN=<hex-aus-schritt-2>
-OLLAMA_BASE_URL=http://host.docker.internal:11434
 BETTER_AUTH_URL=https://mits.firma.de
 MITS_WEB_PORT=3000
 ```
 
-Zu `OLLAMA_BASE_URL`:
-
-| Wo läuft Ollama? | Wert |
-|---|---|
-| auf demselben Docker-Host | `http://host.docker.internal:11434` — der Name ist in der Compose-Datei per `extra_hosts` auf das Host-Gateway gemappt |
-| auf einem anderen Server | `http://ollama.intern:11434` bzw. die IP |
-| in einem anderen Compose-Stack | Container per gemeinsamem Docker-Netz erreichbar machen, dann `http://<container>:11434` |
-
-`BETTER_AUTH_SECRET`, `MITS_SERVICE_TOKEN` und `OLLAMA_BASE_URL` sind in der
-Compose-Datei als Pflicht deklariert. Fehlt einer, bricht das Deploy mit einer klaren
-Meldung ab, statt halb zu starten.
+Das ist alles. **Ollama-Adresse und Modelle werden hier nicht eingetragen** — die
+stellst du nach dem Deploy in der UI ein (Schritt 6). Nur diese beiden Geheimnisse
+sind in der Compose-Datei als Pflicht deklariert; fehlt eines, bricht das Deploy mit
+einer klaren Meldung ab, statt halb zu starten.
 
 ### 5. Deploy the stack
 
@@ -200,18 +197,38 @@ http://<host>:3000/register
 entscheiden, ob sich weitere Nutzer selbst registrieren dürfen — und aus welchen
 E-Mail-Domains.
 
-### 6. Kontrollieren
+### 6. KI in der UI einrichten
+
+**Admin-Desk → KI-Einstellungen** (`/admin/settings/ai`):
+
+1. **Basis-URL** eintragen:
+
+   | Wo läuft Ollama? | Wert |
+   |---|---|
+   | auf demselben Docker-Host | `http://host.docker.internal:11434` — der Name ist in der Compose-Datei per `extra_hosts` auf das Host-Gateway gemappt |
+   | auf einem anderen Server | `http://ollama.intern:11434` bzw. die IP |
+   | in einem anderen Compose-Stack | Container per gemeinsamem Docker-Netz erreichbar machen, dann `http://<container>:11434` |
+
+2. **Verbindung testen** — die Antwort listet die installierten Modelle.
+3. **Textmodell** und **Vision-Modell** aus den Dropdowns wählen.
+4. **Speichern.** Die nächste KI-Anfrage nutzt die Werte; kein Neustart, kein Redeploy.
+
+Pro Feld gilt: Wert aus der UI → sonst Umgebungsvariable → sonst eingebauter
+Standard. Ein leeres Feld heißt also „Fallback nutzen", nicht „kaputt".
+
+### 7. Kontrollieren
 
 ```bash
-# Ollama erreichbar? Beide Modelle vorhanden?
+# Erreicht das Backend seinen Fallback-Ollama? Welche Modelle liegen dort?
 docker exec mits-backend python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health').read().decode())"
 
 # Läuft das Web?
 docker logs mits-web --tail 20
 ```
 
-Die Health-Antwort nennt `ollama_reachable`, `text_model_present` und
-`vision_model_present` — damit ist eine Fehlkonfiguration in einem Blick sichtbar.
+Die Health-Antwort prüft den **Fallback** aus der Umgebung — ein reines GET kennt die
+UI-Einstellungen nicht. Ob die *tatsächlich* benutzte Adresse steht, zeigt der Button
+„Verbindung testen" in der KI-Einstellungsmaske.
 
 ### Updates
 
@@ -231,11 +248,12 @@ und Redirects landen auf dem falschen Host.
 
 | Symptom | Ursache |
 |---|---|
-| Deploy bricht sofort ab, „variable is not set" | Eine Pflichtvariable aus Schritt 4 fehlt. |
+| Deploy bricht sofort ab, „variable is not set" | `BETTER_AUTH_SECRET` oder `MITS_SERVICE_TOKEN` fehlt — nur diese zwei sind Pflicht. |
 | Build scheitert bei `npm ci` oder `pip install` | Docker-Host kommt nicht ins Internet oder ein Proxy fehlt. |
 | „failed to read dockerfile" | Build method war *Web editor* statt *Repository*. |
 | Login klappt, aber man bleibt abgemeldet | `BETTER_AUTH_URL` zeigt nicht auf die tatsächlich aufgerufene URL, oder HTTPS terminiert davor ohne passende Header. |
-| KI-Tab meldet „Ollama nicht erreichbar" | `OLLAMA_BASE_URL` aus Sicht des **Containers** prüfen, nicht vom eigenen Rechner aus. |
+| KI-Tab meldet „Ollama nicht erreichbar" | Basis-URL unter `/admin/settings/ai` mit „Verbindung testen" prüfen. Sie muss aus Sicht des **Containers** stimmen, nicht vom eigenen Rechner aus. |
+| KI meldet „Modell nicht vorhanden" | Modell auf dem Ollama-Host pullen, dann in den Einstellungen erneut testen und auswählen. |
 | Alle Sessions nach jedem Redeploy weg | `BETTER_AUTH_SECRET` war nicht gesetzt und wurde neu erzeugt. |
 
 ## Roadmap

@@ -1,8 +1,12 @@
 # MITS — deployable as a Portainer stack straight from the repository.
 #
-# Ollama is NOT part of this stack: it runs as an existing instance and is reached
-# over OLLAMA_BASE_URL. If it listens on the Docker host itself, use
-#   OLLAMA_BASE_URL=http://host.docker.internal:11434
+# Ollama is NOT part of this stack. Its address and both model names are
+# configured in the UI under /admin/settings/ai and stored in the database, so
+# nothing about the AI setup has to be pinned here. The OLLAMA_* variables below
+# are optional fallbacks for a first boot before anyone opens that page.
+#
+# If Ollama listens on the Docker host itself, use
+#   http://host.docker.internal:11434
 # which the extra_hosts entry below resolves.
 
 services:
@@ -44,7 +48,9 @@ services:
     # stack. Publishing it would expose an unauthenticated-by-default surface to
     # the host network.
     environment:
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:?set OLLAMA_BASE_URL in .env}
+      # All three are optional fallbacks — the effective values arrive with each
+      # request from the settings the admin saved in the UI.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_TEXT_MODEL: ${OLLAMA_TEXT_MODEL:-llama3.1}
       OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-llava}
       OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-120}

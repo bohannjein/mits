@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { AISettingsError, setAISettings } from "@/lib/ai-settings";
 import { isRole } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
 import { saveFormSchema } from "@/lib/form-schemas";
@@ -150,6 +151,41 @@ export async function savePortalContentAction(
     ok: true,
     message: `${parsed.data.announcements.length} Meldung(en) und ${parsed.data.resources.length} Kachel(n) gespeichert.`,
   };
+}
+
+/* ── AI settings ────────────────────────────────────────────────────────── */
+
+export async function saveAISettingsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  try {
+    const saved = setAISettings({
+      ollamaBaseUrl: String(formData.get("ollamaBaseUrl") ?? ""),
+      textModel: String(formData.get("textModel") ?? ""),
+      visionModel: String(formData.get("visionModel") ?? ""),
+    });
+
+    revalidatePath("/admin/settings/ai");
+
+    const blank = [
+      !saved.ollamaBaseUrl && "URL",
+      !saved.textModel && "Textmodell",
+      !saved.visionModel && "Vision-Modell",
+    ].filter(Boolean);
+
+    return {
+      ok: true,
+      message: blank.length
+        ? `Gespeichert. Leer gelassen und daher aus der Umgebung: ${blank.join(", ")}.`
+        : "Gespeichert. Die nächste KI-Anfrage nutzt diese Werte.",
+    };
+  } catch (error) {
+    if (error instanceof AISettingsError) return { ok: false, error: error.message };
+    throw error;
+  }
 }
 
 /* ── Form schemas ───────────────────────────────────────────────────────── */

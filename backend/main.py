@@ -27,6 +27,7 @@ import binascii
 import json
 import logging
 import os
+import re
 import secrets
 from typing import Any
 
@@ -36,6 +37,8 @@ from pydantic import BaseModel, Field
 
 LOG = logging.getLogger("mits.triage")
 
+# Fallbacks only. MITS configures Ollama in its own UI and sends the endpoint and
+# both model names with every request, so a deployment never has to set these.
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 TEXT_MODEL = os.environ.get("OLLAMA_TEXT_MODEL", "llama3.1")
 VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "llava")
@@ -46,6 +49,9 @@ SERVICE_TOKEN = os.environ.get("MITS_SERVICE_TOKEN", "")
 MAX_IMAGES = int(os.environ.get("MITS_MAX_IMAGES", "4"))
 # ~8 MB of base64 per image. Larger screenshots are downscaled by the browser.
 MAX_IMAGE_CHARS = int(os.environ.get("MITS_MAX_IMAGE_CHARS", str(8 * 1024 * 1024)))
+
+#: Ollama model tag: `llama3.1`, `qwen2.5-vl:7b`, `registry/user/model:tag`.
+MODEL_NAME_RE = re.compile(r"^[A-Za-z0-9._\-/]+(:[A-Za-z0-9._-]+)?$")
 
 app = FastAPI(
     title="MITS AI Routing",
@@ -104,6 +110,18 @@ class TriageRequest(BaseModel):
     #: Screenshots as base64. Data-URL prefixes are accepted and stripped.
     images: list[str] = Field(default_factory=list)
     schemas: list[FormSchemaOption] = Field(default_factory=list)
+    #: Runtime configuration from the MITS settings table. Each falls back to the
+    #: corresponding environment variable when absent, so the service still works
+    #: when called without them.
+    ollama_base_url: str | None = None
+    text_model: str | None = None
+    vision_model: str | None = None
+
+
+class ModelsRequest(BaseModel):
+    """Ask a specific Ollama instance which models it has."""
+
+    ollama_base_url: str | None = None
 
 
 class TriageResponse(BaseModel):
@@ -119,8 +137,39 @@ class TriageResponse(BaseModel):
 # ── Ollama plumbing ─────────────────────────────────────────────────────────
 
 
+def resolve_base_url(candidate: str | None) -> str:
+    """The endpoint to talk to, and a refusal for anything but http(s).
+
+    The caller supplies this per request, so the scheme is checked here rather
+    than trusted: a `file:` or `gopher:` URL must never reach httpx.
+    """
+    raw = (candidate or "").strip().rstrip("/")
+    if not raw:
+        return OLLAMA_BASE_URL
+    if not raw.startswith(("http://", "https://")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The Ollama URL must start with http:// or https://.",
+        )
+    return raw
+
+
+def resolve_model(candidate: str | None, fallback: str) -> str:
+    """Model tag, restricted to the characters a tag may contain."""
+    raw = (candidate or "").strip()
+    if not raw:
+        return fallback
+    if not MODEL_NAME_RE.match(raw):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid model name: {raw[:80]!r}",
+        )
+    return raw
+
+
 async def ollama_chat(
     client: httpx.AsyncClient,
+    base_url: str,
     model: str,
     messages: list[dict[str, Any]],
     response_format: dict[str, Any] | None = None,
@@ -137,11 +186,11 @@ async def ollama_chat(
         body["format"] = response_format
 
     try:
-        response = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=body)
+        response = await client.post(f"{base_url}/api/chat", json=body)
     except httpx.RequestError as error:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Ollama is unreachable at {OLLAMA_BASE_URL}: {error}",
+            detail=f"Ollama is unreachable at {base_url}: {error}",
         ) from error
 
     if response.status_code == 404:
@@ -284,38 +333,77 @@ def extraction_format(option: FormSchemaOption) -> dict[str, Any]:
 # ── Endpoints ───────────────────────────────────────────────────────────────
 
 
+async def fetch_installed_models(base_url: str, timeout: float = 8.0) -> list[str]:
+    """Model tags installed on that Ollama, sorted. Raises on transport failure."""
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.get(f"{base_url}/api/tags")
+    response.raise_for_status()
+    models = response.json().get("models", [])
+    return sorted(
+        {
+            str(model.get("name", ""))
+            for model in models
+            if isinstance(model, dict) and model.get("name")
+        }
+    )
+
+
+def model_installed(model: str, installed: list[str]) -> bool:
+    # Ollama reports "llama3.1:latest" for a "llama3.1" pull.
+    return any(name == model or name.startswith(f"{model}:") for name in installed)
+
+
 @app.get("/api/v1/health")
 async def health() -> dict[str, Any]:
-    """Liveness plus a reachability probe for Ollama and the configured models."""
+    """Liveness plus a reachability probe.
+
+    Reports the ENVIRONMENT fallbacks, because a plain GET carries no settings.
+    The values actually used come from the MITS settings table and arrive with
+    each triage request — use /api/v1/models to probe a specific endpoint.
+    """
     result: dict[str, Any] = {
         "status": "ok",
-        "ollama_base_url": OLLAMA_BASE_URL,
-        "text_model": TEXT_MODEL,
-        "vision_model": VISION_MODEL,
+        "fallback_ollama_base_url": OLLAMA_BASE_URL,
+        "fallback_text_model": TEXT_MODEL,
+        "fallback_vision_model": VISION_MODEL,
         "service_token_configured": bool(SERVICE_TOKEN),
+        "note": "Effective settings are configured in the MITS UI and sent per request.",
     }
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
-        response.raise_for_status()
-        installed = {
-            model.get("name", "") for model in response.json().get("models", [])
-        }
+        installed = await fetch_installed_models(OLLAMA_BASE_URL, timeout=5.0)
         result["ollama_reachable"] = True
-        # Ollama reports "llama3.1:latest" for a "llama3.1" pull.
-        result["text_model_present"] = any(
-            name == TEXT_MODEL or name.startswith(f"{TEXT_MODEL}:")
-            for name in installed
-        )
-        result["vision_model_present"] = any(
-            name == VISION_MODEL or name.startswith(f"{VISION_MODEL}:")
-            for name in installed
-        )
+        result["installed_models"] = installed
+        result["text_model_present"] = model_installed(TEXT_MODEL, installed)
+        result["vision_model_present"] = model_installed(VISION_MODEL, installed)
     except (httpx.HTTPError, ValueError) as error:
         result["status"] = "degraded"
         result["ollama_reachable"] = False
         result["error"] = str(error)
     return result
+
+
+@app.post("/api/v1/models", dependencies=[Depends(require_service_token)])
+async def models(request: ModelsRequest) -> dict[str, Any]:
+    """Which models a given Ollama has.
+
+    Backs the model dropdowns and the "test connection" button in the MITS admin
+    UI: the web app cannot be assumed to reach Ollama itself, but this service can.
+    """
+    base_url = resolve_base_url(request.ollama_base_url)
+    try:
+        installed = await fetch_installed_models(base_url)
+    except httpx.RequestError as error:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"Ollama is unreachable at {base_url}: {error}",
+        ) from error
+    except (httpx.HTTPStatusError, ValueError) as error:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"{base_url} did not answer like Ollama: {error}",
+        ) from error
+
+    return {"ollama_base_url": base_url, "models": installed}
 
 
 @app.post(
@@ -341,6 +429,11 @@ async def triage(request: TriageRequest) -> TriageResponse:
     images = [normalise_image(image) for image in request.images]
     options = {option.id: option for option in request.schemas}
 
+    # Endpoint and models come from the MITS settings table, resolved per request.
+    base_url = resolve_base_url(request.ollama_base_url)
+    text_model = resolve_model(request.text_model, TEXT_MODEL)
+    vision_model = resolve_model(request.vision_model, VISION_MODEL)
+
     async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
         # ── 1. OCR / transcription ──────────────────────────────────────────
         transcribed: str | None = None
@@ -348,7 +441,8 @@ async def triage(request: TriageRequest) -> TriageResponse:
             transcribed = (
                 await ollama_chat(
                     client,
-                    VISION_MODEL,
+                    base_url,
+                    vision_model,
                     [
                         {"role": "system", "content": TRANSCRIBE_SYSTEM},
                         {
@@ -377,7 +471,8 @@ async def triage(request: TriageRequest) -> TriageResponse:
         routed = parse_json_object(
             await ollama_chat(
                 client,
-                TEXT_MODEL,
+                base_url,
+                text_model,
                 [
                     {"role": "system", "content": ROUTE_SYSTEM},
                     {
@@ -407,7 +502,8 @@ async def triage(request: TriageRequest) -> TriageResponse:
         extracted = parse_json_object(
             await ollama_chat(
                 client,
-                TEXT_MODEL,
+                base_url,
+                text_model,
                 [
                     {"role": "system", "content": EXTRACT_SYSTEM},
                     {

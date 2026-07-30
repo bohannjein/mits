@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { getEffectiveAISettings } from "@/lib/ai-settings";
 import { getSessionUserFor } from "@/lib/auth/session";
 import { listFormSchemas } from "@/lib/form-schemas";
 
@@ -82,6 +83,10 @@ export async function POST(request: Request) {
     );
   }
 
+  // Read fresh on every request: an admin change under /admin/settings/ai takes
+  // effect immediately, without a restart or a redeploy.
+  const ai = getEffectiveAISettings();
+
   // Assembled here so the model can only ever be offered schemas this instance
   // actually knows — built-ins plus whatever the admin builder has published.
   const schemas = listFormSchemas().map((schema) => ({
@@ -101,7 +106,16 @@ export async function POST(request: Request) {
         "Content-Type": "application/json",
         "X-MITS-Service-Token": token,
       },
-      body: JSON.stringify({ prompt, images, schemas }),
+      // Ollama endpoint and models are configured in the UI, so they travel with
+      // the request: the backend has no access to this app's database.
+      body: JSON.stringify({
+        prompt,
+        images,
+        schemas,
+        ollama_base_url: ai.ollamaBaseUrl,
+        text_model: ai.textModel,
+        vision_model: ai.visionModel,
+      }),
       // Vision inference is slow; the backend has its own timeout and will
       // answer with 502 long before this matters.
       signal: AbortSignal.timeout(180_000),

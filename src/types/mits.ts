@@ -214,6 +214,52 @@ export const DEFAULT_AUTH_SETTINGS: AuthSettings = {
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
+   AI settings.
+
+   Configured in the UI, not in the environment. The web app reads them per
+   request and passes them to the AI backend, which stays stateless and needs no
+   database of its own.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** Ollama model tag: `llama3.1`, `qwen2.5-vl:7b`, `registry/user/model:tag`. */
+const MODEL_PATTERN = /^[A-Za-z0-9._\-/]+(:[A-Za-z0-9._-]+)?$/;
+
+export const AISettingsSchema = z.object({
+  /** Where Ollama listens. Empty falls back to the environment default. */
+  ollamaBaseUrl: z.string().max(300),
+  textModel: z.string().max(120),
+  visionModel: z.string().max(120),
+});
+export type AISettings = z.infer<typeof AISettingsSchema>;
+
+export const DEFAULT_AI_SETTINGS: AISettings = {
+  ollamaBaseUrl: "http://host.docker.internal:11434",
+  textModel: "llama3.1",
+  visionModel: "llava",
+};
+
+/**
+ * Whether this may be used as the Ollama endpoint.
+ *
+ * Only http and https, and a host must be present. An admin can deliberately
+ * point MITS at any reachable host — that is the feature — but the scheme check
+ * keeps `file:` and friends out of a URL the backend will fetch.
+ */
+export function isSafeOllamaUrl(value: string): boolean {
+  const raw = value.trim();
+  if (!raw) return false;
+  try {
+    const url = new URL(raw);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.hostname !== "";
+  } catch {
+    return false;
+  }
+}
+
+export const isValidModelName = (value: string): boolean =>
+  MODEL_PATTERN.test(value.trim());
+
+/* ──────────────────────────────────────────────────────────────────────────
    Portal content: system announcements and the quick-resource grid.
 
    Both are admin-maintained lists, small enough to live as JSON in
