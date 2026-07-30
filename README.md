@@ -101,38 +101,71 @@ Vollständige Vorlage mit Kommentaren: [.env.example](.env.example).
 | `OLLAMA_VISION_MODEL` | nein | backend | `llava` | Modell für die Texterkennung in Screenshots. |
 | `OLLAMA_TIMEOUT_SECONDS` | nein | backend | `120` | Zeitlimit pro Ollama-Aufruf. Bei CPU-Inferenz eher erhöhen als senken. |
 
-## Deployment (Portainer)
+## Deployment mit Portainer (direkt aus der Repo-URL)
 
-Ollama ist **nicht** Teil des Stacks — MITS spricht eine bestehende Instanz über
-`OLLAMA_BASE_URL` an.
+Portainer klont dieses Repository selbst und baut daraus beide Images. Es muss also
+nichts lokal geklont, gebaut oder in eine Registry geschoben werden — die Repo-URL
+genügt.
 
-**1. Modelle auf dem Ollama-Host laden**
+> **Wichtig: „Web editor" funktioniert hier nicht.** Der Stack baut aus dem
+> Quellcode (`build:` mit `context: .`). Beim Web editor kennt Portainer nur die
+> eingefügte Compose-Datei und hat keine `Dockerfile.web`, kein `backend/` und keine
+> `package.json` — der Build bricht ab. Nimm **Repository**.
+
+### Voraussetzungen
+
+- Portainer mit Zugriff auf eine Docker-Umgebung.
+- Der **Portainer-Server** (nicht dein Browser) muss `github.com` erreichen — er
+  klont das Repo. Beim Build braucht der Docker-Host außerdem Internet für `npm ci`
+  und `pip install`.
+- Eine laufende Ollama-Instanz. Ollama ist **nicht** Teil des Stacks; MITS spricht sie
+  über `OLLAMA_BASE_URL` an.
+- Rund 2 GB Platz für die Build-Layer beider Images.
+
+### 1. Modelle auf dem Ollama-Host laden
 
 ```bash
 ollama pull llama3.1     # Routing und Feldextraktion
 ollama pull llava        # Texterkennung in Screenshots
 ```
 
-**2. Zwei Geheimnisse erzeugen**
+Ohne die Modelle läuft MITS trotzdem — die KI-Analyse meldet dann im Klartext,
+welches Modell fehlt.
+
+### 2. Zwei Geheimnisse erzeugen
 
 ```bash
 openssl rand -hex 32     # -> BETTER_AUTH_SECRET
 openssl rand -hex 32     # -> MITS_SERVICE_TOKEN
 ```
 
-**3. Stack in Portainer anlegen**
+Beide getrennt erzeugen, nicht denselben Wert zweimal nehmen.
 
-*Stacks* → *Add stack* → Name z. B. `mits` → Build method **Repository**:
+### 3. Stack anlegen
+
+In Portainer: **Stacks** → **+ Add stack** → Name z. B. `mits` → Build method
+**Repository**.
 
 | Feld | Wert |
 |---|---|
 | Repository URL | `https://github.com/bohannjein/mits` |
 | Repository reference | `refs/heads/main` |
 | Compose path | `docker-compose.yml` |
+| Authentication | nur bei privatem Repo einschalten (siehe unten) |
+| Skip TLS verification | aus |
 
-**4. Umgebungsvariablen eintragen**
+**Privates Repo:** *Authentication* aktivieren, als Username den GitHub-Namen und als
+Password ein **Personal Access Token** mit `repo`-Leserecht eintragen. Portainer
+speichert das Token; ein normales Passwort funktioniert bei GitHub nicht mehr.
 
-Unter *Environment variables* → *Advanced mode* einfügen und die Werte ersetzen:
+**Automatische Updates (optional):** *GitOps updates* einschalten und entweder ein
+Polling-Intervall (z. B. `5m`) setzen oder den Webhook kopieren und in GitHub unter
+*Settings → Webhooks* eintragen. Dann deployt jeder Push auf `main` neu. Ohne das
+bleibt der Stack stehen, bis du *Pull and redeploy* drückst.
+
+### 4. Umgebungsvariablen eintragen
+
+Unter *Environment variables* → **Advanced mode** einfügen und die Werte ersetzen:
 
 ```
 BETTER_AUTH_SECRET=<hex-aus-schritt-2>
@@ -142,33 +175,68 @@ BETTER_AUTH_URL=https://mits.firma.de
 MITS_WEB_PORT=3000
 ```
 
+Zu `OLLAMA_BASE_URL`:
+
+| Wo läuft Ollama? | Wert |
+|---|---|
+| auf demselben Docker-Host | `http://host.docker.internal:11434` — der Name ist in der Compose-Datei per `extra_hosts` auf das Host-Gateway gemappt |
+| auf einem anderen Server | `http://ollama.intern:11434` bzw. die IP |
+| in einem anderen Compose-Stack | Container per gemeinsamem Docker-Netz erreichbar machen, dann `http://<container>:11434` |
+
 `BETTER_AUTH_SECRET`, `MITS_SERVICE_TOKEN` und `OLLAMA_BASE_URL` sind in der
-Compose-Datei als Pflicht deklariert — fehlt einer, bricht das Deploy mit einer
-klaren Meldung ab, statt halb zu starten.
+Compose-Datei als Pflicht deklariert. Fehlt einer, bricht das Deploy mit einer klaren
+Meldung ab, statt halb zu starten.
 
-**5. Deploy the stack**
+### 5. Deploy the stack
 
-Beim ersten Start baut Portainer beide Images (ein paar Minuten) und legt das Volume
-`mits-data` an. Danach `http://<host>:3000/register` aufrufen — **das erste Konto wird
-automatisch Administrator.**
+Der erste Build dauert einige Minuten (Next-Build und beide Images) und legt das
+Volume `mits-data` an. Danach:
 
-**6. Kontrollieren**
+```
+http://<host>:3000/register
+```
+
+**Das erste angelegte Konto wird automatisch Administrator.** Danach im Admin-Desk
+entscheiden, ob sich weitere Nutzer selbst registrieren dürfen — und aus welchen
+E-Mail-Domains.
+
+### 6. Kontrollieren
 
 ```bash
-# Ollama erreichbar? Modelle vorhanden?
+# Ollama erreichbar? Beide Modelle vorhanden?
 docker exec mits-backend python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health').read().decode())"
 
 # Läuft das Web?
 docker logs mits-web --tail 20
 ```
 
-**Updates:** Im Stack *Pull and redeploy*. Das Volume `mits-data` bleibt — Nutzer,
-Sessions, Tickets, Anhänge, Portal-Inhalte und gebaute Formulare überleben den
-Rebuild.
+Die Health-Antwort nennt `ollama_reachable`, `text_model_present` und
+`vision_model_present` — damit ist eine Fehlkonfiguration in einem Blick sichtbar.
 
-**Was der Stack nach außen gibt:** nur `mits-web`. Das KI-Backend hat bewusst keinen
-veröffentlichten Port und ist nur im Docker-Netz erreichbar; zusätzlich verlangt es
-den Service-Token.
+### Updates
+
+Im Stack **Pull and redeploy** (oder automatisch per GitOps, Schritt 3). Das Volume
+`mits-data` bleibt: Nutzer, Sessions, Tickets, Anhänge, Portal-Inhalte und im Builder
+gebaute Formulare überleben den Rebuild. Nur ein Löschen des Volumes verwirft sie.
+
+### Was der Stack nach außen gibt
+
+Nur `mits-web` auf `MITS_WEB_PORT`. Das KI-Backend hat bewusst **keinen**
+veröffentlichten Port, ist nur im Docker-Netz erreichbar und verlangt zusätzlich den
+Service-Token. Für HTTPS einen Reverse Proxy davorsetzen und `BETTER_AUTH_URL` auf die
+öffentliche URL zeigen lassen — sonst leitet Better Auth den Origin aus dem Request ab
+und Redirects landen auf dem falschen Host.
+
+### Wenn etwas klemmt
+
+| Symptom | Ursache |
+|---|---|
+| Deploy bricht sofort ab, „variable is not set" | Eine Pflichtvariable aus Schritt 4 fehlt. |
+| Build scheitert bei `npm ci` oder `pip install` | Docker-Host kommt nicht ins Internet oder ein Proxy fehlt. |
+| „failed to read dockerfile" | Build method war *Web editor* statt *Repository*. |
+| Login klappt, aber man bleibt abgemeldet | `BETTER_AUTH_URL` zeigt nicht auf die tatsächlich aufgerufene URL, oder HTTPS terminiert davor ohne passende Header. |
+| KI-Tab meldet „Ollama nicht erreichbar" | `OLLAMA_BASE_URL` aus Sicht des **Containers** prüfen, nicht vom eigenen Rechner aus. |
+| Alle Sessions nach jedem Redeploy weg | `BETTER_AUTH_SECRET` war nicht gesetzt und wurde neu erzeugt. |
 
 ## Roadmap
 
