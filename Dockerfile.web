@@ -16,6 +16,11 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Guarantee the directory exists before the runtime stage copies it. Git does not
+# track empty directories, so a repository whose public/ holds nothing but a
+# .gitkeep — or none at all — would otherwise fail the build with
+# "failed to compute cache key: /app/public: not found".
+RUN mkdir -p public
 # A build-time secret is never used at runtime; it only keeps Better Auth from
 # generating one into the image layer while pages are prerendered.
 ENV BETTER_AUTH_SECRET=build-time-placeholder-not-used-at-runtime
