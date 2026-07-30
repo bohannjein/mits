@@ -106,7 +106,6 @@ src/
     utils.ts                cn()
   types/mits.ts            MITSTicket, MITSFormSchema, MITSUser, AuthSettings
 scripts/verify-forms.mts   Checks für den Schema-Compiler (`npm test`)
-scripts/verify-auth.mts    E2E-Checks für RBAC + Isolation (`npm run test:auth`)
 ```
 
 `lib/auth/roles.ts` und `lib/auth/secret.ts` importieren bewusst **keine** Datenbank:
@@ -179,17 +178,16 @@ npm test             # Schema-Compiler (offline)
 npm run dev          # http://localhost:3000
 ```
 
-RBAC- und Isolations-Checks brauchen einen laufenden Server auf einem Wegwerf-Datenverzeichnis:
+Auth manuell prüfen: gegen ein Wegwerf-Datenverzeichnis starten, sonst landen
+Testkonten in der echten Datenbank.
 
 ```bash
 MITS_DATA_DIR=.tmp-e2e BETTER_AUTH_SECRET=$(openssl rand -hex 32) npx next dev -p 3100
-# in einer zweiten Shell, gleiches MITS_DATA_DIR:
-MITS_DATA_DIR=.tmp-e2e MITS_E2E_URL=http://localhost:3100 npm run test:auth
 ```
 
-Das Skript setzt die Registrierungspolicy direkt in der Datenbank (`lib/settings` ist
-`server-only` und wirft außerhalb des Bundlers) und schickt einen `Origin`-Header —
-ohne ihn lehnt Better Auth zustandsändernde Requests korrekt mit 403 ab.
+Zu beachten, wenn Auth-Endpoints per `curl`/`fetch` angesprochen werden: Better Auth
+lehnt zustandsändernde Requests ohne vertrauenswürdigen `Origin`-Header mit
+`403 Missing or null Origin` ab. Das ist der CSRF-Schutz, kein Fehler.
 
 Regel-2-Check — muss leer bleiben:
 

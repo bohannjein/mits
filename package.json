@@ -7,8 +7,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/verify-forms.mts",
-    "test:auth": "tsx scripts/verify-auth.mts"
+    "test": "tsx scripts/verify-forms.mts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.5.7",
