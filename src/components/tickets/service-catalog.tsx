@@ -12,23 +12,26 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { iconFor } from "@/lib/icons";
-import { catalogByCategory, findSchema } from "@/lib/mock-schemas";
+import { groupByCategory } from "@/lib/mock-schemas";
 import { useIntakeStore } from "@/lib/store/intake-store";
-import type { MITSTicketDraft } from "@/types/mits";
+import type { MITSFormSchema, MITSTicketDraft } from "@/types/mits";
 
 /**
  * Guided intake: category tiles first, then the chosen schema in <SchemaForm>.
- * The tiles are generated from the schema list, so publishing a new ticket type
- * means adding a schema — never touching this file.
+ * The tiles are generated from the schema list the server handed down, so
+ * publishing a new ticket type — in code or in the builder — never touches this
+ * file.
  */
 export function ServiceCatalog({
+  schemas,
   onSubmit,
 }: {
+  schemas: MITSFormSchema[];
   onSubmit: (draft: MITSTicketDraft) => void | Promise<void>;
 }) {
   const selectedSchemaId = useIntakeStore((state) => state.selectedSchemaId);
   const selectSchema = useIntakeStore((state) => state.selectSchema);
-  const selected = findSchema(selectedSchemaId);
+  const selected = schemas.find((schema) => schema.id === selectedSchemaId);
 
   if (selected) {
     const Icon = iconFor(selected.icon);
@@ -71,13 +74,22 @@ export function ServiceCatalog({
     );
   }
 
+  if (schemas.length === 0) {
+    return (
+      <p className="rounded-sm border-2 border-border p-6 text-sm text-muted-foreground">
+        Es ist noch kein Formular veröffentlicht. Die Administration kann im
+        Formular-Builder eines anlegen.
+      </p>
+    );
+  }
+
   return (
     <div className="grid gap-8">
-      {catalogByCategory().map(({ category, schemas }) => (
+      {groupByCategory(schemas).map(({ category, schemas: grouped }) => (
         <section key={category} className="grid gap-3">
           <h2 className="label-industrial">{category}</h2>
           <div className="grid gap-4 sm:grid-cols-2">
-            {schemas.map((schema) => {
+            {grouped.map((schema) => {
               const Icon = iconFor(schema.icon);
               return (
                 <Card

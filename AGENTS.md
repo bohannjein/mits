@@ -71,22 +71,30 @@ src/
   app/
     globals.css            alle Design-Tokens
     page.tsx               Startseite
+    page.tsx               Portal: Banner + Schnellzugriffe + Eingangs-Kacheln
     (auth)/login|register  Anmeldung / Registrierung
     forbidden/             Landung für angemeldet-aber-zu-wenig-Rechte
     tickets/page.tsx       eigene Tickets
     tickets/new/page.tsx   Ticket-Eingang (Tri-Modal)
     board/page.tsx         alle Tickets (technician + admin)
     admin/page.tsx         Registrierungspolicy + Rollen (admin)
+    admin/portal/          Systemmeldungen + Schnellzugriffe (admin)
+    admin/forms/builder/   Split-Screen-Formular-Builder (admin)
     admin/actions.ts       Server Actions, prüfen die Rolle selbst
     api/auth/[...all]/     Better-Auth-Endpoints
     api/tickets/           Ticket-API (Scope aus der Rolle)
+    api/tickets/upload/    Multipart-Upload für Anhänge
+    api/uploads/[fileId]/  Download, pro Anfrage zugriffsgeprüft
     api/ai/triage/         Session-geprüftes Gateway zum FastAPI-Backend
+    api/admin/form-schemas/[id]/  lädt ein Schema in den Builder (admin)
   components/
     branding/              ThemeProvider, MITSLogo
+    dashboard/             announcement-banner, resource-grid
     layout/app-header.tsx  Header (Server Component) mit UserMenu
     providers/             QueryProvider
     auth/                  login-form, register-form, user-menu
-    admin/                 registration-settings-form, user-role-form
+    admin/                 registration-settings-form, user-role-form,
+                           portal-content-form, schema-builder
     forms/
       form.tsx             RHF-Primitives (Ersatz für @shadcn/form)
       schema-form.tsx      <SchemaForm> — die einzige Formular-Komponente
@@ -105,8 +113,11 @@ src/
     auth/client.ts          Browser-Client (signIn/signUp/signOut)
     db/sqlite.ts            Verbindung + MITS-Tabellen
     settings.ts             Registrierungspolicy (mits_setting)
+    portal.ts               Banner + Schnellzugriffe (mits_setting)
+    form-schemas.ts         Schema-Store: Built-ins + DB-Overrides
+    storage.ts              Datei-Ablage auf Platte + Zugriffsprüfung
     users.ts                Benutzerliste + Rollenwechsel
-    tickets.ts              Persistenz + Zugriffsregeln
+    tickets.ts              Persistenz + Zugriffsregeln + Anhang-Bindung
     forms/schema-to-zod.ts  JSON Schema → zod, Feldauflösung, pickSchemaFields
     forms/registry.tsx      Widget → shadcn-Control
     ai/extract.ts           Client-Aufruf der Triage + fileToBase64
@@ -124,10 +135,19 @@ Alles unter `lib/` mit DB-Zugriff trägt `import "server-only"`.
 
 ### Ein neuer Ticket-Typ
 
-Schema zu `CATALOG_SCHEMAS` in `src/lib/mock-schemas.ts` hinzufügen — fertig. Kacheln,
-Formular, Validierung und Payload entstehen daraus. Labels für Enum-Werte stehen in
-`uiHints.optionLabels`, damit `schema` reines JSON Schema bleibt (kein `enumNames`).
-Ein neues Widget braucht einen Eintrag in `MITSFieldWidget` **und** in `FIELD_REGISTRY`.
+Zwei Wege, beide ohne Komponenten-Code:
+
+1. **Im Builder** (`/admin/forms/builder`) anlegen — landet in `mits_form_schema`.
+2. **Im Code**: Schema zu `BUILTIN_SCHEMAS` in `src/lib/mock-schemas.ts` hinzufügen.
+
+Ein DB-Eintrag mit derselben ID **überschreibt** das eingebaute Schema; `deleteStoredSchema`
+stellt das eingebaute wieder her. Labels für Enum-Werte stehen in `uiHints.optionLabels`,
+damit `schema` reines JSON Schema bleibt (kein `enumNames`). Ein neues Widget braucht einen
+Eintrag in `MITSFieldWidget` **und** in `FIELD_REGISTRY`.
+
+**Schemata immer über `lib/form-schemas.ts` auflösen, nie über `mock-schemas.ts`** — sonst
+sind Builder-Änderungen unsichtbar. Client-Komponenten bekommen die Liste als Prop von der
+Seite; sie dürfen den Store nicht selbst lesen (`server-only`).
 
 ## Design-System
 
@@ -145,7 +165,11 @@ Alle leiten sich aus Tokens ab und folgen dem Theme automatisch.
 | 2 | Form Engine (`schema-to-zod`, `SchemaForm`, Registry) + Tri-Modal-Eingang | ✅ |
 | — | Auth & RBAC (Better Auth, Rollen, Registrierungspolicy, Ticket-Persistenz) | ✅ |
 | 3 | KI-Routing, Vision-OCR, Dockerization für Portainer | ✅ |
-| 4 | Portal & Admin (Störungs-Banner, Board-Workflow, Datei-Upload/Blob-Storage) | offen |
+| 4 | Portal (Banner + Schnellzugriffe), Datei-Ablage, Formular-Builder | ✅ |
+
+Noch offen: Board-Workflow (Zuweisung, Statuswechsel, Kommentare) und echtes OCR für
+gescannte Dokumente per Tesseract — letzteres bräuchte `pytesseract` plus
+`tesseract-ocr-deu` im Backend-Image und sprengt damit das Vier-Pakete-Limit.
 
 ## KI-Pipeline (Phase 3)
 
@@ -194,8 +218,20 @@ Grenzen und Regeln:
   eigene Tickets; `getTicketFor` antwortet bei fremdem Ticket mit `null` statt 403,
   damit sich keine IDs über den Statusunterschied ermitteln lassen.
 - **Payload:** Die API validiert erneut gegen das Formularschema (`strictObject`),
-  auch wenn der Browser das schon getan hat. Anhänge sind in dieser Phase nur
-  Metadaten (`name`, `size`, `type`) — Blob-Storage fehlt noch.
+  auch wenn der Browser das schon getan hat.
+- **Anhänge:** Der gespeicherte Name wird **generiert** (UUID + geprüfte Endung), nie
+  aus dem Upload abgeleitet — `../../server.js` kann das Upload-Verzeichnis nicht
+  verlassen. Endungen sind eine Allow-List, der Content-Type kommt aus dieser Liste
+  und nicht vom Browser. Ausgeliefert wird ausschließlich als Download
+  (`Content-Disposition: attachment`, `nosniff`), damit ein hochgeladenes SVG oder
+  HTML nicht im Origin der App läuft. `linkUploadsToTicket` prüft beim Anlegen des
+  Tickets, dass **jede** referenzierte `fileId` dem Aufrufer gehört und noch an
+  keinem anderen Ticket hängt — sonst könnte man die Datei einer Kollegin ins eigene
+  Ticket hängen und später über das Board lesen. Ticket-Insert und Bindung laufen in
+  **einer** Transaktion.
+- **Portal-Links:** `isSafeResourceHref` lässt nur `http`, `https` und Pfade ab `/`
+  zu — geprüft beim Speichern **und** beim Lesen, weil eine handeditierte Zeile sonst
+  ein `javascript:`-Ziel in jede Portal-Seite bringen würde.
 
 ## Workflow
 

@@ -438,34 +438,33 @@ export const SOFTWARE_ACCESS_SCHEMA: MITSFormSchema = {
   },
 };
 
-/** Everything the guided catalogue offers. The legacy schema is intentionally not here. */
-export const CATALOG_SCHEMAS: MITSFormSchema[] = [
+/**
+ * The schemas that ship with MITS, in catalogue order.
+ *
+ * `lib/form-schemas.ts` layers the admin-built schemas from the database on top
+ * of these; nothing outside that module should read this list to resolve an id,
+ * or builder edits would be invisible.
+ */
+export const BUILTIN_SCHEMAS: MITSFormSchema[] = [
+  QUICK_TICKET_SCHEMA,
   USER_ONBOARDING_SCHEMA,
   HARDWARE_ORDER_SCHEMA,
   SOFTWARE_ACCESS_SCHEMA,
 ];
 
-/** Every schema the app knows, legacy included — used to resolve an id. */
-export const ALL_SCHEMAS: MITSFormSchema[] = [
-  QUICK_TICKET_SCHEMA,
-  ...CATALOG_SCHEMAS,
-];
-
-export function findSchema(id: string | null): MITSFormSchema | undefined {
-  if (!id) return undefined;
-  return ALL_SCHEMAS.find((schema) => schema.id === id);
-}
-
-/** Catalogue categories with their schemas, in the order the tiles are shown. */
-export function catalogByCategory(): {
+/** Group schemas by category, preserving the order they arrive in. Pure. */
+export function groupByCategory(schemas: MITSFormSchema[]): {
   category: string;
   schemas: MITSFormSchema[];
 }[] {
   const buckets = new Map<string, MITSFormSchema[]>();
-  for (const schema of CATALOG_SCHEMAS) {
+  for (const schema of schemas) {
     const existing = buckets.get(schema.category);
     if (existing) existing.push(schema);
     else buckets.set(schema.category, [schema]);
   }
-  return [...buckets].map(([category, schemas]) => ({ category, schemas }));
+  return [...buckets].map(([category, grouped]) => ({
+    category,
+    schemas: grouped,
+  }));
 }

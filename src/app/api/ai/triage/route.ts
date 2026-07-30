@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { getSessionUserFor } from "@/lib/auth/session";
-import { ALL_SCHEMAS } from "@/lib/mock-schemas";
+import { listFormSchemas } from "@/lib/form-schemas";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Session-checked gateway to the FastAPI triage service.
@@ -82,9 +82,9 @@ export async function POST(request: Request) {
     );
   }
 
-  // The catalogue is assembled here so the model can only ever be offered
-  // schemas this instance actually knows.
-  const schemas = ALL_SCHEMAS.map((schema) => ({
+  // Assembled here so the model can only ever be offered schemas this instance
+  // actually knows — built-ins plus whatever the admin builder has published.
+  const schemas = listFormSchemas().map((schema) => ({
     id: schema.id,
     title: schema.title,
     category: schema.category,

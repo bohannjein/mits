@@ -2,9 +2,12 @@ import Link from "next/link";
 import { Bot, ListChecks, PenLine, type LucideIcon } from "lucide-react";
 
 import { MITSLogo } from "@/components/branding/mits-logo";
+import { AnnouncementBanner } from "@/components/dashboard/announcement-banner";
+import { ResourceGrid } from "@/components/dashboard/resource-grid";
 import { AppHeader } from "@/components/layout/app-header";
 import { ROLE_LABELS } from "@/lib/auth/roles";
 import { getSessionUser } from "@/lib/auth/session";
+import { getActiveAnnouncements, getPortalContent } from "@/lib/portal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,12 +60,19 @@ const INTAKE_MODES: {
 
 export default async function Home() {
   const user = await getSessionUser();
+  const announcements = getActiveAnnouncements();
+  const { resources } = getPortalContent();
 
   return (
     <>
       <AppHeader />
       <main className="bg-grid flex flex-1 flex-col items-center px-6 py-14">
-      <div className="w-full max-w-5xl">
+      <div className="grid w-full max-w-5xl gap-8">
+        {/* Announcements come first: a known outage should be read before
+            someone files a ticket about it. */}
+        <AnnouncementBanner announcements={announcements} />
+
+        <div>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <MITSLogo showTagline />
           <Badge variant="outline" className="rounded-sm border-2 font-mono">
@@ -113,6 +123,9 @@ export default async function Home() {
             ),
           )}
         </div>
+        </div>
+
+        <ResourceGrid resources={resources} />
       </div>
       </main>
     </>

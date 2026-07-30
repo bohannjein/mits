@@ -22,16 +22,21 @@ export const TicketPriority = z.enum(["low", "normal", "high", "urgent"]);
 export type TicketPriority = z.infer<typeof TicketPriority>;
 
 /**
- * What survives of an attachment once the payload is JSON.
+ * An attachment as it appears in a stored payload.
  *
- * The browser holds real `File` objects; the API receives only this metadata.
- * Blob storage is not part of this phase — the record exists so a ticket does not
- * silently lose the fact that something was attached.
+ * The browser holds real `File` objects; they are uploaded before the ticket is
+ * created and the payload keeps this reference. `fileId` and `url` are optional so
+ * tickets written before disk storage existed still parse — those rows carry name
+ * and size only.
  */
 export const AttachmentMetaSchema = z.object({
   name: z.string(),
   size: z.number().int().nonnegative(),
   type: z.string().default(""),
+  /** Id in `mits_upload`. Ownership is verified server-side before it is stored. */
+  fileId: z.string().optional(),
+  /** Download path, e.g. /api/uploads/<fileId>. */
+  url: z.string().optional(),
 });
 export type AttachmentMeta = z.infer<typeof AttachmentMetaSchema>;
 
@@ -207,3 +212,68 @@ export const DEFAULT_AUTH_SETTINGS: AuthSettings = {
   registrationEnabled: true,
   allowedEmailDomains: [],
 };
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Portal content: system announcements and the quick-resource grid.
+
+   Both are admin-maintained lists, small enough to live as JSON in
+   `mits_setting` rather than in tables of their own.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const AnnouncementLevel = z.enum(["info", "warning", "critical"]);
+export type AnnouncementLevel = z.infer<typeof AnnouncementLevel>;
+
+export const AnnouncementSchema = z.object({
+  id: z.string(),
+  title: z.string().min(1).max(160),
+  message: z.string().min(1).max(2000),
+  type: AnnouncementLevel.default("info"),
+  /** Off keeps the text for later without showing it. */
+  active: z.boolean().default(true),
+});
+export type Announcement = z.infer<typeof AnnouncementSchema>;
+
+export const ResourceKind = z.enum(["download", "link"]);
+export type ResourceKind = z.infer<typeof ResourceKind>;
+
+export const PortalResourceSchema = z.object({
+  id: z.string(),
+  label: z.string().min(1).max(120),
+  description: z.string().max(400).default(""),
+  /**
+   * Target. Only http(s) and site-relative paths are accepted — see
+   * `isSafeResourceHref`. A `javascript:` URL in an admin-managed tile would be
+   * stored XSS against every portal visitor.
+   */
+  href: z.string().min(1).max(2000),
+  kind: ResourceKind.default("link"),
+  /** Lucide icon name, resolved through the allow-list in lib/icons.ts. */
+  icon: z.string().default("ExternalLink"),
+});
+export type PortalResource = z.infer<typeof PortalResourceSchema>;
+
+export const PortalContentSchema = z.object({
+  announcements: z.array(AnnouncementSchema).default([]),
+  resources: z.array(PortalResourceSchema).default([]),
+});
+export type PortalContent = z.infer<typeof PortalContentSchema>;
+
+/**
+ * Whether a resource link may be rendered.
+ *
+ * Anything but http(s) or a same-site path is refused, which rules out
+ * `javascript:` and `data:` targets. Protocol-relative `//host` is refused too,
+ * since it silently leaves the site.
+ */
+export function isSafeResourceHref(href: string): boolean {
+  const value = href.trim();
+  if (!value) return false;
+  if (value.startsWith("//")) return false;
+  if (value.startsWith("/")) return true;
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}

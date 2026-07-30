@@ -1,32 +1,56 @@
 import {
+  BookOpenIcon,
   BotIcon,
+  DownloadIcon,
+  ExternalLinkIcon,
+  FileTextIcon,
+  HeadsetIcon,
   KeyRoundIcon,
   LaptopIcon,
   ListChecksIcon,
+  LockIcon,
+  MonitorSmartphoneIcon,
   PenLineIcon,
+  PrinterIcon,
+  ShieldCheckIcon,
   TicketIcon,
   UserPlusIcon,
+  WifiIcon,
   WrenchIcon,
   type LucideIcon,
 } from "lucide-react";
 
 /**
- * Icons a form schema may reference by name.
+ * Icons a form schema or a portal resource tile may reference by name.
  *
- * An explicit allow-list rather than a dynamic lookup into lucide-react: schema
- * `icon` values arrive as untrusted strings, and importing the whole icon set to
- * resolve them would pull thousands of components into the client bundle.
+ * An explicit allow-list rather than a dynamic lookup into lucide-react: the
+ * `icon` values arrive as untrusted strings (schema definitions and admin input),
+ * and importing the whole icon set to resolve them would pull thousands of
+ * components into the client bundle.
  */
 const ICONS: Record<string, LucideIcon> = {
+  BookOpen: BookOpenIcon,
   Bot: BotIcon,
+  Download: DownloadIcon,
+  ExternalLink: ExternalLinkIcon,
+  FileText: FileTextIcon,
+  Headset: HeadsetIcon,
   KeyRound: KeyRoundIcon,
   Laptop: LaptopIcon,
   ListChecks: ListChecksIcon,
+  Lock: LockIcon,
+  MonitorSmartphone: MonitorSmartphoneIcon,
   PenLine: PenLineIcon,
+  Printer: PrinterIcon,
+  ShieldCheck: ShieldCheckIcon,
   Ticket: TicketIcon,
   UserPlus: UserPlusIcon,
+  Wifi: WifiIcon,
   Wrench: WrenchIcon,
 };
+
+/** Names the admin UI offers for resource tiles. */
+export const ICON_NAMES = Object.keys(ICONS).sort();
 
 export function iconFor(name: string | undefined): LucideIcon {
   return (name && ICONS[name]) || TicketIcon;

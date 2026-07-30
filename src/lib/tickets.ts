@@ -5,9 +5,11 @@ import { randomUUID } from "node:crypto";
 import type { SessionUser } from "@/lib/auth/session";
 import { canViewBoard } from "@/lib/auth/roles";
 import { db } from "@/lib/db/sqlite";
-import { schemaToZod } from "@/lib/forms/schema-to-zod";
-import { findSchema } from "@/lib/mock-schemas";
+import { getFormSchema } from "@/lib/form-schemas";
+import { resolveFields, schemaToZod } from "@/lib/forms/schema-to-zod";
+import { UploadError, linkUploadsToTicket } from "@/lib/storage";
 import {
+  AttachmentMetaSchema,
   MITSTicketSchema,
   type MITSTicket,
   type MITSTicketDraft,
@@ -72,7 +74,7 @@ export function createTicket(
   draft: MITSTicketDraft,
   user: SessionUser,
 ): MITSTicket {
-  const schema = findSchema(draft.form_schema_id ?? null);
+  const schema = getFormSchema(draft.form_schema_id);
   if (!schema) {
     throw new TicketValidationError("Unbekanntes Formular-Schema.");
   }
@@ -104,16 +106,60 @@ export function createTicket(
     created_at: new Date().toISOString(),
   };
 
-  db.prepare(
+  const fileIds = collectFileIds(schema, parsed.data);
+
+  const insert = db.prepare(
     `INSERT INTO mits_ticket
        (id, created_by, created_by_email, source, form_schema_id, title,
         payload, status, priority, assigned_to, created_at)
      VALUES
        (@id, @created_by, @created_by_email, @source, @form_schema_id, @title,
         @payload, @status, @priority, @assigned_to, @created_at)`,
-  ).run(ticket);
+  );
+
+  // One transaction: a payload referencing a foreign or already-used attachment
+  // must not leave a half-created ticket behind.
+  try {
+    db.transaction(() => {
+      insert.run(ticket);
+      linkUploadsToTicket(fileIds, ticket.id, user);
+    })();
+  } catch (error) {
+    if (error instanceof UploadError) {
+      throw new TicketValidationError(error.message);
+    }
+    throw error;
+  }
 
   return rowToTicket(ticket);
+}
+
+/**
+ * File ids referenced by the payload's attachment fields.
+ *
+ * Only fields the schema declares as file fields are inspected, so a string that
+ * merely looks like an id in some other field is never treated as an attachment.
+ */
+function collectFileIds(
+  schema: Parameters<typeof resolveFields>[0],
+  payload: Record<string, unknown>,
+): string[] {
+  const ids: string[] = [];
+
+  for (const field of resolveFields(schema)) {
+    if (field.widget !== "file") continue;
+    const value = payload[field.name];
+    if (!Array.isArray(value)) continue;
+
+    for (const entry of value) {
+      const attachment = AttachmentMetaSchema.safeParse(entry);
+      if (attachment.success && attachment.data.fileId) {
+        ids.push(attachment.data.fileId);
+      }
+    }
+  }
+
+  return ids;
 }
 
 const SELECT_TICKET = `

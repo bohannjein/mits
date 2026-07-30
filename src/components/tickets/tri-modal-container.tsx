@@ -17,9 +17,8 @@ import { ServiceCatalog } from "@/components/tickets/service-catalog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { QUICK_TICKET_SCHEMA, findSchema } from "@/lib/mock-schemas";
 import { useIntakeStore } from "@/lib/store/intake-store";
-import type { MITSTicketDraft, TicketSource } from "@/types/mits";
+import type { MITSFormSchema, MITSTicketDraft, TicketSource } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    The tri-modal intake.
@@ -35,8 +34,18 @@ const TABS: { value: TicketSource; label: string; icon: typeof PenLineIcon }[] =
   { value: "ai_chat", label: "KI-Assistent", icon: BotIcon },
 ];
 
-export function TriModalContainer() {
+export function TriModalContainer({
+  /** Free-text fallback form. Rendered by the classic tab. */
+  quickTicketSchema,
+  /** Everything the guided catalogue offers. */
+  catalogSchemas,
+}: {
+  quickTicketSchema: MITSFormSchema;
+  catalogSchemas: MITSFormSchema[];
+}) {
   const router = useRouter();
+  // Both tabs' AI proposal and the wizard resolve ids against the same list.
+  const allSchemas = [quickTicketSchema, ...catalogSchemas];
   const mode = useIntakeStore((state) => state.mode);
   const setMode = useIntakeStore((state) => state.setMode);
   const lastDraft = useIntakeStore((state) => state.lastDraft);
@@ -56,13 +65,23 @@ export function TriModalContainer() {
   const handleSubmit = async (draft: MITSTicketDraft) => {
     setError(null);
 
+    // Attachments go to disk first; the payload then references them by id.
+    let payload: Record<string, unknown>;
+    try {
+      payload = await uploadAttachments(draft.payload);
+    } catch (uploadError) {
+      setError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : "Ein Anhang konnte nicht hochgeladen werden.",
+      );
+      return;
+    }
+
     const response = await fetch("/api/tickets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...draft,
-        payload: toJsonPayload(draft.payload),
-      }),
+      body: JSON.stringify({ ...draft, payload }),
     });
 
     if (response.status === 401) {
@@ -112,19 +131,22 @@ export function TriModalContainer() {
         <>
           <TabsContent value="legacy">
             <SchemaForm
-              schema={QUICK_TICKET_SCHEMA}
+              schema={quickTicketSchema}
               source="legacy"
               onSubmit={handleSubmit}
             />
           </TabsContent>
 
           <TabsContent value="wizard">
-            <ServiceCatalog onSubmit={handleSubmit} />
+            <ServiceCatalog schemas={catalogSchemas} onSubmit={handleSubmit} />
           </TabsContent>
 
           <TabsContent value="ai_chat">
             {aiProposal ? (
               <AiProposalForm
+                schema={allSchemas.find(
+                  (candidate) => candidate.id === aiProposal.schemaId,
+                )}
                 schemaId={aiProposal.schemaId}
                 payload={aiProposal.payload}
                 onSubmit={handleSubmit}
@@ -132,6 +154,7 @@ export function TriModalContainer() {
               />
             ) : (
               <AiChatTab
+                schemas={allSchemas}
                 onAccept={(schemaId, payload) =>
                   setAiProposal({ schemaId, payload })
                 }
@@ -152,18 +175,18 @@ export function TriModalContainer() {
  * ticket. `source: "ai_chat"` records how it got here.
  */
 function AiProposalForm({
+  schema,
   schemaId,
   payload,
   onSubmit,
   onDiscard,
 }: {
+  schema: MITSFormSchema | undefined;
   schemaId: string;
   payload: Record<string, unknown>;
   onSubmit: (draft: MITSTicketDraft) => Promise<void>;
   onDiscard: () => void;
 }) {
-  const schema = findSchema(schemaId);
-
   if (!schema) {
     return (
       <Alert variant="destructive" className="rounded-sm border-2">
@@ -209,25 +232,54 @@ function AiProposalForm({
 }
 
 /**
- * Replace `File` objects with the metadata that survives JSON.
+ * Upload every `File` in the payload and replace it with its stored reference.
  *
- * Blob storage is not part of this phase; recording name, size and type keeps the
- * ticket honest about what was attached instead of dropping it silently. The API
- * validates exactly this shape (`AttachmentMetaSchema`).
+ * Uploading at submit time rather than on file selection keeps the form simple and
+ * means an abandoned form leaves nothing on disk. `File` objects cannot survive
+ * JSON anyway, so this conversion has to happen somewhere.
  */
-function toJsonPayload(payload: Record<string, unknown>): Record<string, unknown> {
+async function uploadAttachments(
+  payload: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(payload)) {
-    if (Array.isArray(value) && value.every((entry) => entry instanceof File)) {
-      out[key] = (value as File[]).map((file) => ({
-        name: file.name,
-        size: file.size,
-        type: file.type,
-      }));
-    } else {
-      out[key] = value;
+    const isFileList =
+      Array.isArray(value) &&
+      value.length > 0 &&
+      value.every((entry) => entry instanceof File);
+
+    if (!isFileList) {
+      // An empty array is still an empty attachment list, not a file list.
+      out[key] = Array.isArray(value) && value.length === 0 ? [] : value;
+      continue;
     }
+
+    const form = new FormData();
+    for (const file of value as File[]) form.append("files", file);
+
+    const response = await fetch("/api/tickets/upload", {
+      method: "POST",
+      body: form,
+    });
+
+    const body = (await response.json().catch(() => null)) as
+      | { uploads?: { id: string; name: string; size: number; type: string; url: string }[]; error?: string }
+      | null;
+
+    if (!response.ok || !body?.uploads) {
+      throw new Error(
+        body?.error ?? `Upload fehlgeschlagen (HTTP ${response.status}).`,
+      );
+    }
+
+    out[key] = body.uploads.map((upload) => ({
+      name: upload.name,
+      size: upload.size,
+      type: upload.type,
+      fileId: upload.id,
+      url: upload.url,
+    }));
   }
 
   return out;

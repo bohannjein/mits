@@ -31,8 +31,8 @@ import {
   type TriageResult,
 } from "@/lib/ai/extract";
 import { pickSchemaFields, resolveFields } from "@/lib/forms/schema-to-zod";
-import { findSchema } from "@/lib/mock-schemas";
 import { cn } from "@/lib/utils";
+import type { MITSFormSchema } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Free-text and screenshot intake.
@@ -55,8 +55,11 @@ interface ChatMessage {
 }
 
 export function AiChatTab({
+  schemas,
   onAccept,
 }: {
+  /** The schemas in effect, so the preview can resolve what the router picked. */
+  schemas: MITSFormSchema[];
   /** Hand the vetted proposal to the container, which opens it in <SchemaForm>. */
   onAccept: (schemaId: string, payload: Record<string, unknown>) => void;
 }) {
@@ -232,6 +235,7 @@ export function AiChatTab({
       {result && (
         <TriagePreview
           result={result}
+          schemas={schemas}
           onAccept={onAccept}
           onDismiss={() => setResult(null)}
         />
@@ -346,14 +350,18 @@ export function AiChatTab({
 /** The model's proposal, with everything the user needs to judge it. */
 function TriagePreview({
   result,
+  schemas,
   onAccept,
   onDismiss,
 }: {
   result: TriageResult;
+  schemas: MITSFormSchema[];
   onAccept: (schemaId: string, payload: Record<string, unknown>) => void;
   onDismiss: () => void;
 }) {
-  const schema = findSchema(result.suggested_category_id);
+  const schema = schemas.find(
+    (candidate) => candidate.id === result.suggested_category_id,
+  );
 
   if (!schema) {
     return (

@@ -64,5 +64,33 @@ function migrateAppTables(database: Database.Database): void {
       ON mits_ticket (created_by);
     CREATE INDEX IF NOT EXISTS idx_mits_ticket_created_at
       ON mits_ticket (created_at DESC);
+
+    -- Uploaded attachments. The blob lives on disk under <data dir>/uploads;
+    -- this row is the only thing that maps a public id to it, which is what
+    -- makes an access check possible before the file is served.
+    CREATE TABLE IF NOT EXISTS mits_upload (
+      id            TEXT PRIMARY KEY,
+      owner_id      TEXT NOT NULL,
+      ticket_id     TEXT,
+      original_name TEXT NOT NULL,
+      stored_name   TEXT NOT NULL,
+      mime_type     TEXT NOT NULL,
+      size_bytes    INTEGER NOT NULL,
+      created_at    TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mits_upload_owner
+      ON mits_upload (owner_id);
+    CREATE INDEX IF NOT EXISTS idx_mits_upload_ticket
+      ON mits_upload (ticket_id);
+
+    -- Form schemas created in the admin builder. The built-in schemas stay in
+    -- code; a row here with the same id overrides one of them.
+    CREATE TABLE IF NOT EXISTS mits_form_schema (
+      id         TEXT PRIMARY KEY,
+      definition TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT
+    );
   `);
 }
