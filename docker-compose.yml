@@ -1,0 +1,57 @@
+# MITS — deployable as a Portainer stack straight from the repository.
+#
+# Ollama is NOT part of this stack: it runs as an existing instance and is reached
+# over OLLAMA_BASE_URL. If it listens on the Docker host itself, use
+#   OLLAMA_BASE_URL=http://host.docker.internal:11434
+# which the extra_hosts entry below resolves.
+
+services:
+  mits-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: mits-web:local
+    container_name: mits-web
+    restart: unless-stopped
+    ports:
+      - "${MITS_WEB_PORT:-3000}:3000"
+    environment:
+      # Required. Generate with: openssl rand -hex 32
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+      # Public URL of this instance, e.g. https://mits.firma.de
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-}
+      MITS_TRUSTED_ORIGINS: ${MITS_TRUSTED_ORIGINS:-}
+      # Must match the backend's value — the web app authenticates with it.
+      MITS_SERVICE_TOKEN: ${MITS_SERVICE_TOKEN:?set MITS_SERVICE_TOKEN in .env}
+      # Service name, not localhost: this is the compose network.
+      MITS_BACKEND_URL: http://mits-backend:8000
+      MITS_DATA_DIR: /app/data
+    volumes:
+      # Survives image rebuilds — users, sessions, tickets and settings live here.
+      - mits-data:/app/data
+    depends_on:
+      mits-backend:
+        condition: service_started
+
+  mits-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.backend
+    image: mits-backend:local
+    container_name: mits-backend
+    restart: unless-stopped
+    # No `ports`: the AI endpoint is reachable only from mits-web inside the
+    # stack. Publishing it would expose an unauthenticated-by-default surface to
+    # the host network.
+    environment:
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:?set OLLAMA_BASE_URL in .env}
+      OLLAMA_TEXT_MODEL: ${OLLAMA_TEXT_MODEL:-llama3.1}
+      OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-llava}
+      OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-120}
+      MITS_SERVICE_TOKEN: ${MITS_SERVICE_TOKEN:?set MITS_SERVICE_TOKEN in .env}
+    extra_hosts:
+      # Lets OLLAMA_BASE_URL point at an Ollama running on the Docker host.
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  mits-data:

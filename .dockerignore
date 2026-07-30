@@ -1,0 +1,21 @@
+# Keeps the build context small and, more importantly, keeps local state out of
+# the image: data/ holds the SQLite database and the generated session secret.
+node_modules
+.next
+.git
+.github
+.tmp-e2e
+data
+*.db
+*.db-shm
+*.db-wal
+auth-secret
+.env
+.env.*
+!.env.example
+npm-debug.log*
+*.tsbuildinfo
+.vscode
+.idea
+Thumbs.db
+.DS_Store

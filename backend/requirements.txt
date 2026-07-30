@@ -1,0 +1,5 @@
+# Deliberately minimal — see AGENTS.md. Anything beyond these four needs a reason.
+fastapi==0.121.2
+uvicorn[standard]==0.41.0
+httpx==0.28.1
+pydantic==2.12.4

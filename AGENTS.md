@@ -46,7 +46,9 @@ Diese drei Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
 | State | TanStack Query (Server-State) · Zustand (UI-State) |
 | Auth | Better Auth 1.6 (E-Mail/Passwort), Rollen `user` < `technician` < `admin` |
 | Persistenz | SQLite (`better-sqlite3`, WAL) in `<data dir>/mits.db` |
-| Backend | FastAPI in `backend/` für KI-Routing und Ollama (ab Phase 3) |
+| KI-Backend | FastAPI in `backend/` — nur `fastapi`, `uvicorn`, `httpx`, `pydantic` |
+| LLM | bestehende Ollama-Instanz per `OLLAMA_BASE_URL` (nicht Teil des Stacks) |
+| Deployment | `docker-compose.yml` im Root, Services `mits-web` + `mits-backend` |
 
 `@shadcn/form` ist in der Registry vorhanden, aber ein leerer Stub (nur `name` + `type`,
 keine `files`) — `shadcn add` legt daher nichts an. Ersatz liegt in
@@ -57,6 +59,13 @@ ist **unser** Code, nicht CLI-verwaltet — deshalb bewusst nicht in `components
 ## Struktur
 
 ```
+Dockerfile.web             Multistage-Build der Next-App (Debian slim, nicht Alpine)
+docker-compose.yml         Portainer-Stack: mits-web + mits-backend
+.dockerignore              hält data/ und node_modules aus dem Build-Kontext
+backend/
+  main.py                  FastAPI: POST /api/v1/triage, GET /api/v1/health
+  requirements.txt         vier Pakete, mehr braucht eine Begründung
+  Dockerfile.backend       python:3.13-slim, unprivilegierter User
 src/
   proxy.ts                 Route-Gate (Next 16: früher middleware.ts)
   app/
@@ -71,6 +80,7 @@ src/
     admin/actions.ts       Server Actions, prüfen die Rolle selbst
     api/auth/[...all]/     Better-Auth-Endpoints
     api/tickets/           Ticket-API (Scope aus der Rolle)
+    api/ai/triage/         Session-geprüftes Gateway zum FastAPI-Backend
   components/
     branding/              ThemeProvider, MITSLogo
     layout/app-header.tsx  Header (Server Component) mit UserMenu
@@ -83,7 +93,7 @@ src/
     tickets/
       tri-modal-container.tsx   Tabs: Legacy | Katalog | KI, POST /api/tickets
       service-catalog.tsx       Kategorie-Kacheln → SchemaForm
-      ai-chat.tsx               Freitext + Screenshot-Upload
+      ai-chat-tab.tsx           Freitext + Drag&Drop, Triage-Vorschau
       draft-receipt.tsx         validierter Entwurf als JSON
       ticket-table.tsx          Listing für /tickets und /board
     ui/                    shadcn-Primitives — nur per CLI ändern/ergänzen
@@ -97,9 +107,9 @@ src/
     settings.ts             Registrierungspolicy (mits_setting)
     users.ts                Benutzerliste + Rollenwechsel
     tickets.ts              Persistenz + Zugriffsregeln
-    forms/schema-to-zod.ts  JSON Schema → zod + Feldauflösung
+    forms/schema-to-zod.ts  JSON Schema → zod, Feldauflösung, pickSchemaFields
     forms/registry.tsx      Widget → shadcn-Control
-    ai/extract.ts           Naht für Phase 3 (liefert bis dahin "unavailable")
+    ai/extract.ts           Client-Aufruf der Triage + fileToBase64
     store/intake-store.ts   Zustand: aktiver Modus, gewähltes Schema
     mock-schemas.ts         Beispiel-Schemata (Backend-Ersatz)
     icons.ts                erlaubte Lucide-Icons für schema.icon
@@ -134,8 +144,36 @@ Alle leiten sich aus Tokens ab und folgen dem Theme automatisch.
 | 1 | Setup, Design-System, Typ-Fundament | ✅ |
 | 2 | Form Engine (`schema-to-zod`, `SchemaForm`, Registry) + Tri-Modal-Eingang | ✅ |
 | — | Auth & RBAC (Better Auth, Rollen, Registrierungspolicy, Ticket-Persistenz) | ✅ |
-| 3 | KI & OCR (FastAPI, Ollama, Triage, Feldextraktion) — Naht: `lib/ai/extract.ts` | offen |
-| 4 | Portal & Admin (Störungs-Banner, Board-Workflow: Zuweisung, Status) | offen |
+| 3 | KI-Routing, Vision-OCR, Dockerization für Portainer | ✅ |
+| 4 | Portal & Admin (Störungs-Banner, Board-Workflow, Datei-Upload/Blob-Storage) | offen |
+
+## KI-Pipeline (Phase 3)
+
+Drei Ollama-Aufrufe, jeder einzeln eingegrenzt — `backend/main.py`:
+
+1. **Transcribe** (nur mit Bild): Vision-Modell liest den Text aus den Screenshots.
+   Das ist die OCR-Stufe; Tesseract ist bewusst nicht dabei (Dependency-Limit).
+2. **Route**: Text-Modell wählt das Formular. `format` ist ein JSON-Schema, dessen
+   `suggested_category_id` ein **Enum der angebotenen IDs** ist — das Modell kann
+   keine ID erfinden.
+3. **Extract**: Text-Modell füllt das Formular, `format` ist **das JSON-Schema des
+   Formulars selbst**. `required` wird dabei entfernt: das Modell soll Felder leer
+   lassen dürfen statt Werte zu erfinden. Die echte Pflichtfeldprüfung macht MITS
+   beim Absenden.
+
+Grenzen und Regeln:
+
+- Der Browser ruft **nie** das Backend direkt. `/api/ai/triage` prüft die Session,
+  hält den Service-Token und stellt die Schema-Liste zusammen — ein Client könnte
+  dem Modell sonst eigene Schemata unterschieben.
+- `mits-backend` veröffentlicht **keinen Port**. Zusätzlich verlangt es
+  `X-MITS-Service-Token` und verweigert bei fehlender Konfiguration jeden Request
+  (fail closed).
+- KI-Ausgaben werden nie direkt übernommen: `pickSchemaFields` verwirft unbekannte
+  Felder und Enum-Werte außerhalb des Schemas, danach befüllt das Ergebnis nur die
+  **Startwerte** des echten Formulars. Abgesendet wird, was der Mensch bestätigt.
+- Fehler werden benannt, nicht überspielt: nicht erreichbares Ollama, fehlendes
+  Modell (`ollama pull …`) und Timeouts kommen als Klartext in den Chat.
 
 ## Auth-Modell
 
@@ -184,6 +222,18 @@ Testkonten in der echten Datenbank.
 ```bash
 MITS_DATA_DIR=.tmp-e2e BETTER_AUTH_SECRET=$(openssl rand -hex 32) npx next dev -p 3100
 ```
+
+Backend lokal ohne Docker:
+
+```bash
+python -m venv .venv && .venv/Scripts/pip install -r backend/requirements.txt
+OLLAMA_BASE_URL=http://localhost:11434 MITS_SERVICE_TOKEN=dev \
+  .venv/Scripts/python -m uvicorn main:app --app-dir backend --port 8000
+curl http://localhost:8000/api/v1/health   # zeigt, ob Ollama und die Modelle da sind
+```
+
+Die Next-App braucht dann `MITS_BACKEND_URL=http://localhost:8000` und denselben
+`MITS_SERVICE_TOKEN`.
 
 Zu beachten, wenn Auth-Endpoints per `curl`/`fetch` angesprochen werden: Better Auth
 lehnt zustandsändernde Requests ohne vertrauenswürdigen `Origin`-Header mit

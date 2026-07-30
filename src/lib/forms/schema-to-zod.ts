@@ -319,3 +319,69 @@ export function defaultValuesFor(form: MITSFormSchema): Record<string, unknown> 
 export function stepCount(form: MITSFormSchema): number {
   return resolveFields(form).reduce((max, f) => Math.max(max, f.step), 1);
 }
+
+/**
+ * Reduce an untrusted payload to values this form can actually hold.
+ *
+ * Used for AI-extracted answers before they pre-fill the form. A model may return
+ * fields that do not exist, an option outside an enum, or a number where the
+ * input expects a string — all of which would either be dropped by `strictObject`
+ * on submit or make React switch an input to uncontrolled. Filtering here means
+ * the user sees a form they can actually correct, and anything unusable is simply
+ * left blank rather than silently invented.
+ */
+export function pickSchemaFields(
+  form: MITSFormSchema,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const picked: Record<string, unknown> = {};
+
+  for (const field of resolveFields(form)) {
+    const value = payload[field.name];
+    if (value === undefined || value === null) continue;
+
+    switch (field.widget) {
+      case "file":
+        // Attachments come from the file picker, never from the model.
+        break;
+
+      case "multiselect": {
+        if (!Array.isArray(value)) break;
+        const allowed = field.options?.map((option) => option.value);
+        const entries = value.filter(
+          (entry): entry is string =>
+            typeof entry === "string" && (!allowed || allowed.includes(entry)),
+        );
+        if (entries.length > 0) picked[field.name] = entries;
+        break;
+      }
+
+      case "checkbox":
+      case "switch":
+        if (typeof value === "boolean") picked[field.name] = value;
+        break;
+
+      case "number":
+        // The input holds a string; zod coerces it back on submit.
+        if (typeof value === "number" && Number.isFinite(value)) {
+          picked[field.name] = String(value);
+        } else if (typeof value === "string" && value.trim() !== "") {
+          picked[field.name] = value.trim();
+        }
+        break;
+
+      case "select":
+      case "radio": {
+        if (typeof value !== "string") break;
+        const allowed = field.options?.map((option) => option.value);
+        if (!allowed || allowed.includes(value)) picked[field.name] = value;
+        break;
+      }
+
+      default:
+        if (typeof value === "string") picked[field.name] = value;
+    }
+  }
+
+  return picked;
+}

@@ -1,49 +1,91 @@
-import type { MITSFormSchema, MITSTicketDraft } from "@/types/mits";
+import { z } from "zod";
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Seam for the Phase 3 AI pipeline.
+   Client side of the AI triage call.
 
-   The chat UI is built against this contract now so wiring the FastAPI/Ollama
-   backend later is a single implementation swap and no UI change. Nothing here
-   fabricates a result: until the backend exists, every call reports that the
-   service is unavailable.
+   The browser posts only what the user supplied. Which form schemas the router
+   may choose from is decided server-side in /api/ai/triage — otherwise a client
+   could offer the model a schema of its own making.
    ────────────────────────────────────────────────────────────────────────── */
 
-export interface ExtractionRequest {
-  /** What the user typed. */
-  text: string;
-  /** Screenshots or error images the user attached. */
-  images: File[];
-  /** Schemas the router may choose from, with their `aiHint` descriptions. */
-  candidates: MITSFormSchema[];
+export const TriageResultSchema = z.object({
+  /** Id of the MITSFormSchema the router picked. */
+  suggested_category_id: z.string(),
+  /** 0–1. Shown to the user; low values are not hidden. */
+  confidence: z.number().min(0).max(1),
+  /** Field values for that form. Still filtered and validated before use. */
+  extracted_payload: z.record(z.string(), z.unknown()),
+  /** Short reply to the reporting person. */
+  auto_reply: z.string(),
+  /** What the vision model read out of the screenshots, if any. */
+  transcribed_text: z.string().nullable().optional(),
+});
+export type TriageResult = z.infer<typeof TriageResultSchema>;
+
+export type TriageOutcome =
+  | { status: "ok"; result: TriageResult }
+  | { status: "unauthenticated" }
+  | { status: "error"; message: string };
+
+export interface TriageInput {
+  prompt: string;
+  /** Screenshots as base64 (no data-URL prefix needed; the backend strips it). */
+  images: string[];
 }
 
-export type ExtractionResult =
-  | {
-      status: "ok";
-      /** Schema the router picked. */
-      schemaId: string;
-      /** Field values to pre-fill; still validated by schemaToZod before use. */
-      payload: Record<string, unknown>;
-      /** 0–1 router confidence, shown to the user before they confirm. */
-      confidence: number;
-      draft: MITSTicketDraft;
-    }
-  | { status: "unavailable"; reason: string };
-
 /**
- * Turn free text plus images into a structured ticket draft.
- *
- * Phase 3 replaces the body with a POST to the FastAPI backend, which routes via
- * Ollama and OCRs any attached scans. The signature is final; the implementation
- * is not.
+ * Run the triage. Never throws: every failure comes back as a message the chat
+ * can show, because "the model is unreachable" is normal operating information,
+ * not an exception.
  */
-export async function extractTicketDraft(
-  _request: ExtractionRequest,
-): Promise<ExtractionResult> {
-  return {
-    status: "unavailable",
-    reason:
-      "Das KI-Backend (FastAPI + Ollama) wird in Phase 3 angebunden. Bis dahin bitte den Service-Katalog oder das Schnell-Ticket nutzen.",
-  };
+export async function requestTriage(input: TriageInput): Promise<TriageOutcome> {
+  let response: Response;
+  try {
+    response = await fetch("/api/ai/triage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  } catch {
+    return {
+      status: "error",
+      message: "Die Analyse konnte nicht gestartet werden — keine Verbindung zum Server.",
+    };
+  }
+
+  if (response.status === 401) return { status: "unauthenticated" };
+
+  const body = (await response.json().catch(() => null)) as unknown;
+
+  if (!response.ok) {
+    const message =
+      body && typeof body === "object" && "error" in body
+        ? String((body as { error: unknown }).error)
+        : `Die Analyse ist fehlgeschlagen (HTTP ${response.status}).`;
+    return { status: "error", message };
+  }
+
+  const parsed = TriageResultSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      status: "error",
+      message: "Die Antwort der KI hatte ein unerwartetes Format.",
+    };
+  }
+
+  return { status: "ok", result: parsed.data };
+}
+
+/** Read a file as bare base64, without the `data:...;base64,` prefix. */
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`${file.name} konnte nicht gelesen werden.`));
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.readAsDataURL(file);
+  });
 }

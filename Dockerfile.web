@@ -1,0 +1,51 @@
+# MITS web app — Next.js standalone build.
+#
+# Debian slim rather than Alpine on purpose: better-sqlite3 is a native module and
+# ships prebuilt glibc binaries. On musl it would have to be compiled from source,
+# which means dragging python3/make/g++ into the build stage.
+
+# ── deps ────────────────────────────────────────────────────────────────────
+FROM node:24-bookworm-slim AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts=false
+
+# ── build ───────────────────────────────────────────────────────────────────
+FROM node:24-bookworm-slim AS builder
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+# A build-time secret is never used at runtime; it only keeps Better Auth from
+# generating one into the image layer while pages are prerendered.
+ENV BETTER_AUTH_SECRET=build-time-placeholder-not-used-at-runtime
+ENV MITS_DATA_DIR=/tmp/mits-build
+RUN npm run build
+
+# ── runtime ─────────────────────────────────────────────────────────────────
+FROM node:24-bookworm-slim AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    MITS_DATA_DIR=/app/data
+
+# `output: "standalone"` traces exactly what the server needs, native .node
+# binaries included, so node_modules is not copied wholesale.
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/public ./public
+
+# The volume mounts here; the runtime user has to own it to create mits.db.
+RUN mkdir -p /app/data && chown -R node:node /app/data
+VOLUME ["/app/data"]
+
+USER node
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD ["node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+
+CMD ["node", "server.js"]

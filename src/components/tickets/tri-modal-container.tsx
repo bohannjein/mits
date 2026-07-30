@@ -1,16 +1,23 @@
 "use client";
 
-import { BotIcon, ListChecksIcon, PenLineIcon, TriangleAlertIcon } from "lucide-react";
+import {
+  BotIcon,
+  ListChecksIcon,
+  PenLineIcon,
+  SparklesIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { SchemaForm } from "@/components/forms/schema-form";
-import { AiChat } from "@/components/tickets/ai-chat";
+import { AiChatTab } from "@/components/tickets/ai-chat-tab";
 import { DraftReceipt } from "@/components/tickets/draft-receipt";
 import { ServiceCatalog } from "@/components/tickets/service-catalog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { QUICK_TICKET_SCHEMA } from "@/lib/mock-schemas";
+import { QUICK_TICKET_SCHEMA, findSchema } from "@/lib/mock-schemas";
 import { useIntakeStore } from "@/lib/store/intake-store";
 import type { MITSTicketDraft, TicketSource } from "@/types/mits";
 
@@ -36,6 +43,11 @@ export function TriModalContainer() {
   const acceptDraft = useIntakeStore((state) => state.acceptDraft);
   const dismissDraft = useIntakeStore((state) => state.dismissDraft);
   const [error, setError] = useState<string | null>(null);
+  /** Accepted AI proposal: which form to open and with which values. */
+  const [aiProposal, setAiProposal] = useState<{
+    schemaId: string;
+    payload: Record<string, unknown>;
+  } | null>(null);
 
   /**
    * Persist the draft. The owner is not sent — the API takes it from the session,
@@ -111,11 +123,88 @@ export function TriModalContainer() {
           </TabsContent>
 
           <TabsContent value="ai_chat">
-            <AiChat />
+            {aiProposal ? (
+              <AiProposalForm
+                schemaId={aiProposal.schemaId}
+                payload={aiProposal.payload}
+                onSubmit={handleSubmit}
+                onDiscard={() => setAiProposal(null)}
+              />
+            ) : (
+              <AiChatTab
+                onAccept={(schemaId, payload) =>
+                  setAiProposal({ schemaId, payload })
+                }
+              />
+            )}
           </TabsContent>
         </>
       )}
     </Tabs>
+  );
+}
+
+/**
+ * The AI proposal opened in the real form.
+ *
+ * Nothing is submitted on the user's behalf: the extracted values are the form's
+ * initial state, and the same validation and API path apply as for a hand-filled
+ * ticket. `source: "ai_chat"` records how it got here.
+ */
+function AiProposalForm({
+  schemaId,
+  payload,
+  onSubmit,
+  onDiscard,
+}: {
+  schemaId: string;
+  payload: Record<string, unknown>;
+  onSubmit: (draft: MITSTicketDraft) => Promise<void>;
+  onDiscard: () => void;
+}) {
+  const schema = findSchema(schemaId);
+
+  if (!schema) {
+    return (
+      <Alert variant="destructive" className="rounded-sm border-2">
+        <TriangleAlertIcon />
+        <AlertTitle>Formular nicht gefunden</AlertTitle>
+        <AlertDescription>
+          Das Schema „{schemaId}“ ist MITS nicht bekannt.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <div className="grid gap-5">
+      <Alert className="rounded-sm border-2">
+        <SparklesIcon />
+        <AlertTitle>Von der KI vorbefüllt: {schema.title}</AlertTitle>
+        <AlertDescription>
+          Bitte alle Felder prüfen und ergänzen. Abgesendet wird nur, was hier
+          steht.
+        </AlertDescription>
+      </Alert>
+
+      <SchemaForm
+        key={schema.id}
+        schema={schema}
+        source="ai_chat"
+        initialPayload={payload}
+        onSubmit={onSubmit}
+        secondaryAction={
+          <Button
+            type="button"
+            variant="ghost"
+            className="rounded-sm"
+            onClick={onDiscard}
+          >
+            Zurück zum Chat
+          </Button>
+        }
+      />
+    </div>
   );
 }
 
