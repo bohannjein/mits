@@ -187,6 +187,100 @@ function migrateAppTables(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_mits_audit_ticket
       ON mits_audit_log (ticket_id, created_at);
+
+    -- The company an asset belongs to and a reporter works for. Not a site: see the
+    -- comment on MITSOrganizationSchema for why the two are separate tables.
+    CREATE TABLE IF NOT EXISTS mits_organization (
+      id              TEXT PRIMARY KEY,
+      name            TEXT NOT NULL,
+      code            TEXT NOT NULL DEFAULT '',
+      domain          TEXT NOT NULL DEFAULT '',
+      customer_number TEXT NOT NULL DEFAULT '',
+      street          TEXT NOT NULL DEFAULT '',
+      postal_code     TEXT NOT NULL DEFAULT '',
+      city            TEXT NOT NULL DEFAULT '',
+      country         TEXT NOT NULL DEFAULT '',
+      phone           TEXT NOT NULL DEFAULT '',
+      website         TEXT NOT NULL DEFAULT '',
+      note            TEXT NOT NULL DEFAULT '',
+      active          INTEGER NOT NULL DEFAULT 1,
+      created_at      TEXT NOT NULL,
+      updated_at      TEXT NOT NULL
+    );
+
+    -- One table for every kind of asset. What differs per kind lives in the
+    -- attributes JSON, so a new asset kind needs no migration.
+    --
+    -- deleted_at, like the ticket table: an asset removed by mistake takes its
+    -- history and its ticket references with it, and those are the reason the row
+    -- existed. Every read filters on deleted_at IS NULL.
+    CREATE TABLE IF NOT EXISTS mits_configuration_item (
+      id               TEXT PRIMARY KEY,
+      asset_tag        TEXT NOT NULL DEFAULT '',
+      name             TEXT NOT NULL,
+      type             TEXT NOT NULL,
+      status           TEXT NOT NULL DEFAULT 'active',
+      organization_id  TEXT,
+      location_id      TEXT,
+      assigned_user_id TEXT,
+      manufacturer     TEXT NOT NULL DEFAULT '',
+      model            TEXT NOT NULL DEFAULT '',
+      serial_number    TEXT NOT NULL DEFAULT '',
+      purchased_on     TEXT NOT NULL DEFAULT '',
+      warranty_until   TEXT NOT NULL DEFAULT '',
+      seats_total      INTEGER NOT NULL DEFAULT 0,
+      expires_at       TEXT NOT NULL DEFAULT '',
+      note             TEXT NOT NULL DEFAULT '',
+      attributes       TEXT NOT NULL DEFAULT '{}',
+      created_at       TEXT NOT NULL,
+      updated_at       TEXT NOT NULL,
+      deleted_at       TEXT
+    );
+
+    -- An inventory number is unique where it is written down, so it is unique here.
+    -- Partial index: an item may have no tag, and several untagged items must not
+    -- collide with each other on the empty string.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_mits_ci_asset_tag
+      ON mits_configuration_item (asset_tag)
+      WHERE asset_tag <> '' AND deleted_at IS NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_mits_ci_type
+      ON mits_configuration_item (type, status);
+    CREATE INDEX IF NOT EXISTS idx_mits_ci_assigned
+      ON mits_configuration_item (assigned_user_id);
+    CREATE INDEX IF NOT EXISTS idx_mits_ci_organization
+      ON mits_configuration_item (organization_id);
+
+    -- Directional, inverse derived on read. One row per stated relation.
+    CREATE TABLE IF NOT EXISTS mits_ci_relation (
+      id         TEXT PRIMARY KEY,
+      from_ci    TEXT NOT NULL,
+      to_ci      TEXT NOT NULL,
+      kind       TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    -- The kind is part of the key, unlike ticket links: a switch can sensibly be both
+    -- part of a rack and connected to a router, so only the same statement twice is
+    -- the duplicate. The reverse of the same kind is rejected in lib/cmdb.ts.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_mits_ci_relation_triple
+      ON mits_ci_relation (from_ci, to_ci, kind);
+    CREATE INDEX IF NOT EXISTS idx_mits_ci_relation_to
+      ON mits_ci_relation (to_ci);
+
+    -- Which assets a ticket is about. No id column: the pair is the fact, and a
+    -- composite key makes a double insert impossible rather than merely unlikely.
+    CREATE TABLE IF NOT EXISTS mits_ticket_ci (
+      ticket_id  TEXT NOT NULL,
+      ci_id      TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (ticket_id, ci_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mits_ticket_ci_item
+      ON mits_ticket_ci (ci_id);
   `);
 
   addColumns(database);
@@ -333,6 +427,15 @@ function addColumns(database: Database.Database): void {
     { table: "mits_ticket", column: "deleted_at", definition: "TEXT" },
     { table: "mits_ticket_comment", column: "deleted_at", definition: "TEXT" },
     { table: "mits_upload", column: "deleted_at", definition: "TEXT" },
+    /*
+     * Which company a reporter belongs to.
+     *
+     * On the profile row rather than on the account: the account is the login identity
+     * and Better Auth owns that table. NULL for everyone until an admin or the
+     * importer assigns it — deriving it from the mail domain on read would move a
+     * customer's whole asset list the day they change provider.
+     */
+    { table: "mits_user_profile", column: "organization_id", definition: "TEXT" },
   ];
 
   for (const { table, column, definition } of additions) {

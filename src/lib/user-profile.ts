@@ -51,7 +51,12 @@ export function getUserProfile(userId: string): MITSUserProfile {
  */
 export function setUserProfile(
   userId: string,
-  input: MITSUserProfile,
+  /*
+   * The organization is omitted from the parameter, not merely ignored inside. A
+   * caller that tries to pass it does not compile, which is a better guarantee than a
+   * comment saying it will be dropped.
+   */
+  input: Omit<MITSUserProfile, "organization_id">,
   locationExists: (id: string) => boolean,
 ): MITSUserProfile {
   const parsed = MITSUserProfileSchema.safeParse(input);
@@ -77,13 +82,21 @@ export function setUserProfile(
     }
   }
 
+  /*
+   * The organization is read from the row and written back unchanged, never taken from
+   * `input`. The customer form does not offer the field, but "the form does not post it"
+   * is not a rule — this is. Only `setUserOrganization` moves somebody between
+   * companies, and that path checks for admin.
+   */
+  const organizationId = getUserOrganizationId(userId);
+
   db.prepare(
     `INSERT INTO mits_user_profile
-       (user_id, location_id, phone, street, postal_code, city, country,
-        website, note, updated_at)
+       (user_id, location_id, organization_id, phone, street, postal_code, city,
+        country, website, note, updated_at)
      VALUES
-       (@user_id, @location_id, @phone, @street, @postal_code, @city, @country,
-        @website, @note, @updated_at)
+       (@user_id, @location_id, @organization_id, @phone, @street, @postal_code,
+        @city, @country, @website, @note, @updated_at)
      ON CONFLICT(user_id) DO UPDATE SET
        location_id = excluded.location_id,
        phone       = excluded.phone,
@@ -96,9 +109,51 @@ export function setUserProfile(
        updated_at  = excluded.updated_at`,
   ).run({
     ...profile,
+    organization_id: organizationId,
     user_id: userId,
     updated_at: new Date().toISOString(),
   });
 
-  return profile;
+  return { ...profile, organization_id: organizationId };
+}
+
+/** Null when the user has no profile row yet, or none assigned. */
+export function getUserOrganizationId(userId: string): string | null {
+  const row = db
+    .prepare("SELECT organization_id FROM mits_user_profile WHERE user_id = ?")
+    .get(userId) as { organization_id: string | null } | undefined;
+  return row?.organization_id ?? null;
+}
+
+/**
+ * Move a user into an organization, or out of every organization with null.
+ *
+ * Separate from `setUserProfile` so the privileged field has its own entry point: a
+ * caller cannot reach it by posting an extra key, only by calling a function whose name
+ * says what it does. `organizationExists` is injected for the same reason
+ * `locationExists` is — this module stays a leaf.
+ *
+ * Upserts, because assigning a company may well be the first thing recorded about
+ * somebody who never opened their own settings.
+ */
+export function setUserOrganization(
+  userId: string,
+  organizationId: string | null,
+  organizationExists: (id: string) => boolean,
+): void {
+  if (organizationId && !organizationExists(organizationId)) {
+    throw new UserProfileError("Die gewählte Firma ist unbekannt.");
+  }
+
+  db.prepare(
+    `INSERT INTO mits_user_profile (user_id, organization_id, updated_at)
+     VALUES (@user_id, @organization_id, @updated_at)
+     ON CONFLICT(user_id) DO UPDATE SET
+       organization_id = excluded.organization_id,
+       updated_at      = excluded.updated_at`,
+  ).run({
+    user_id: userId,
+    organization_id: organizationId,
+    updated_at: new Date().toISOString(),
+  });
 }

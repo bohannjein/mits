@@ -508,6 +508,15 @@ export type CustomerProfileKey = CustomerProfileField["key"];
  */
 export const MITSUserProfileSchema = z.object({
   location_id: z.string().nullable().default(null),
+  /**
+   * The company this reporter belongs to.
+   *
+   * Read here so one type covers the whole profile row, but **not** writable through
+   * `setUserProfile` — a reporter who could set their own organization could put
+   * themselves in somebody else's, and the CMDB filters by exactly this field. Only
+   * the admin action and the importer assign it.
+   */
+  organization_id: z.string().nullable().default(null),
   phone: z.string().max(40).default(""),
   street: z.string().max(160).default(""),
   postal_code: z.string().max(16).default(""),
@@ -573,6 +582,305 @@ export const MITSLocationSchema = z.object({
 export type MITSLocation = z.infer<typeof MITSLocationSchema>;
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Organizations.
+
+   The company a reporter belongs to and an asset is owned by. Separate from
+   `mits_location`, which is a *site*: one organization has several branches, and one
+   branch of a shared building can host several organizations. Conflating them was the
+   tempting shortcut and would have made "all assets of customer X" unanswerable.
+
+   Referenced by id from `mits_user_profile` and `mits_configuration_item`, with no
+   foreign key — same rule as everywhere else here. Deleting a customer must not delete
+   their tickets, and a row pointing at a gone organization has to still open.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const MITSOrganizationSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1).max(160),
+  /** Short code for dense lists and badges, e.g. "WG". */
+  code: z.string().max(16).default(""),
+  /**
+   * Mail domain, without the `@`. Used to *suggest* an organization for a reporter,
+   * never to grant anything — see `organizationIdForEmail`.
+   */
+  domain: z.string().max(190).default(""),
+  customer_number: z.string().max(64).default(""),
+  street: z.string().max(160).default(""),
+  postal_code: z.string().max(16).default(""),
+  city: z.string().max(120).default(""),
+  country: z.string().max(80).default(""),
+  phone: z.string().max(40).default(""),
+  website: z.string().max(300).default(""),
+  note: z.string().max(1000).default(""),
+  /** Inactive rows stay referenceable but drop out of the pickers. */
+  active: z.boolean().default(true),
+});
+export type MITSOrganization = z.infer<typeof MITSOrganizationSchema>;
+
+/** Sentinel the organization picker posts for "not assigned". */
+export const NO_ORGANIZATION = "__none";
+
+/**
+ * Which organization a mail address belongs to, by domain.
+ *
+ * Compared on the part after the **last** `@` and exactly, the same rule the
+ * registration whitelist uses: `firma.de` must match neither `nichtfirma.de` nor
+ * `x@firma.de@fremd.de`.
+ *
+ * A suggestion only. Assignment is written by a human or by the importer; deriving it
+ * live would mean a customer changing their mail provider silently loses their assets.
+ */
+export function organizationIdForEmail(
+  email: string,
+  organizations: Pick<MITSOrganization, "id" | "domain" | "active">[],
+): string | null {
+  const at = email.lastIndexOf("@");
+  if (at < 0) return null;
+  const domain = email.slice(at + 1).trim().toLowerCase();
+  if (!domain) return null;
+
+  const hit = organizations.find(
+    (organization) =>
+      organization.active &&
+      organization.domain.trim().toLowerCase().replace(/^@/, "") === domain,
+  );
+  return hit?.id ?? null;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   CMDB — configuration items.
+
+   One table for every kind of asset, not one per kind. What differs between a laptop
+   and a license is which *attributes* matter, and that is `attributes` — a flat
+   string map, so a new asset kind is a data entry rather than a migration. Same
+   argument as schema-first ticket types: no `Laptop.tsx`, no `mits_laptop`.
+
+   The columns that *are* fixed earned it by being queried or sorted on: type, status,
+   owner, site, serial. An attribute nobody filters by does not need a column.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const CIType = z.enum([
+  "hardware",
+  "software",
+  "license",
+  "network",
+  "mobile",
+  "service",
+  "other",
+]);
+export type CIType = z.infer<typeof CIType>;
+
+export const CI_TYPE_LABELS: Record<CIType, string> = {
+  hardware: "Hardware",
+  software: "Software",
+  license: "Lizenz",
+  network: "Netzwerk",
+  mobile: "Mobilgerät",
+  service: "Dienst",
+  other: "Sonstiges",
+};
+
+/**
+ * Lifecycle of a thing rather than of a ticket.
+ *
+ * `stock` is deliberately not `active`: a laptop in the cupboard is a spare somebody
+ * can hand out, and counting it as in-service overstates both the fleet and the
+ * license demand.
+ */
+export const CIStatus = z.enum(["active", "stock", "repair", "retired"]);
+export type CIStatus = z.infer<typeof CIStatus>;
+
+export const CI_STATUS_LABELS: Record<CIStatus, string> = {
+  active: "Im Einsatz",
+  stock: "Lager",
+  repair: "In Reparatur",
+  retired: "Ausgemustert",
+};
+
+/** In service, so it can break and it consumes a seat. */
+export const LIVE_CI_STATUSES: CIStatus[] = ["active", "repair"];
+
+export const MITSConfigurationItemSchema = z.object({
+  id: z.string(),
+  /** Inventory number as the organization writes it. Free text, unique per instance. */
+  asset_tag: z.string().max(64).default(""),
+  name: z.string().min(1).max(200),
+  type: CIType,
+  status: CIStatus.default("active"),
+  organization_id: z.string().nullable().default(null),
+  location_id: z.string().nullable().default(null),
+  /** User the asset is handed to. Drives the suggestions in a ticket sidebar. */
+  assigned_user_id: z.string().nullable().default(null),
+  manufacturer: z.string().max(120).default(""),
+  model: z.string().max(160).default(""),
+  serial_number: z.string().max(120).default(""),
+  /** Dates as plain `YYYY-MM-DD` strings: nobody knows the hour a warranty ends. */
+  purchased_on: z.string().max(10).default(""),
+  warranty_until: z.string().max(10).default(""),
+  /** Licenses only. Zero means "not seat-counted", not "no seats". */
+  seats_total: z.number().int().min(0).max(1_000_000).default(0),
+  expires_at: z.string().max(10).default(""),
+  note: z.string().max(4000).default(""),
+  /** Everything this instance cares about and MITS has no column for. */
+  attributes: z.record(z.string(), z.string()).default({}),
+  created_at: z.coerce.date(),
+  updated_at: z.coerce.date(),
+});
+export type MITSConfigurationItem = z.infer<typeof MITSConfigurationItemSchema>;
+
+/** How many attributes one item may carry, and how long a key and a value may be. */
+export const CI_ATTRIBUTE_LIMIT = 40;
+export const CI_ATTRIBUTE_KEY_MAX = 60;
+export const CI_ATTRIBUTE_VALUE_MAX = 500;
+
+/**
+ * Clean an attribute map coming from a form, an import or the API.
+ *
+ * Unbounded because it is unschema'd: without a cap, one CSV column of pasted log
+ * output becomes a row nothing can render. Keys are trimmed and collapsed, blank keys
+ * and blank values dropped — an attribute with no value is noise in a detail view, and
+ * the absence of a key is not a fact about the asset.
+ *
+ * Pure and here rather than in the store so the offline suite can check it: a silently
+ * truncated import is the failure mode nobody notices.
+ */
+export function normaliseCIAttributes(
+  input: Record<string, unknown> | null | undefined,
+): Record<string, string> {
+  if (!input || typeof input !== "object") return {};
+
+  const out: Record<string, string> = {};
+  for (const [rawKey, rawValue] of Object.entries(input)) {
+    if (Object.keys(out).length >= CI_ATTRIBUTE_LIMIT) break;
+
+    const key = rawKey.trim().replace(/\s+/g, " ").slice(0, CI_ATTRIBUTE_KEY_MAX);
+    if (!key) continue;
+
+    const value =
+      rawValue === null || rawValue === undefined
+        ? ""
+        : String(rawValue).trim().slice(0, CI_ATTRIBUTE_VALUE_MAX);
+    if (!value) continue;
+
+    out[key] = value;
+  }
+  return out;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   CMDB — relations.
+
+   Directional, one row per stated relation, the inverse derived on read. Exactly the
+   `mits_ticket_link` pattern, for the same reason: two rows would be two places
+   holding one fact, and they drift.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const CIRelationKind = z.enum([
+  "depends_on",
+  "part_of",
+  "connected_to",
+  "installed_on",
+  "licensed_for",
+]);
+export type CIRelationKind = z.infer<typeof CIRelationKind>;
+
+export const CI_RELATION_LABELS: Record<CIRelationKind, string> = {
+  depends_on: "hängt ab von",
+  part_of: "gehört zu",
+  connected_to: "verbunden mit",
+  installed_on: "installiert auf",
+  licensed_for: "lizenziert für",
+};
+
+/** Read from the other end. `connected_to` is symmetric and reads the same. */
+export const CI_RELATION_INVERSE_LABELS: Record<CIRelationKind, string> = {
+  depends_on: "Voraussetzung für",
+  part_of: "besteht aus",
+  connected_to: "verbunden mit",
+  installed_on: "trägt",
+  licensed_for: "lizenziert durch",
+};
+
+export const MITSCIRelationSchema = z.object({
+  id: z.string(),
+  from_ci: z.string(),
+  to_ci: z.string(),
+  kind: CIRelationKind,
+  created_by: z.string(),
+  created_at: z.coerce.date(),
+});
+export type MITSCIRelation = z.infer<typeof MITSCIRelationSchema>;
+
+/**
+ * The relation kind that consumes a seat.
+ *
+ * Named rather than inlined because the licence manager's arithmetic depends on it: a
+ * seat is used *because* something is licensed, so the count is derived from these rows
+ * and never stored. A stored `seats_used` would be a second truth that drifts the first
+ * time somebody deletes an asset.
+ */
+export const SEAT_RELATION: CIRelationKind = "licensed_for";
+
+/* ──────────────────────────────────────────────────────────────────────────
+   CMDB — licence arithmetic.
+
+   Pure, so the offline suite covers the boundaries. Off-by-one here is a compliance
+   statement that is wrong in the direction nobody checks.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export interface SeatUsage {
+  total: number;
+  used: number;
+  free: number;
+  /** 0…1, clamped — the progress bar cannot be more than full. */
+  ratio: number;
+  /** More assignments than seats. The one state that needs saying out loud. */
+  overbooked: boolean;
+  /** No seat count kept for this licence, so the bar means nothing. */
+  untracked: boolean;
+}
+
+export function seatUsage(total: number, used: number): SeatUsage {
+  const seats = Math.max(0, Math.trunc(total));
+  const taken = Math.max(0, Math.trunc(used));
+
+  return {
+    total: seats,
+    used: taken,
+    free: Math.max(0, seats - taken),
+    ratio: seats === 0 ? 0 : Math.min(1, taken / seats),
+    overbooked: seats > 0 && taken > seats,
+    untracked: seats === 0,
+  };
+}
+
+/** Days a licence may have left before it is called out. */
+export const LICENCE_EXPIRY_WARN_DAYS = 60;
+
+export type ExpiryState = "none" | "ok" | "soon" | "expired";
+
+/**
+ * How urgent an expiry date is, compared on the **date** rather than the instant.
+ *
+ * A licence that runs out today is not expired yet — it stops working tomorrow. Day
+ * granularity is also all the data has: the column is `YYYY-MM-DD`.
+ */
+export function expiryState(value: string, now: Date): ExpiryState {
+  const raw = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return "none";
+
+  const today = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+  const due = new Date(`${raw}T00:00:00Z`);
+  if (Number.isNaN(due.getTime())) return "none";
+
+  const days = Math.round((due.getTime() - today.getTime()) / 86_400_000);
+  if (days < 0) return "expired";
+  return days <= LICENCE_EXPIRY_WARN_DAYS ? "soon" : "ok";
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
    Technician presence.
    ────────────────────────────────────────────────────────────────────────── */
 
@@ -631,6 +939,7 @@ export const FeatureFlagsSchema = z.object({
   feature_advanced_form_builder: z.boolean().default(true),
   feature_ticket_linking: z.boolean().default(true),
   feature_canned_responses: z.boolean().default(true),
+  feature_cmdb: z.boolean().default(true),
   feature_typing_indicator: z.boolean().default(false),
   feature_stats_heatmap: z.boolean().default(true),
   feature_sla_countdown: z.boolean().default(false),
@@ -688,6 +997,11 @@ export const FEATURE_FLAG_META: Record<
     label: "Ticket-Verknüpfung",
     description:
       "Tickets miteinander in Beziehung setzen: hängt ab von, Duplikat, über- und untergeordnet.",
+  },
+  feature_cmdb: {
+    label: "CMDB",
+    description:
+      "Anlagen- und Lizenzverwaltung unter /mits/cmdb, Verknüpfung von Tickets mit betroffenen Geräten.",
   },
   feature_canned_responses: {
     label: "Textbausteine",

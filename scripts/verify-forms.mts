@@ -90,6 +90,23 @@ import {
   formatTicketNumber,
   parseTicketNumber,
   resolveSmtpPassword,
+  CIRelationKind,
+  CIStatus,
+  CIType,
+  CI_RELATION_INVERSE_LABELS,
+  CI_RELATION_LABELS,
+  CI_STATUS_LABELS,
+  CI_TYPE_LABELS,
+  CI_ATTRIBUTE_LIMIT,
+  CI_ATTRIBUTE_KEY_MAX,
+  CI_ATTRIBUTE_VALUE_MAX,
+  LICENCE_EXPIRY_WARN_DAYS,
+  MITSConfigurationItemSchema,
+  MITSOrganizationSchema,
+  expiryState,
+  normaliseCIAttributes,
+  organizationIdForEmail,
+  seatUsage,
 } from "../src/types/mits";
 
 let failures = 0;
@@ -1752,6 +1769,214 @@ console.log("\naudit entries");
     AuditAction.options.every((action) => auditLabel(action) !== action),
     AuditAction.options.filter((action) => auditLabel(action) === action).join(","),
   );
+}
+
+console.log("cmdb — labels and enums");
+{
+  check(
+    "every CI type has a label",
+    CIType.options.every((type) => Boolean(CI_TYPE_LABELS[type])),
+    CIType.options.filter((type) => !CI_TYPE_LABELS[type]).join(","),
+  );
+  check(
+    "every CI status has a label",
+    CIStatus.options.every((status) => Boolean(CI_STATUS_LABELS[status])),
+  );
+  check(
+    "every relation kind reads in both directions",
+    CIRelationKind.options.every(
+      (kind) => CI_RELATION_LABELS[kind] && CI_RELATION_INVERSE_LABELS[kind],
+    ),
+    CIRelationKind.options
+      .filter((kind) => !CI_RELATION_INVERSE_LABELS[kind])
+      .join(","),
+  );
+  check(
+    "connected_to reads the same from either end",
+    CI_RELATION_LABELS.connected_to === CI_RELATION_INVERSE_LABELS.connected_to,
+  );
+}
+
+console.log("cmdb — seat arithmetic");
+{
+  const half = seatUsage(10, 5);
+  check("half used -> 0.5", half.ratio === 0.5 && half.free === 5);
+  check(
+    "…and is neither overbooked nor untracked",
+    !half.overbooked && !half.untracked,
+  );
+
+  const full = seatUsage(10, 10);
+  check("exactly full is not overbooked", full.ratio === 1 && !full.overbooked);
+
+  const over = seatUsage(10, 13);
+  check("more than full is overbooked", over.overbooked);
+  check("…the bar stops at full", over.ratio === 1, String(over.ratio));
+  check("…and free never goes negative", over.free === 0, String(over.free));
+
+  const none = seatUsage(0, 4);
+  check(
+    "no seat count is untracked, not overbooked",
+    none.untracked && !none.overbooked,
+  );
+  check("…and its ratio is zero rather than infinite", none.ratio === 0);
+
+  const negative = seatUsage(-5, -2);
+  check("negatives are clamped", negative.total === 0 && negative.used === 0);
+  const fractional = seatUsage(10.7, 3.9);
+  check("fractions are truncated", fractional.total === 10 && fractional.used === 3);
+}
+
+console.log("cmdb — expiry");
+{
+  const now = new Date("2026-07-31T12:00:00Z");
+  check("no date -> none", expiryState("", now) === "none");
+  check("garbage -> none", expiryState("irgendwann", now) === "none");
+  check("yesterday -> expired", expiryState("2026-07-30", now) === "expired");
+  check(
+    "today is not expired yet",
+    expiryState("2026-07-31", now) === "soon",
+    expiryState("2026-07-31", now),
+  );
+  check("tomorrow -> soon", expiryState("2026-08-01", now) === "soon");
+
+  const midnight = Date.UTC(2026, 6, 31);
+  const inWindow = new Date(midnight + LICENCE_EXPIRY_WARN_DAYS * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const pastWindow = new Date(
+    midnight + (LICENCE_EXPIRY_WARN_DAYS + 1) * 86_400_000,
+  )
+    .toISOString()
+    .slice(0, 10);
+  check(
+    `exactly ${LICENCE_EXPIRY_WARN_DAYS} days out is still soon`,
+    expiryState(inWindow, now) === "soon",
+    inWindow,
+  );
+  check(
+    "one day past the window is ok",
+    expiryState(pastWindow, now) === "ok",
+    pastWindow,
+  );
+
+  // The time of day must not tip the verdict: the column holds a date, and an agent
+  // whose browser has been open since yesterday morning has to see the same badge.
+  check(
+    "late in the day does not expire a licence early",
+    expiryState("2026-07-31", new Date("2026-07-31T23:59:59Z")) === "soon",
+  );
+}
+
+console.log("cmdb — attributes");
+{
+  check("null is an empty map", Object.keys(normaliseCIAttributes(null)).length === 0);
+  check("blank keys are dropped", normaliseCIAttributes({ "   ": "x" })["   "] === undefined);
+  check(
+    "blank values are dropped, not stored empty",
+    normaliseCIAttributes({ RAM: "   " }).RAM === undefined,
+  );
+  check(
+    "whitespace in a key collapses",
+    normaliseCIAttributes({ "RAM   Typ": "DDR5" })["RAM Typ"] === "DDR5",
+  );
+  check("numbers become strings", normaliseCIAttributes({ RAM: 16 }).RAM === "16");
+
+  const long = normaliseCIAttributes({ ["k".repeat(200)]: "v".repeat(2000) });
+  const [key, value] = Object.entries(long)[0];
+  check("a long key is cut to the limit", key.length === CI_ATTRIBUTE_KEY_MAX, String(key.length));
+  check(
+    "a long value is cut to the limit",
+    value.length === CI_ATTRIBUTE_VALUE_MAX,
+    String(value.length),
+  );
+
+  const many = Object.fromEntries(
+    Array.from({ length: CI_ATTRIBUTE_LIMIT + 20 }, (_, i) => [`k${i}`, "v"]),
+  );
+  check(
+    "the attribute count is capped",
+    Object.keys(normaliseCIAttributes(many)).length === CI_ATTRIBUTE_LIMIT,
+    String(Object.keys(normaliseCIAttributes(many)).length),
+  );
+}
+
+console.log("cmdb — item schema");
+{
+  const now = new Date();
+  const minimal = MITSConfigurationItemSchema.safeParse({
+    id: "ci-1",
+    name: "Notebook Vertrieb 04",
+    type: "hardware",
+    created_at: now,
+    updated_at: now,
+  });
+  check(
+    "a name and a type are enough",
+    minimal.success,
+    minimal.success ? "" : (minimal.error.issues[0]?.message ?? ""),
+  );
+  check(
+    "status defaults to in-service",
+    minimal.success && minimal.data.status === "active",
+  );
+  check("seats default to untracked", minimal.success && minimal.data.seats_total === 0);
+  check(
+    "owner and site default to unassigned",
+    minimal.success &&
+      minimal.data.organization_id === null &&
+      minimal.data.location_id === null,
+  );
+
+  const noName = MITSConfigurationItemSchema.safeParse({
+    id: "ci-2",
+    name: "",
+    type: "hardware",
+    created_at: now,
+    updated_at: now,
+  });
+  check("a nameless item is refused", !noName.success);
+
+  const badType = MITSConfigurationItemSchema.safeParse({
+    id: "ci-3",
+    name: "Etwas",
+    type: "kaffeemaschine",
+    created_at: now,
+    updated_at: now,
+  });
+  check("an unknown type is refused", !badType.success);
+}
+
+console.log("cmdb — organizations");
+{
+  const minimal = MITSOrganizationSchema.safeParse({ id: "o1", name: "Weller GmbH" });
+  check("a name is enough", minimal.success);
+  check("active by default", minimal.success && minimal.data.active);
+
+  const orgs = [
+    { id: "o1", domain: "firma.de", active: true },
+    { id: "o2", domain: "andere.de", active: true },
+    { id: "o3", domain: "inaktiv.de", active: false },
+  ];
+  check(
+    "a matching domain resolves",
+    organizationIdForEmail("rita@firma.de", orgs) === "o1",
+  );
+  check("case does not matter", organizationIdForEmail("Rita@FIRMA.de", orgs) === "o1");
+  check(
+    "a suffix match is not a match",
+    organizationIdForEmail("rita@nichtfirma.de", orgs) === null,
+    String(organizationIdForEmail("rita@nichtfirma.de", orgs)),
+  );
+  check(
+    "only the part after the last @ counts",
+    organizationIdForEmail("rita@firma.de@fremd.de", orgs) === null,
+  );
+  check(
+    "an inactive company is never suggested",
+    organizationIdForEmail("rita@inaktiv.de", orgs) === null,
+  );
+  check("no @ at all resolves to nothing", organizationIdForEmail("rita", orgs) === null);
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
