@@ -49,7 +49,7 @@ interface TicketRow {
 function rowToTicket(row: TicketRow): MITSTicket {
   return MITSTicketSchema.parse({
     id: row.id,
-    // Zero for a row the backfill has not reached; renders as TICK-0, which is
+    // Zero for a row the backfill has not reached; renders as 0, which is
     // visibly broken rather than quietly plausible.
     ticket_number: row.ticket_number ?? 0,
     location_id: row.location_id,

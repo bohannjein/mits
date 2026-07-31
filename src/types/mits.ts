@@ -93,21 +93,31 @@ export const isElevatedPriority = (priority: TicketPriority): boolean =>
   ELEVATED_PRIORITIES.includes(priority);
 
 /**
- * Human-readable ticket number, e.g. TICK-1001.
+ * Human-readable ticket number, e.g. 1001.
  *
  * Stored as an integer and formatted on the way out, so sorting and the
  * search-by-number path work on a number rather than on a string.
+ *
+ * Displayed bare. The old `TICK-1001` form is still *accepted* on input — see
+ * `parseTicketNumber` — because every mail already sent and every number somebody wrote
+ * down carries it, and refusing those would break the search for exactly the people who
+ * kept a reference.
  */
-export const TICKET_NUMBER_PREFIX = "TICK";
 export const TICKET_NUMBER_START = 1001;
 
-export const formatTicketNumber = (n: number): string =>
-  `${TICKET_NUMBER_PREFIX}-${n}`;
+/** Retired from display, kept because the parser still recognises it. */
+export const LEGACY_TICKET_PREFIX = "TICK";
+
+export const formatTicketNumber = (n: number): string => String(n);
 
 /**
  * Pull a ticket number out of whatever a user typed: `1001`, `TICK-1001`,
  * `tick 1001`, `#1001`. Returns null when there is no plausible number, so the
  * caller can fall back to a text search instead of jumping.
+ *
+ * The `TICK-` forms are deliberately still accepted although nothing produces them any
+ * more. They are in sent mail and in whatever people wrote on a sticky note, and the
+ * cost of tolerating them is one optional group in a regex.
  */
 export function parseTicketNumber(input: string): number | null {
   const match = input
@@ -142,8 +152,8 @@ export const MITSTicketSchema = z.object({
   id: z.string(),
   /**
    * Sequential, human-readable. Defaults to 0 so a row written before the column
-   * existed still parses — `formatTicketNumber` renders that as TICK-0, which is
-   * visibly wrong rather than silently plausible.
+   * existed still parses — it renders as 0, which is visibly wrong rather than
+   * silently plausible.
    */
   ticket_number: z.coerce.number().int().nonnegative().default(0),
   /** Branch or site this ticket belongs to. Null for tickets filed before locations. */

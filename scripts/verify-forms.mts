@@ -443,6 +443,13 @@ console.log("ticket number parsing");
     "formatting round-trips",
     parseTicketNumber(formatTicketNumber(1042)) === 1042,
   );
+  check("a number renders bare, without a prefix", formatTicketNumber(1042) === "1042");
+  check(
+    "the retired TICK- form is still accepted",
+    parseTicketNumber("TICK-1042") === 1042 &&
+      parseTicketNumber("tick 1042") === 1042,
+    "sent mail and written-down numbers carry it",
+  );
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -589,8 +596,17 @@ console.log("mail templates");
   });
 
   const created = ticketCreatedMail(ticket, "https://mits.example.invalid/tickets/t-1");
-  check("subject carries the number", created.subject.includes("TICK-1042"));
-  check("html carries the number", created.html.includes("TICK-1042"));
+  /*
+   * The bracketed form, not just the digits. The bracket is what makes the number
+   * findable in a reply subject once inbound mail is wired up — asserting only "1042"
+   * would pass on a subject that merely happened to contain those digits.
+   */
+  check("subject carries the number in brackets", created.subject.includes("[1042]"));
+  check("html carries the number", created.html.includes("1042"));
+  check(
+    "the retired prefix is gone from the subject",
+    !created.subject.includes("TICK"),
+  );
   check(
     "html carries the absolute link",
     created.html.includes("https://mits.example.invalid/tickets/t-1"),
@@ -630,7 +646,7 @@ console.log("mail templates");
     reply.html.includes("Zeile eins<br>Zeile zwei") &&
       reply.html.includes("&lt;b&gt;fett&lt;/b&gt;"),
   );
-  check("reply subject carries the number", reply.subject.includes("TICK-1042"));
+  check("reply subject carries the number", reply.subject.includes("[1042]"));
 }
 
 /* ──────────────────────────────────────────────────────────────────────────

@@ -175,7 +175,7 @@ export function TicketLinks({
             <Input
               id="link-target"
               name="target"
-              placeholder="1001 oder TICK-1001"
+              placeholder="1001"
               disabled={busy}
               className="h-10 rounded-xl"
             />

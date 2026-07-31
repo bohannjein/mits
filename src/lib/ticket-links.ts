@@ -134,7 +134,7 @@ export function addLink(
   const to = target ? getTicketFor(target.id, user) : null;
   if (!to) {
     throw new TicketLinkError(
-      `${formatTicketNumber(targetNumber)} wurde nicht gefunden.`,
+      `Ticket ${formatTicketNumber(targetNumber)} wurde nicht gefunden.`,
     );
   }
 
@@ -154,7 +154,7 @@ export function addLink(
 
   if (existing) {
     throw new TicketLinkError(
-      `${formatTicketNumber(to.ticket_number)} ist bereits verknüpft.`,
+      `Ticket ${formatTicketNumber(to.ticket_number)} ist bereits verknüpft.`,
     );
   }
 
