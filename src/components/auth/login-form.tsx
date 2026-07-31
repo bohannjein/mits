@@ -20,7 +20,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { signIn } from "@/lib/auth/client";
-import { homeFor } from "@/lib/auth/roles";
+import { CUSTOMER_HOME } from "@/lib/auth/roles";
 
 const LoginSchema = z.object({
   email: z.email("Bitte eine gültige E-Mail-Adresse angeben."),
@@ -57,10 +57,10 @@ function describeSignInError(status: number): string {
 }
 
 /**
- * @param next Where to go after signing in. Empty means "decide from the role" —
- *   staff land on the queue, reporters in their portal. A caller that came from a
- *   guarded page passes that page instead, so the redirect returns people where
- *   they were headed.
+ * @param next Where to go after signing in. Empty means the customer portal, which
+ *   is also where the root sends people — the front door is the same for everyone.
+ *   A caller that came from a guarded page passes that page instead, so the redirect
+ *   returns people where they were headed.
  */
 export function LoginForm({ next }: { next: string }) {
   const router = useRouter();
@@ -73,7 +73,7 @@ export function LoginForm({ next }: { next: string }) {
 
   const submit = form.handleSubmit(async (values) => {
     setError(null);
-    const { data, error: signInError } = await signIn.email({
+    const { error: signInError } = await signIn.email({
       email: values.email,
       password: values.password,
     });
@@ -83,10 +83,16 @@ export function LoginForm({ next }: { next: string }) {
       return;
     }
 
-    // The sign-in response carries the role, so the landing page can be decided
-    // without a second round-trip. `homeFor` degrades to the customer portal for
-    // an unknown role, never upwards.
-    const target = next || homeFor((data?.user as { role?: unknown })?.role);
+    /*
+     * The portal unless the caller asked for somewhere specific.
+     *
+     * `next` comes from the guarded page that sent them here, so a deep link into a
+     * ticket or into /mits still resolves after signing in. Without one the landing
+     * is the same as the root's — the portal, for staff too. The role is no longer
+     * consulted here, which also means this no longer depends on the sign-in response
+     * carrying it.
+     */
+    const target = next || CUSTOMER_HOME;
     router.push(target);
     // The header reads the session on the server, so the new cookie only takes
     // effect after the route cache is dropped.

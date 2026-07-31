@@ -354,12 +354,20 @@ und Rolle, und ein Ticketformular hat keinen Grund, jedem Melder ein Adressbuch 
 ## Zwei Welten
 
 ```
-/                       öffentlicher Einstieg: Login-Maske, angemeldet -> homeFor(role)
+/                       öffentlicher Einstieg: Login-Maske, angemeldet -> /customer
 /customer/…             Anwender: Portal, Ticket-Erstellung, eigene Tickets, schlanke Detailansicht
 /mits/                  Technik: Live-Queue mit Tabs, Präsenz + Statistik als Spalte
 /mits/tickets/[id]      Agenten-Detailansicht mit Workflow-Panel
 /admin/…                Administration
 ```
+
+**Eintrittsweg und In-App-Navigation sind zwei verschiedene Ziele.** Wer den bloßen
+Host aufruft, will das Portal — `/`, `/login` und `/register` schicken **jeden** nach
+`/customer`, auch die Technik. Innerhalb der App entscheidet weiter `homeFor(role)`:
+Logo und Benutzermenü bringen einen Techniker zurück in die Queue, nicht ins Portal,
+sonst wäre der Arbeitsweg zwei Klicks statt einem. Ein `?next=` aus einer geschützten
+Seite schlägt beides — ein Deep-Link auf ein Ticket landet nach der Anmeldung auf
+diesem Ticket.
 
 `/tickets`, `/board` und `/agent` existieren **nicht mehr** und werden nicht umgeleitet.
 

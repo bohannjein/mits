@@ -13,7 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { homeFor } from "@/lib/auth/roles";
+import { CUSTOMER_HOME } from "@/lib/auth/roles";
 import { getSessionUser } from "@/lib/auth/session";
 import { ensureAuthSchema } from "@/lib/auth/server";
 import { countUsers } from "@/lib/users";
@@ -25,7 +25,8 @@ export const metadata: Metadata = {
 
 export default async function RegisterPage() {
   const signedIn = await getSessionUser();
-  if (signedIn) redirect(homeFor(signedIn.role));
+  // Same front door as the root and the login page — the portal, for everyone.
+  if (signedIn) redirect(CUSTOMER_HOME);
 
   // The user table has to exist before it can be counted.
   await ensureAuthSchema();

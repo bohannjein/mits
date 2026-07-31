@@ -15,7 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { homeFor } from "@/lib/auth/roles";
+import { CUSTOMER_HOME } from "@/lib/auth/roles";
 import { ensureDefaultAdmin } from "@/lib/auth/seed-admin";
 import { getSessionUser } from "@/lib/auth/session";
 import { getActiveAnnouncements, getPortalConfig } from "@/lib/portal";
@@ -24,13 +24,14 @@ import { fillPortalText } from "@/types/mits";
 /* ──────────────────────────────────────────────────────────────────────────
    Public entry point.
 
-   The two worlds live under /customer and /mits; this page only decides which
-   one someone belongs in. Signed in, it forwards — staff to the queue, reporters
-   to their portal. Anonymous, it is the login mask.
+   The service portal is the front door: signed in, this forwards to /customer for
+   everyone, staff included. Somebody typing the bare host wants the portal, and a
+   technician who wants the queue reaches it from the header — the logo and the user
+   menu both still point at `homeFor(role)`, so daily work is one click, not two.
 
-   It stays a page rather than a redirect-only route because an anonymous visitor
-   needs somewhere to land, and because a known outage should be readable before
-   anyone tries to sign in during it.
+   Anonymous, it is the login mask. It stays a page rather than a redirect-only route
+   because an anonymous visitor needs somewhere to land, and because a known outage
+   should be readable before anyone tries to sign in during it.
    ────────────────────────────────────────────────────────────────────────── */
 
 export default async function Home() {
@@ -43,7 +44,7 @@ export default async function Home() {
   const user = await getSessionUser();
   // The password gate is left to `requireUser` on the target page — forwarding a
   // gated account is harmless, it gets bounced to /settings/profile there.
-  if (user) redirect(homeFor(user.role));
+  if (user) redirect(CUSTOMER_HOME);
 
   const config = getPortalConfig();
   // No name to fill in yet, so the placeholder resolves to nothing rather than

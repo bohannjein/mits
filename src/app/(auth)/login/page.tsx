@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { CUSTOMER_HOME, homeFor } from "@/lib/auth/roles";
+import { CUSTOMER_HOME } from "@/lib/auth/roles";
 import { getSessionUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
@@ -21,11 +21,15 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ next?: string }>;
 }) {
-  const signedIn = await getSessionUser();
-  // Staff land on the queue, reporters in their portal — homeFor decides.
-  if (signedIn) redirect(homeFor(signedIn.role));
-
   const { next } = await searchParams;
+
+  const signedIn = await getSessionUser();
+  /*
+   * Same landing as the root: the portal, for everyone. A `?next=` from a guarded
+   * page still wins, so a deep link into /mits or /admin is not swallowed by the
+   * default — someone who followed a link to a ticket ends up at that ticket.
+   */
+  if (signedIn) redirect(safeNext(next));
 
   return (
     <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-2">
