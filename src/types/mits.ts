@@ -310,6 +310,29 @@ export const CANNED_PLACEHOLDERS = [
 ] as const;
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Mail ingest.
+
+   Only the Defender rule's settings so far. The transport — IMAP, or a Graph app
+   registration — is not here yet, on purpose: which one MITS speaks is undecided, and
+   half a form for each would be two masks that configure nothing.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** Sentinel the on-call picker posts for "nobody nominated". */
+export const NO_ON_CALL = "__none";
+
+export const MailSettingsSchema = z.object({
+  /** Address alerts and tickets arrive at. Display only until a transport exists. */
+  supportAddress: z.string().max(320).default(""),
+  /** Off makes a recognised alert an ordinary mail ticket. */
+  defenderRuleEnabled: z.boolean().default(true),
+  /** Account the incident is assigned to. Empty leaves it in the pool inbox. */
+  onCallUserId: z.string().max(64).default(""),
+  /** Where the immediate notification goes. Empty attempts no mail. */
+  onCallEmail: z.string().max(320).default(""),
+});
+export type MailSettings = z.infer<typeof MailSettingsSchema>;
+
+/* ──────────────────────────────────────────────────────────────────────────
    Customer profile.
 
    Contact details a reporter maintains themselves, so the technician working their

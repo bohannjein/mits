@@ -445,11 +445,100 @@ export const SOFTWARE_ACCESS_SCHEMA: MITSFormSchema = {
  * of these; nothing outside that module should read this list to resolve an id,
  * or builder edits would be invisible.
  */
+/**
+ * Security incident, as produced by an inbound Defender alert.
+ *
+ * A schema rather than new ticket columns, which is rule 5 doing its job: the alert's
+ * host, severity and title are answers to a form nobody filled in by hand, and putting
+ * them in the payload means the existing detail view, the AI extractor and the search
+ * all handle them with no extra code.
+ *
+ * It is in the catalogue too, so an agent can raise one by hand — a phone call about a
+ * suspicious mail is the same kind of ticket as a machine-generated alert.
+ */
+export const SECURITY_INCIDENT_SCHEMA: MITSFormSchema = {
+  id: "security-incident",
+  title: "Security Incident",
+  description:
+    "Sicherheitsvorfall — automatisch aus einem Defender-Alert oder von Hand erfasst.",
+  category: "Sicherheit",
+  version: 1,
+  icon: "ShieldAlert",
+  submitLabel: "Vorfall melden",
+  aiHint:
+    "Sicherheitsvorfall, Malware-Fund, verdächtige Anmeldung, Defender- oder Virenwarnung.",
+  schema: {
+    type: "object",
+    required: ["title", "severity"],
+    properties: {
+      title: {
+        type: "string",
+        title: "Alert",
+        minLength: 3,
+        maxLength: 160,
+      },
+      severity: {
+        type: "string",
+        title: "Schweregrad",
+        enum: ["critical", "high", "medium", "low"],
+        default: "high",
+      },
+      host: {
+        type: "string",
+        title: "Betroffenes Gerät oder Konto",
+        maxLength: 120,
+      },
+      incident_id: {
+        type: "string",
+        title: "Incident-Nummer",
+        maxLength: 32,
+      },
+      source: {
+        type: "string",
+        title: "Quelle",
+        enum: ["defender", "manual", "other"],
+        default: "manual",
+      },
+      detail: {
+        type: "string",
+        title: "Meldungstext",
+        maxLength: 8000,
+      },
+    },
+  },
+  uiHints: {
+    title: { order: 1, placeholder: "z. B. Suspicious PowerShell execution" },
+    severity: {
+      order: 2,
+      widget: "select",
+      optionLabels: {
+        critical: "Kritisch",
+        high: "Hoch",
+        medium: "Mittel",
+        low: "Niedrig",
+      },
+    },
+    host: { order: 3, placeholder: "NB-VERTRIEB-07 oder person@firma.de" },
+    incident_id: { order: 4, help: "Nummer aus dem Defender-Portal, falls vorhanden." },
+    source: {
+      order: 5,
+      widget: "select",
+      optionLabels: {
+        defender: "Microsoft Defender",
+        manual: "Von Hand erfasst",
+        other: "Andere Quelle",
+      },
+    },
+    detail: { order: 6, widget: "textarea" },
+  },
+};
+
 export const BUILTIN_SCHEMAS: MITSFormSchema[] = [
   QUICK_TICKET_SCHEMA,
   USER_ONBOARDING_SCHEMA,
   HARDWARE_ORDER_SCHEMA,
   SOFTWARE_ACCESS_SCHEMA,
+  SECURITY_INCIDENT_SCHEMA,
 ];
 
 /** Group schemas by category, preserving the order they arrive in. Pure. */

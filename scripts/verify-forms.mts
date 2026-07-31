@@ -18,10 +18,22 @@ import {
 import {
   HARDWARE_ORDER_SCHEMA,
   QUICK_TICKET_SCHEMA,
+  SECURITY_INCIDENT_SCHEMA,
   SOFTWARE_ACCESS_SCHEMA,
   USER_ONBOARDING_SCHEMA,
 } from "../src/lib/mock-schemas";
 import { pieSlice, sharePercent } from "../src/lib/chart";
+import {
+  SEVERITY_TO_PRIORITY,
+  classifyDefenderAlert,
+  priorityForAlert,
+} from "../src/lib/mail/defender";
+import { planSecurityIncident } from "../src/lib/mail/incident-rule";
+import {
+  cleanInboundReply,
+  stripQuotePrefixes,
+  stripQuotedReply,
+} from "../src/lib/mail/quotes";
 import {
   hasVisibleContent,
   sanitizeRichText,
@@ -1348,6 +1360,257 @@ console.log("\ncustomer profile");
     "the location sentinel is not a usable id",
     NO_LOCATION.startsWith("__"),
   );
+}
+
+console.log("\ndefender alert recognition");
+{
+  const REAL_ALERT = [
+    "Microsoft Defender for Endpoint",
+    "",
+    "Severity: High",
+    "Device name: NB-VERTRIEB-07",
+    "Alert title: Suspicious PowerShell execution",
+    "Incident ID: 40912",
+    "",
+    "Diese E-Mail wurde automatisch versendet.",
+  ].join("\n");
+
+  const alert = classifyDefenderAlert({
+    from: "security-noreply@microsoft.com",
+    subject: "[Defender Alert] High severity alert on NB-VERTRIEB-07",
+    text: REAL_ALERT,
+  });
+
+  check("a genuine alert is recognised", alert !== null);
+  check("the sender is credited", alert?.matchedOn.includes("sender") === true);
+  check("so is the subject", alert?.matchedOn.includes("subject") === true);
+  check("severity is read", alert?.severity === "high", String(alert?.severity));
+  check("host is read", alert?.host === "NB-VERTRIEB-07", alert?.host);
+  check(
+    "alert title comes from the body label",
+    alert?.alertTitle === "Suspicious PowerShell execution",
+    alert?.alertTitle,
+  );
+  check("incident number is read", alert?.incidentId === "40912", alert?.incidentId);
+
+  // A forwarded alert loses the Microsoft sender but keeps the subject. Missing these
+  // is the expensive direction: a real alert sitting in the queue as ordinary mail.
+  const forwarded = classifyDefenderAlert({
+    from: "it-verteiler@firma.de",
+    subject: "WG: [Defender Alert] Critical severity alert",
+    text: "Schweregrad: Kritisch\nGerät: SRV-DC-01",
+  });
+  check("a forwarded alert is still recognised", forwarded !== null);
+  check("…on the subject alone", forwarded?.matchedOn.join() === "subject");
+  check(
+    "german severity is read",
+    forwarded?.severity === "critical",
+    String(forwarded?.severity),
+  );
+  check("german host label is read", forwarded?.host === "SRV-DC-01", forwarded?.host);
+
+  // The other expensive direction: escalating something that is not an alert.
+  check(
+    "an ordinary mail is not an alert",
+    classifyDefenderAlert({
+      from: "kollege@firma.de",
+      subject: "Drucker Etage 3 offline",
+      text: "Der Drucker ist seit heute Morgen nicht erreichbar.",
+    }) === null,
+  );
+  check(
+    "a lookalike domain is refused",
+    classifyDefenderAlert({
+      from: "noreply@microsoft.com.evil.example",
+      subject: "Rechnung",
+      text: "",
+    }) === null,
+  );
+  check(
+    "a similar domain is refused",
+    classifyDefenderAlert({
+      from: "x@notmicrosoft.com",
+      subject: "Newsletter",
+      text: "",
+    }) === null,
+  );
+  check(
+    "a mail merely quoting an alert is not one",
+    classifyDefenderAlert({
+      from: "kollege@firma.de",
+      subject: "Frage zu einem Alert",
+      text: "Severity: High\nWas bedeutet das?",
+    }) === null,
+    "body text must never decide",
+  );
+
+  // The labelled field has to beat the word appearing in prose.
+  const prose = classifyDefenderAlert({
+    from: "security-noreply@microsoft.com",
+    subject: "Microsoft Defender notification",
+    text: "This is a critical business system.\nSeverity: Low\nDevice: PC-42",
+  });
+  check(
+    "the labelled severity beats the word in prose",
+    prose?.severity === "low",
+    String(prose?.severity),
+  );
+
+  // "Device name" must win over the bare "Device" label.
+  const both = classifyDefenderAlert({
+    from: "security-noreply@microsoft.com",
+    subject: "Defender Alert",
+    text: "Device: wrong\nDevice name: RIGHT-01",
+  });
+  check("the more specific host label wins", both?.host === "RIGHT-01", both?.host);
+
+  // Severity to priority. Medium must not collapse to low, or a finding gets buried
+  // under a printer request.
+  check("critical maps to critical", SEVERITY_TO_PRIORITY.critical === "critical");
+  check("high maps to high", SEVERITY_TO_PRIORITY.high === "high");
+  check("medium stays medium", SEVERITY_TO_PRIORITY.medium === "medium");
+  check("low does not fall below medium", SEVERITY_TO_PRIORITY.low === "medium");
+
+  const unreadable = classifyDefenderAlert({
+    from: "security-noreply@microsoft.com",
+    subject: "Microsoft Defender notification",
+    text: "Something happened.",
+  });
+  check(
+    "an unreadable severity yields no priority",
+    unreadable !== null && priorityForAlert(unreadable) === null,
+  );
+}
+
+console.log("\nincident rule");
+{
+  const CONFIG = {
+    enabled: true,
+    onCallUserId: "u-oncall",
+    onCallEmail: "security@firma.invalid",
+  };
+
+  const plan = planSecurityIncident(
+    {
+      from: "security-noreply@microsoft.com",
+      subject: "[Defender Alert] High severity alert",
+      text: "Severity: High\nDevice name: NB-07\nAlert title: Malware detected\n\n--\nMicrosoft",
+    },
+    CONFIG,
+  );
+
+  check("the rule fires", plan !== null);
+  check("it targets the security schema", plan?.formSchemaId === "security-incident");
+  check("priority comes from the severity", plan?.priority === "high");
+  check("and is not marked as assumed", plan?.priorityAssumed === false);
+  check("it assigns to the on-call account", plan?.assignTo === "u-oncall");
+  check("the payload carries the host", plan?.payload.host === "NB-07");
+  check("…and the source", plan?.payload.source === "defender");
+  check(
+    "the footer is stripped from the detail",
+    typeof plan?.payload.detail === "string" &&
+      !(plan.payload.detail as string).includes("Microsoft"),
+    String(plan?.payload.detail),
+  );
+
+  // A recognised alert with no readable severity is still urgent, and the plan has to
+  // say the value was assumed so nobody reads it as a value Defender supplied.
+  const assumed = planSecurityIncident(
+    {
+      from: "security-noreply@microsoft.com",
+      subject: "Microsoft Defender notification",
+      text: "Etwas ist passiert.",
+    },
+    CONFIG,
+  );
+  check("an unreadable severity still escalates", assumed?.priority === "high");
+  check("…and is flagged as assumed", assumed?.priorityAssumed === true);
+
+  // Without an on-call account the incident is left in the pool rather than pushed at
+  // an arbitrary technician.
+  const unassigned = planSecurityIncident(
+    {
+      from: "security-noreply@microsoft.com",
+      subject: "Defender Alert",
+      text: "Severity: Low",
+    },
+    { ...CONFIG, onCallUserId: null },
+  );
+  check("no on-call means unassigned", unassigned?.assignTo === null);
+  check(
+    "…and the reason says so",
+    unassigned?.reasons.some((line) => line.includes("unzugewiesen")) === true,
+  );
+
+  check(
+    "a disabled rule does not fire",
+    planSecurityIncident(
+      {
+        from: "security-noreply@microsoft.com",
+        subject: "Defender Alert",
+        text: "Severity: High",
+      },
+      { ...CONFIG, enabled: false },
+    ) === null,
+  );
+  check(
+    "an ordinary mail does not fire",
+    planSecurityIncident(
+      { from: "kollege@firma.de", subject: "Drucker kaputt", text: "Hilfe" },
+      CONFIG,
+    ) === null,
+  );
+
+  // The plan's payload has to satisfy the schema it names, or the ticket would be
+  // rejected at creation with nothing on screen explaining why.
+  const payload = plan ? plan.payload : {};
+  const compiled = schemaToZod(SECURITY_INCIDENT_SCHEMA, { values: payload }).safeParse(
+    payload,
+  );
+  check(
+    "the plan's payload validates against the schema",
+    compiled.success,
+    JSON.stringify(compiled.error?.issues),
+  );
+}
+
+console.log("\nreply trimming");
+{
+  check(
+    "an outlook quote is cut",
+    stripQuotedReply("Danke!\n\nVon: IT <it@firma.de>\nGesendet: Montag\nAlter Text") ===
+      "Danke!",
+  );
+  check(
+    "a gmail quote is cut",
+    stripQuotedReply("Passt so.\n\nAm 1. August schrieb IT:\n> alter Text") === "Passt so.",
+  );
+  check(
+    "a signature is cut",
+    stripQuotedReply("Kurze Antwort.\n\n--\nJana Berger\nVertrieb") === "Kurze Antwort.",
+  );
+  check(
+    "a german sign-off is cut",
+    stripQuotedReply("Erledigt.\n\nMit freundlichen Grüßen\nJana") === "Erledigt.",
+  );
+  check("quote prefixes are dropped", stripQuotePrefixes("neu\n> alt\n> älter") === "neu");
+  check(
+    "both passes together",
+    cleanInboundReply("Antwort\n> zitat\n\nMit freundlichen Grüßen\nJana") === "Antwort",
+  );
+
+  // The conservative half. Losing the answer is a support call; keeping a quote is
+  // merely untidy.
+  check(
+    "a message with no markers is untouched",
+    stripQuotedReply("Nur ein Satz ohne alles.") === "Nur ein Satz ohne alles.",
+  );
+  check(
+    "a mail that is nothing but a quote is kept whole",
+    stripQuotedReply("Von: IT <it@firma.de>\nAlter Text").includes("Alter Text"),
+    "cutting at line 0 would leave nothing",
+  );
+  check("empty stays empty", cleanInboundReply("   \n  \n") === "");
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

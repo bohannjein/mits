@@ -29,6 +29,9 @@ import {
   setPortalFaqs,
   setPortalServices,
 } from "@/lib/portal";
+import { getMailSettings, incidentRuleConfig, setMailSettings } from "@/lib/mail-settings";
+import { classifyDefenderAlert } from "@/lib/mail/defender";
+import { planSecurityIncident } from "@/lib/mail/incident-rule";
 import { queryNtp } from "@/lib/ntp";
 import { normaliseDomains, setAuthSettings } from "@/lib/settings";
 import {
@@ -50,6 +53,7 @@ import {
   FeatureFlagsSchema,
   MITSLocationSchema,
   NO_LOCATION,
+  NO_ON_CALL,
   PortalConfigSchema,
   PortalContentSchema,
   PortalFaqSchema,
@@ -615,6 +619,113 @@ export async function saveUserRecordAction(
 
   return { ok: true, message: `Angaben zu ${name || target.name} gespeichert.` };
 }
+
+/* ── Mail ingest and the Defender rule ──────────────────────────────────── */
+
+export async function saveMailSettingsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const onCallUserId = String(formData.get("onCallUserId") ?? "").trim();
+
+  // An id that no longer exists would leave every incident assigned to nobody while
+  // the mask claimed otherwise.
+  if (onCallUserId && onCallUserId !== NO_ON_CALL && !findUser(onCallUserId)) {
+    return { ok: false, error: "Das gewählte Konto gibt es nicht." };
+  }
+
+  const saved = setMailSettings({
+    supportAddress: String(formData.get("supportAddress") ?? "").trim(),
+    defenderRuleEnabled: formData.get("defenderRuleEnabled") === "on",
+    onCallUserId: onCallUserId === NO_ON_CALL ? "" : onCallUserId,
+    onCallEmail: String(formData.get("onCallEmail") ?? "").trim(),
+  });
+
+  revalidatePath("/admin/mail");
+
+  return {
+    ok: true,
+    message: saved.defenderRuleEnabled
+      ? saved.onCallUserId
+        ? "Gespeichert. Defender-Alerts werden erkannt und der Bereitschaft zugewiesen."
+        : "Gespeichert. Defender-Alerts werden erkannt, bleiben aber unzugewiesen im Eingang."
+      : "Gespeichert. Die Defender-Regel ist aus — Alerts werden zu gewöhnlichen Tickets.",
+  };
+}
+
+/**
+ * Run the classifier over a pasted message and report what it would do.
+ *
+ * The reason this exists: the rule's mistakes are expensive in both directions, and
+ * without a transport there is otherwise no way to try it at all. An admin pastes a real
+ * alert from their tenant and sees the verdict, the extracted fields and the reasoning
+ * before a single ticket is created. Nothing is written.
+ */
+export async function testDefenderRuleAction(
+  _previous: DefenderTestResult | null,
+  formData: FormData,
+): Promise<DefenderTestResult> {
+  await requireRole("admin");
+
+  const message = {
+    from: String(formData.get("from") ?? "").trim(),
+    subject: String(formData.get("subject") ?? "").trim(),
+    text: String(formData.get("text") ?? ""),
+  };
+
+  if (!message.from && !message.subject && !message.text.trim()) {
+    return { ok: false, error: "Bitte mindestens Absender, Betreff oder Text angeben." };
+  }
+
+  const plan = planSecurityIncident(message, incidentRuleConfig());
+  if (!plan) {
+    // Distinguished for the admin: "not recognised" and "rule is off" look identical in
+    // the queue but mean very different things here.
+    const recognised = classifyDefenderAlert(message) !== null;
+    return {
+      ok: true,
+      matched: false,
+      note: recognised
+        ? "Als Defender-Alert erkannt, aber die Regel ist ausgeschaltet."
+        : "Kein Defender-Alert. Die Mail würde ein gewöhnliches Ticket.",
+    };
+  }
+
+  return {
+    ok: true,
+    matched: true,
+    note: plan.reasons.join(" "),
+    severity: plan.alert.severity,
+    priority: plan.priority,
+    priorityAssumed: plan.priorityAssumed,
+    host: plan.alert.host,
+    alertTitle: plan.alert.alertTitle,
+    incidentId: plan.alert.incidentId,
+    assigned: plan.assignTo !== null,
+  };
+}
+
+export type DefenderTestResult =
+  | { ok: false; error: string }
+  | {
+      ok: true;
+      matched: false;
+      note: string;
+    }
+  | {
+      ok: true;
+      matched: true;
+      note: string;
+      severity: string | null;
+      priority: string;
+      priorityAssumed: boolean;
+      host: string;
+      alertTitle: string;
+      incidentId: string;
+      assigned: boolean;
+    };
 
 /* ── System: timezone and time server ───────────────────────────────────── */
 
