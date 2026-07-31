@@ -14,6 +14,13 @@ import {
 } from "@/lib/forms/schema-to-zod";
 import { setCannedResponses } from "@/lib/canned-responses";
 import { LocationError, getLocation, replaceLocations } from "@/lib/locations";
+import {
+  OrganizationError,
+  deleteOrganization,
+  getOrganization,
+  organizationExists,
+  saveOrganization,
+} from "@/lib/organizations";
 import { testMail } from "@/lib/mail-templates";
 import {
   SmtpError,
@@ -40,7 +47,11 @@ import {
   setSystemSettings,
 } from "@/lib/system-settings";
 import { unusableFaqAttachments } from "@/lib/storage";
-import { UserProfileError, setUserProfile } from "@/lib/user-profile";
+import {
+  UserProfileError,
+  setUserOrganization,
+  setUserProfile,
+} from "@/lib/user-profile";
 import {
   ProfileError,
   RoleChangeError,
@@ -53,7 +64,9 @@ import {
   FEATURE_FLAG_META,
   FeatureFlagsSchema,
   MITSLocationSchema,
+  MITSOrganizationSchema,
   NO_LOCATION,
+  NO_ORGANIZATION,
   NO_ON_CALL,
   PortalConfigSchema,
   PortalContentSchema,
@@ -612,6 +625,30 @@ export async function saveUserRecordAction(
     throw error;
   }
 
+  /*
+   * The company is written through its own setter, which is why this mask can offer it
+   * and the reporter's own settings cannot: `setUserProfile` does not accept the field
+   * at all. Absent from the form means "leave as is" rather than "clear" — the picker
+   * always posts a value, so an empty key here is a caller that is not this mask.
+   */
+  if (formData.has("organization_id")) {
+    const organizationId = text("organization_id");
+    try {
+      setUserOrganization(
+        userId,
+        organizationId === "" || organizationId === NO_ORGANIZATION
+          ? null
+          : organizationId,
+        organizationExists,
+      );
+    } catch (error) {
+      if (error instanceof UserProfileError) {
+        return { ok: false, error: error.message };
+      }
+      throw error;
+    }
+  }
+
   revalidatePath("/admin/customers");
   revalidatePath("/admin/staff");
   // The agent sidebar renders these, and the header prints the name.
@@ -619,6 +656,74 @@ export async function saveUserRecordAction(
   revalidatePath("/", "layout");
 
   return { ok: true, message: `Angaben zu ${name || target.name} gespeichert.` };
+}
+
+/* ── Organizations ──────────────────────────────────────────────────────── */
+
+/**
+ * Create or update one company.
+ *
+ * One row per submission, not the whole list: a form that omits a row would delete it,
+ * and a customer record has assets and people hanging off it. See `lib/organizations.ts`.
+ */
+export async function saveOrganizationAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const payload = parsePayload(formData, "organization", MITSOrganizationSchema);
+  if (!payload.ok) return { ok: false, error: payload.error };
+
+  let saved;
+  try {
+    saved = saveOrganization(payload.data);
+  } catch (error) {
+    if (error instanceof OrganizationError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+
+  revalidateOrganizations();
+  return { ok: true, message: `${saved.name} gespeichert.` };
+}
+
+/**
+ * Delete a company. Refused while assets or people still point at it — the store
+ * decides that and says what is in the way.
+ */
+export async function deleteOrganizationAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const id = String(formData.get("organizationId") ?? "");
+  if (!id) return { ok: false, error: "Keine Firma angegeben." };
+
+  const organization = getOrganization(id);
+  if (!organization) return { ok: false, error: "Unbekannte Firma." };
+
+  try {
+    deleteOrganization(id);
+  } catch (error) {
+    if (error instanceof OrganizationError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+
+  revalidateOrganizations();
+  return { ok: true, message: `${organization.name} gelöscht.` };
+}
+
+/** Everything that resolves a company name or filters by one. */
+function revalidateOrganizations(): void {
+  revalidatePath("/admin/organizations");
+  revalidatePath("/admin/customers");
+  revalidatePath("/mits/cmdb");
+  revalidatePath("/mits/cmdb/licenses");
 }
 
 /* ── Data: upload limit and retention ───────────────────────────────────── */

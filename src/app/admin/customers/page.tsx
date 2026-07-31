@@ -15,6 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import { canViewBoard } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
 import { listActiveLocations, listLocations } from "@/lib/locations";
+import { listActiveOrganizations, listOrganizations } from "@/lib/organizations";
 import { getUserProfile } from "@/lib/user-profile";
 import { listUsers } from "@/lib/users";
 
@@ -42,6 +43,12 @@ export default async function AdminCustomersPage() {
   // profile pointing at a since-deactivated branch should still show its name.
   const active = listActiveLocations();
   const byId = new Map(listLocations().map((location) => [location.id, location]));
+  // Same split for companies, same reason: a record assigned to a deactivated company
+  // still has to show which one.
+  const activeOrganizations = listActiveOrganizations();
+  const organizationsById = new Map(
+    listOrganizations().map((organization) => [organization.id, organization]),
+  );
 
   const records = customers.map((user) => ({
     user,
@@ -88,6 +95,9 @@ export default async function AdminCustomersPage() {
                 const location = profile.location_id
                   ? byId.get(profile.location_id)
                   : undefined;
+                const organization = profile.organization_id
+                  ? organizationsById.get(profile.organization_id)
+                  : undefined;
 
                 return (
                   <AccordionItem key={user.id} value={user.id} className="border-0">
@@ -99,6 +109,14 @@ export default async function AdminCustomersPage() {
                         <span className="truncate font-mono text-xs text-muted-foreground">
                           {user.email}
                         </span>
+                        {organization && (
+                          <Badge
+                            variant="outline"
+                            className="h-auto shrink-0 rounded-full px-2 py-0.5 text-[11px] font-normal"
+                          >
+                            {organization.code || organization.name}
+                          </Badge>
+                        )}
                         {location && (
                           <Badge
                             variant="secondary"
@@ -114,6 +132,7 @@ export default async function AdminCustomersPage() {
                         user={user}
                         profile={profile}
                         locations={active}
+                        organizations={activeOrganizations}
                       />
 
                       {/* Promotion happens here, where the account is listed. The

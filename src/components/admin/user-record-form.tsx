@@ -19,7 +19,9 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   CUSTOMER_PROFILE_FIELDS,
   NO_LOCATION,
+  NO_ORGANIZATION,
   type MITSLocation,
+  type MITSOrganization,
   type MITSUserProfile,
 } from "@/types/mits";
 
@@ -42,10 +44,13 @@ export function UserRecordForm({
   user,
   profile,
   locations,
+  /** Empty on an instance with no companies; the field then does not appear. */
+  organizations = [],
 }: {
   user: { id: string; name: string; email: string };
   profile: MITSUserProfile;
   locations: MITSLocation[];
+  organizations?: MITSOrganization[];
 }) {
   const [result, formAction, saving] = useActionState(saveUserRecordAction, null);
 
@@ -99,6 +104,36 @@ export function UserRecordForm({
                   <SelectItem key={location.id} value={location.id}>
                     {location.name}
                     {location.code ? ` (${location.code})` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* Only an admin gets this field at all — see the note on
+            `MITSUserProfileSchema.organization_id` for why the self-service form
+            cannot offer it even if somebody adds the input. */}
+        {organizations.length > 0 && (
+          <div className="grid gap-2 sm:col-span-2">
+            <Label htmlFor={`organization-${user.id}`}>Firma</Label>
+            <Select
+              name="organization_id"
+              defaultValue={profile.organization_id ?? NO_ORGANIZATION}
+              disabled={saving}
+            >
+              <SelectTrigger
+                id={`organization-${user.id}`}
+                className="h-10 w-full rounded-xl"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_ORGANIZATION}>Keine Angabe</SelectItem>
+                {organizations.map((organization) => (
+                  <SelectItem key={organization.id} value={organization.id}>
+                    {organization.name}
+                    {organization.code ? ` (${organization.code})` : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
