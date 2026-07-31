@@ -46,6 +46,12 @@ import {
   presenceStateFor,
   PortalConfigSchema,
   PortalFaqSchema,
+  REFRESH_FOLLOW_GLOBAL,
+  REFRESH_INTERVALS,
+  REFRESH_LABELS,
+  SystemSettingsSchema,
+  isRefreshInterval,
+  toRefreshInterval,
   clockHealth,
   isValidNtpHost,
   fillPortalText,
@@ -1127,6 +1133,61 @@ console.log("\npie geometry");
   check(
     "no total means no percentage is claimed",
     sharePercent(0, 0) === null,
+  );
+}
+
+console.log("\nrefresh interval");
+{
+  check("the default is one of the offered values", isRefreshInterval(3));
+  check("off is a legal value", isRefreshInterval(0));
+  check("an unoffered number is refused", !isRefreshInterval(2));
+  check("a string is refused", !isRefreshInterval("3"));
+  check(
+    "every offered interval has a label",
+    REFRESH_INTERVALS.every((interval) => REFRESH_LABELS[interval] !== undefined),
+  );
+
+  // The form posts strings; anything unusable has to land on the default rather
+  // than disabling the timer or setting an absurd rate.
+  check("a form string is parsed", toRefreshInterval("5") === 5);
+  check("zero survives the parse", toRefreshInterval("0") === 0);
+  check("nonsense falls back", toRefreshInterval("bogus") === 3);
+  check("an unoffered number falls back", toRefreshInterval("7") === 3);
+  check("undefined falls back", toRefreshInterval(undefined) === 3);
+  check(
+    "the fallback is overridable",
+    toRefreshInterval("bogus", 10) === 10,
+  );
+
+  /*
+   * A stored settings row from an older build has no `refreshMinutes`. It has to
+   * default rather than fail the parse: a failed parse discards the whole object,
+   * so the timezone and the NTP host would be lost with it.
+   */
+  const legacy = SystemSettingsSchema.safeParse({
+    timezone: "Europe/Berlin",
+    ntpHost: "pool.ntp.org",
+  });
+  check(
+    "a settings row without the field still parses",
+    legacy.success && legacy.data.refreshMinutes === 3,
+  );
+
+  const garbage = SystemSettingsSchema.safeParse({
+    timezone: "Europe/Berlin",
+    ntpHost: "pool.ntp.org",
+    refreshMinutes: "every so often",
+  });
+  check(
+    "…and a garbage value does not take the rest down with it",
+    garbage.success &&
+      garbage.data.refreshMinutes === 3 &&
+      garbage.data.timezone === "Europe/Berlin",
+  );
+
+  check(
+    "the follow-global sentinel is not a valid interval",
+    !isRefreshInterval(Number(REFRESH_FOLLOW_GLOBAL)),
   );
 }
 

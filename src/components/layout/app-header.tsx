@@ -3,7 +3,7 @@ import Link from "next/link";
 import { UserMenu } from "@/components/auth/user-menu";
 import { MITSLogo } from "@/components/branding/mits-logo";
 import { PresenceHeartbeat } from "@/components/dashboard/presence-heartbeat";
-import { RefreshControl } from "@/components/layout/refresh-control";
+import { AutoRefresh } from "@/components/layout/auto-refresh";
 import { TicketSearch } from "@/components/tickets/ticket-search";
 import { TicketSearchDialog } from "@/components/tickets/ticket-search-dialog";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { canViewBoard, homeFor } from "@/lib/auth/roles";
 import { getSessionUser } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
 import { listLocations } from "@/lib/locations";
+import { resolveRefreshMinutes } from "@/lib/system-settings";
 
 /**
  * Application header. A server component so the identity block renders with the
@@ -80,12 +81,22 @@ export async function AppHeader() {
         )}
 
         {user ? (
-          <div className="flex items-center gap-1">
-            {/* Not for an account still behind the password gate: every page
-                redirects to the profile form, so refreshing it changes nothing. */}
-            {!user.mustChangePassword && <RefreshControl />}
+          <>
+            {/*
+              Renders nothing — it is the refresh timer, placed here because the
+              header is on every page. The interval is resolved server-side: the
+              instance-wide value for a reporter, the agent's own override for staff.
+              There is deliberately no control next to it; reporters do not get to
+              decide, and staff set theirs under Einstellungen.
+
+              Not while the password gate is closed: every page redirects to the
+              settings form, so refreshing would only re-fetch that redirect.
+            */}
+            {!user.mustChangePassword && (
+              <AutoRefresh minutes={resolveRefreshMinutes(user)} />
+            )}
             <UserMenu user={user} />
-          </div>
+          </>
         ) : (
           <div className="flex items-center gap-2">
             <Button

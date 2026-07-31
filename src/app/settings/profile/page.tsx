@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { KeyRoundIcon, ShieldAlertIcon, UserIcon } from "lucide-react";
+import { KeyRoundIcon, RefreshCwIcon, ShieldAlertIcon, UserIcon } from "lucide-react";
 
 import { PasswordChangeForm } from "@/components/auth/password-change-form";
 import { ProfileForm } from "@/components/auth/profile-form";
+import { RefreshPreferenceForm } from "@/components/auth/refresh-preference-form";
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -15,8 +16,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ROLE_LABELS, homeFor } from "@/lib/auth/roles";
+import { ROLE_LABELS, canViewBoard, homeFor } from "@/lib/auth/roles";
 import { requireUserForPasswordChange } from "@/lib/auth/session";
+import {
+  getSystemSettings,
+  getUserRefreshMinutes,
+} from "@/lib/system-settings";
 
 export const metadata: Metadata = {
   title: "Profil — MITS",
@@ -94,6 +99,28 @@ export default async function ProfilePage() {
               </CardHeader>
               <CardContent>
                 <ProfileForm name={user.name} email={user.email} />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Staff only. A reporter follows the instance-wide interval the admin
+              set — see `resolveRefreshMinutes`. The action refuses one too, since
+              hiding a card is not a check. */}
+          {!user.mustChangePassword && canViewBoard(user.role) && (
+            <Card className="mb-6 rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
+              <CardHeader>
+                <span className="grid size-11 place-items-center rounded-full bg-surface-elevated text-muted-foreground">
+                  <RefreshCwIcon className="size-5" strokeWidth={1.5} aria-hidden />
+                </span>
+                <CardTitle className="mt-4 text-lg font-medium">
+                  Automatische Aktualisierung
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <RefreshPreferenceForm
+                  own={getUserRefreshMinutes(user.id)}
+                  global={getSystemSettings().refreshMinutes}
+                />
               </CardContent>
             </Card>
           )}

@@ -693,11 +693,66 @@ export const DEFAULT_AUTH_SETTINGS: AuthSettings = {
    reinterprets nothing and cannot corrupt a stored date.
    ────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * How often a page refreshes itself, in minutes. `0` is off.
+ *
+ * A fixed set rather than a free number: the value drives a timer that costs a
+ * request per tick per open tab, and "every 5 seconds" typed into a box is a load
+ * problem nobody would connect back to this field.
+ */
+export const REFRESH_INTERVALS = [0, 1, 3, 5, 10, 15, 30] as const;
+export type RefreshInterval = (typeof REFRESH_INTERVALS)[number];
+
+export const DEFAULT_REFRESH_MINUTES: RefreshInterval = 3;
+
+export const REFRESH_LABELS: Record<RefreshInterval, string> = {
+  0: "Aus",
+  1: "Jede Minute",
+  3: "Alle 3 Minuten",
+  5: "Alle 5 Minuten",
+  10: "Alle 10 Minuten",
+  15: "Alle 15 Minuten",
+  30: "Alle 30 Minuten",
+};
+
+/**
+ * Sentinel for "no override, follow the instance-wide value".
+ *
+ * Here rather than beside the Server Action that consumes it: a `"use server"` module
+ * may only export async functions, so a constant declared there is a build error the
+ * moment a client component imports it.
+ */
+export const REFRESH_FOLLOW_GLOBAL = "__global";
+
+export const isRefreshInterval = (value: unknown): value is RefreshInterval =>
+  typeof value === "number" &&
+  (REFRESH_INTERVALS as readonly number[]).includes(value);
+
+/** Parse a form field, falling back rather than throwing on anything unexpected. */
+export function toRefreshInterval(
+  value: unknown,
+  fallback: RefreshInterval = DEFAULT_REFRESH_MINUTES,
+): RefreshInterval {
+  const parsed = Number(value);
+  return isRefreshInterval(parsed) ? parsed : fallback;
+}
+
 export const SystemSettingsSchema = z.object({
   /** IANA zone name, e.g. `Europe/Berlin`. Validated against the runtime's ICU data. */
   timezone: z.string().max(64),
   /** Hostname or IP of an NTP server. No scheme, no port — this is UDP to 123. */
   ntpHost: z.string().max(253),
+  /**
+   * Instance-wide refresh interval. Binding for reporters, the default for staff.
+   *
+   * Coerced and clamped rather than validated strictly: a stored value from an older
+   * build, or one an admin edited by hand, has to resolve to something usable —
+   * failing the parse would discard the timezone and the NTP host along with it.
+   */
+  refreshMinutes: z
+    .unknown()
+    .transform((value) => toRefreshInterval(value))
+    .default(DEFAULT_REFRESH_MINUTES),
 });
 export type SystemSettings = z.infer<typeof SystemSettingsSchema>;
 

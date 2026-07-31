@@ -9,6 +9,7 @@ import { ResourceGrid } from "@/components/dashboard/resource-grid";
 import { ServiceStatus } from "@/components/dashboard/service-status";
 import { AppHeader } from "@/components/layout/app-header";
 import { requireUser } from "@/lib/auth/session";
+import { resolveRefreshMinutes } from "@/lib/system-settings";
 import {
   getActiveAnnouncements,
   getActiveMaintenanceNotices,
@@ -60,6 +61,7 @@ export default async function CustomerPortalPage() {
     ),
     active_tickets: (
       <OpenTicketsPanel
+        refreshMinutes={resolveRefreshMinutes(user)}
         title={titles.active_tickets}
         initialTickets={listOwnTickets(user.id)}
       />

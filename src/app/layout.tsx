@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Roboto, Roboto_Mono } from "next/font/google";
 
 import { ThemeProvider } from "@/components/branding/theme-provider";
-import { AutoRefreshProvider } from "@/components/providers/auto-refresh";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { TimezoneProvider } from "@/components/providers/timezone-provider";
 import { getSystemTimezone } from "@/lib/system-settings";
@@ -55,9 +54,7 @@ export default async function RootLayout({
       <body className="flex min-h-full flex-col">
         <ThemeProvider>
           <TimezoneProvider timezone={timezone}>
-            <QueryProvider>
-              <AutoRefreshProvider>{children}</AutoRefreshProvider>
-            </QueryProvider>
+            <QueryProvider>{children}</QueryProvider>
           </TimezoneProvider>
         </ThemeProvider>
       </body>

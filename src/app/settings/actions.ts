@@ -3,10 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
+import { canViewBoard } from "@/lib/auth/roles";
 import { auth } from "@/lib/auth/server";
 import { clearMustChangePassword } from "@/lib/auth/seed-admin";
 import { requireUser, requireUserForPasswordChange } from "@/lib/auth/session";
+import { setUserRefreshMinutes } from "@/lib/system-settings";
 import { ProfileError, setUserName } from "@/lib/users";
+import {
+  REFRESH_FOLLOW_GLOBAL,
+  REFRESH_LABELS,
+  isRefreshInterval,
+} from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Own-password change.
@@ -127,4 +134,48 @@ export async function changeOwnName(
   revalidatePath("/", "layout");
 
   return { ok: true, message: `Name auf „${saved}“ geändert.` };
+}
+
+/* ── Own refresh interval ───────────────────────────────────────────────── */
+
+/**
+ * Set or clear one's own refresh interval.
+ *
+ * Staff only, checked here and not merely by hiding the card: a Server Action is
+ * reachable as a POST to whatever route it is used from, so a reporter could
+ * otherwise set a value for themselves — and how much load the portal generates is
+ * the admin's decision, not theirs.
+ */
+export async function changeOwnRefreshInterval(
+  _previous: ProfileResult | null,
+  formData: FormData,
+): Promise<ProfileResult> {
+  const user = await requireUser();
+
+  if (!canViewBoard(user.role)) {
+    return {
+      ok: false,
+      error: "Das Intervall wird für diese Instanz zentral vorgegeben.",
+    };
+  }
+
+  const raw = String(formData.get("refreshMinutes") ?? "");
+
+  if (raw === REFRESH_FOLLOW_GLOBAL) {
+    setUserRefreshMinutes(user.id, null);
+    revalidatePath("/", "layout");
+    return { ok: true, message: "Folgt jetzt der Vorgabe der Instanz." };
+  }
+
+  const minutes = Number(raw);
+  if (!isRefreshInterval(minutes)) {
+    return { ok: false, error: "Ungültiges Intervall." };
+  }
+
+  setUserRefreshMinutes(user.id, minutes);
+  // The header renders the timer on every page, so the interval only changes once
+  // the cached layout is dropped.
+  revalidatePath("/", "layout");
+
+  return { ok: true, message: `${REFRESH_LABELS[minutes]} gespeichert.` };
 }

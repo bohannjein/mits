@@ -4,6 +4,7 @@ import {
   CheckCircle2Icon,
   ClockIcon,
   Loader2Icon,
+  RefreshCwIcon,
   SaveIcon,
   ServerIcon,
   TriangleAlertIcon,
@@ -38,7 +39,12 @@ import {
   timezoneOffsetLabel,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { SystemSettings } from "@/types/mits";
+import {
+  REFRESH_INTERVALS,
+  REFRESH_LABELS,
+  toRefreshInterval,
+  type SystemSettings,
+} from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Timezone and time server.
@@ -64,6 +70,7 @@ export function SystemSettingsForm({
 }) {
   const [timezone, setTimezone] = useState(settings.timezone);
   const [ntpHost, setNtpHost] = useState(settings.ntpHost);
+  const [refreshMinutes, setRefreshMinutes] = useState(settings.refreshMinutes);
   const [saveResult, saveAction, saving] = useActionState(
     saveSystemSettingsAction,
     null,
@@ -133,6 +140,46 @@ export function SystemSettingsForm({
 
       <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
         <CardHeader>
+          <RefreshCwIcon className="size-5 text-primary" aria-hidden strokeWidth={1.5} />
+          <CardTitle className="mt-4 text-lg font-medium">
+            Automatische Aktualisierung
+          </CardTitle>
+          <CardDescription className="mt-1 leading-relaxed">
+            Gilt für alle Anwender. Technikerinnen und Techniker können davon
+            abweichen — in ihren eigenen Einstellungen.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="grid gap-4">
+          <div className="grid gap-2">
+            <Label htmlFor="refreshMinutes">Intervall</Label>
+            <Select
+              value={String(refreshMinutes)}
+              onValueChange={(value) =>
+                setRefreshMinutes(toRefreshInterval(value))
+              }
+            >
+              <SelectTrigger id="refreshMinutes" className="h-10 w-full rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REFRESH_INTERVALS.map((interval) => (
+                  <SelectItem key={interval} value={String(interval)}>
+                    {REFRESH_LABELS[interval]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Jede Aktualisierung ist eine Anfrage pro offenem Tab. Ein kurzes
+              Intervall auf vielen Arbeitsplätzen erzeugt entsprechend Last.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
+        <CardHeader>
           <ServerIcon className="size-5 text-primary" aria-hidden strokeWidth={1.5} />
           <CardTitle className="mt-4 text-lg font-medium">Zeitserver</CardTitle>
           <CardDescription className="mt-1 leading-relaxed">
@@ -191,6 +238,7 @@ export function SystemSettingsForm({
       <form action={saveAction} className="grid gap-3">
         <input type="hidden" name="timezone" value={timezone} />
         <input type="hidden" name="ntpHost" value={ntpHost} />
+        <input type="hidden" name="refreshMinutes" value={refreshMinutes} />
 
         {saveResult && (
           <Alert

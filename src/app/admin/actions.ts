@@ -47,6 +47,7 @@ import {
   PortalFaqSchema,
   PortalMaintenanceSchema,
   PortalServiceSchema,
+  REFRESH_LABELS,
   SmtpSettingsSchema,
   SystemSettingsSchema,
   clockHealth,
@@ -545,6 +546,7 @@ export async function saveSystemSettingsAction(
   const parsed = SystemSettingsSchema.safeParse({
     timezone: String(formData.get("timezone") ?? ""),
     ntpHost: String(formData.get("ntpHost") ?? ""),
+    refreshMinutes: formData.get("refreshMinutes"),
   });
   if (!parsed.success) {
     return { ok: false, error: "Zeitzone oder Zeitserver fehlen." };
@@ -570,7 +572,7 @@ export async function saveSystemSettingsAction(
 
   return {
     ok: true,
-    message: `Zeitzone ${saved.timezone}, Zeitserver ${saved.ntpHost}.`,
+    message: `Zeitzone ${saved.timezone}, Zeitserver ${saved.ntpHost}, Aktualisierung: ${REFRESH_LABELS[saved.refreshMinutes].toLowerCase()}.`,
   };
 }
 
