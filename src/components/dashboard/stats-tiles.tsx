@@ -1,7 +1,4 @@
-import { InboxIcon, CheckCheckIcon } from "lucide-react";
-
 import { OpenClosedPie } from "@/components/dashboard/open-closed-pie";
-import { cn } from "@/lib/utils";
 import type { MITSLocation } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -40,32 +37,9 @@ export function StatsTiles({
     <section aria-label="Kennzahlen" className="grid gap-3">
       <h2 className="label-industrial">Heute</h2>
 
-      {/* The ratio, with both figures in its legend. The two tiles below keep the
-          absolute numbers at a glance — the pie answers "are we keeping up", the
-          tiles answer "how much". */}
+      {/* Both figures live in the pie's legend, so the counter tiles that used to
+          sit here said the same thing a second time. */}
       <OpenClosedPie opened={opened} closed={closed} />
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Tile
-          icon={<InboxIcon className="size-5" strokeWidth={1.5} aria-hidden />}
-          label="Eröffnet"
-          value={opened}
-          tone="neutral"
-        />
-        <Tile
-          icon={<CheckCheckIcon className="size-5" strokeWidth={1.5} aria-hidden />}
-          label="Erledigt"
-          value={closed}
-          tone="success"
-        />
-      </div>
-
-      {/* Both counters are computed on the ISO date prefix, which is UTC. Said
-          out loud rather than labelled "heute" and quietly meaning something else
-          for anyone west of Greenwich. */}
-      <p className="text-xs text-muted-foreground">
-        Zeitraum ist der laufende UTC-Tag, nicht die lokale Zeitzone.
-      </p>
 
       {showHeatmap && ranked.length > 0 && (
         <div className="mt-2 grid gap-3">
@@ -96,36 +70,5 @@ export function StatsTiles({
         </div>
       )}
     </section>
-  );
-}
-
-function Tile({
-  icon,
-  label,
-  value,
-  tone,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number;
-  tone: "neutral" | "success";
-}) {
-  return (
-    <div className="flex items-center gap-4 rounded-2xl border border-border bg-card px-5 py-4 shadow-elev-1">
-      <span
-        className={cn(
-          "grid size-11 shrink-0 place-items-center rounded-full",
-          tone === "success"
-            ? "bg-success/15 text-success"
-            : "bg-surface-elevated text-muted-foreground",
-        )}
-      >
-        {icon}
-      </span>
-      <div>
-        <span className="block text-2xl font-normal tabular-nums">{value}</span>
-        <span className="block text-xs text-muted-foreground">{label}</span>
-      </div>
-    </div>
   );
 }

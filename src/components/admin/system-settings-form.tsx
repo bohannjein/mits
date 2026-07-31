@@ -127,10 +127,6 @@ export function SystemSettingsForm({
                 </Badge>
               )}
             </span>
-            <span className="text-xs text-muted-foreground">
-              Sommerzeit ist berücksichtigt — der Versatz gilt für diesen Moment,
-              nicht für das ganze Jahr.
-            </span>
           </div>
         </CardContent>
       </Card>

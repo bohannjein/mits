@@ -223,8 +223,7 @@ export function EmailSettingsForm({
           <CardTitle className="text-lg font-medium">Test-Mail</CardTitle>
           <CardDescription className="mt-1 leading-relaxed">
             Prüft erst die Verbindung inklusive Anmeldung, dann den Versand. Die
-            Nachricht geht an die eigene Adresse — ein Formular, das an beliebige
-            Empfänger sendet, wäre ein offenes Relay.
+            Nachricht geht an die eigene Adresse.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3">

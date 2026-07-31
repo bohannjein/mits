@@ -27,7 +27,7 @@ import { canViewBoard } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
 import { getFeatureFlags } from "@/lib/features";
 import { listLocations, ticketCountsByLocation } from "@/lib/locations";
-import { listAgentPresence } from "@/lib/presence";
+import { listPresence } from "@/lib/presence";
 import {
   jumpToTicketNumber,
   parseTicketQuery,
@@ -164,7 +164,7 @@ export default async function AgentQueuePage({
                 />
               )}
               {flags.feature_presence_sidebar && (
-                <PresenceList agents={listAgentPresence()} />
+                <PresenceList people={listPresence()} />
               )}
             </aside>
           </div>

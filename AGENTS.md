@@ -15,7 +15,7 @@ allen drei Fällen dieselbe strukturierte Payload erzeugt:
 
 ## Strikte Regeln
 
-Diese drei Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
+Diese Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
 
 1. **Keine eigenen UI-Primitives.** Buttons, Modals, Inputs, Cards, Badges usw. kommen
    ausschließlich aus `src/components/ui/` (shadcn/ui, Style `radix-nova`). Neue Primitives
@@ -36,15 +36,23 @@ Diese drei Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
    Zustände und Bedeutung kommen über Lucide-SVG-Icons und Typografie. Typografische Zeichen
    sind erlaubt und keine Emojis: `→`, `—`, `·`, `„…“`. Diese Dateien (`AGENTS.md`,
    `ROADMAP.md`) sind Dokumentation, nicht UI — Emojis dort bleiben.
-4. **Schema-First.** Es gibt keine Komponente pro Ticket-Typ (kein `Onboarding.tsx`). Ein
+4. **Hilfetexte sagen, was zu tun ist — nicht, wie MITS funktioniert.** Ein Text unter
+   einem Feld nennt, **was einzutragen ist** („Eine Domain pro Zeile, ohne `@`") oder
+   **was mit den Daten passiert** („Für alle angemeldeten Personen lesbar"). Er erklärt
+   nicht die Implementierung und begründet nicht die Architektur. Sätze wie „Zeitraum ist
+   der laufende UTC-Tag" oder „Ungültiges JSON lässt die Vorschau auf dem letzten
+   gültigen Stand" sind Notizen an den Entwickler und gehören in den Code-Kommentar, wo
+   sie schon stehen. Sie machen die Maske länger und beantworten keine Frage, die jemand
+   vor dem Bildschirm hat.
+5. **Schema-First.** Es gibt keine Komponente pro Ticket-Typ (kein `Onboarding.tsx`). Ein
    Ticket-Typ ist ein `MITSFormSchema` (JSON Schema + `uiHints`); Formulare werden daraus
    dynamisch gerendert.
-5. **`src/proxy.ts` ist keine Sicherheitsgrenze.** Die Next-Docs sind da eindeutig: eine
+6. **`src/proxy.ts` ist keine Sicherheitsgrenze.** Die Next-Docs sind da eindeutig: eine
    Matcher-Änderung oder eine verschobene Server Function entfernt die Proxy-Abdeckung
    lautlos. Der Proxy ist nur der schnelle Weg (Redirect vor dem Rendern). **Jede**
    geschützte Seite ruft `requireUser`/`requireRole`, **jede** Route Handler und **jede**
    Server Action prüft die Session selbst — siehe `lib/auth/session.ts`.
-6. **Niemals Eigentümerschaft aus dem Request lesen.** `created_by` kommt aus der Session.
+7. **Niemals Eigentümerschaft aus dem Request lesen.** `created_by` kommt aus der Session.
    `MITSTicketDraftSchema` lässt das Feld bewusst weg, statt es optional zu machen.
 
 ## Stack

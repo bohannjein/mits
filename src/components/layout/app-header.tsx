@@ -33,15 +33,14 @@ export async function AppHeader() {
   const staff = user !== null && canViewBoard(user.role);
 
   /*
-   * The heartbeat lives here so every page a technician opens counts as a sign of
-   * life, without each page having to know about presence. Gated on the role as
-   * well as the flag: a reporter's whereabouts are not tracked, and rendering the
-   * component for them would send requests the API answers with 204 anyway.
+   * The heartbeat lives here so every page anyone opens counts as a sign of life,
+   * without each page having to know about presence. Every role beats — the queue's
+   * panel has a tab for reporters, and one that could only ever say "offline" would
+   * be a tab nobody trusts. Who may see the result is decided in `/mits`.
    */
   const trackPresence =
     user !== null &&
     !user.mustChangePassword &&
-    canViewBoard(user.role) &&
     isFeatureEnabled("feature_presence_sidebar");
 
   return (

@@ -104,10 +104,6 @@ export function RefreshControl() {
           </Button>
         </div>
 
-        <p className="px-2 pt-1 pb-2 text-xs leading-relaxed text-muted-foreground">
-          Pausiert, solange der Tab im Hintergrund liegt, und holt beim Zurückkehren
-          nach. Die Einstellung gilt für dieses Gerät.
-        </p>
       </DropdownMenuContent>
     </DropdownMenu>
   );

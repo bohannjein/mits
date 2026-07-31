@@ -1,4 +1,3 @@
-import { canViewBoard } from "@/lib/auth/roles";
 import { requireApiUser } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
 import { touchPresence } from "@/lib/presence";
@@ -10,6 +9,9 @@ import { touchPresence } from "@/lib/presence";
    there is nothing a caller could claim about themselves. Marking a colleague as
    active would be a small lie with a real consequence: a ticket dispatched to
    someone who is not there.
+
+   Every role is recorded. Who may *see* the result is decided where it is rendered:
+   the presence panel sits in `/mits`, behind the technician gate.
    ────────────────────────────────────────────────────────────────────────── */
 
 export async function POST(request: Request) {
@@ -22,13 +24,7 @@ export async function POST(request: Request) {
     return new Response(null, { status: 204 });
   }
 
-  // Reporters are deliberately not tracked. Same answer as above — the client
-  // should not learn from the status code whether it is staff.
-  if (!canViewBoard(auth.user.role)) {
-    return new Response(null, { status: 204 });
-  }
-
-  touchPresence(auth.user.id, auth.user.role);
+  touchPresence(auth.user.id);
 
   return new Response(null, { status: 204 });
 }

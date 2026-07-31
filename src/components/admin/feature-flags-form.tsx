@@ -53,9 +53,8 @@ export function FeatureFlagsForm({ flags }: { flags: FeatureFlags }) {
             <div>
               <CardTitle className="text-lg font-medium">Module</CardTitle>
               <CardDescription className="mt-1 leading-relaxed">
-                Ausgeschaltete Module verschwinden aus der Oberfläche und ihre
-                Server-Endpunkte antworten nicht mehr. Bereits erfasste Daten
-                bleiben unangetastet.
+                Ausgeschaltete Module verschwinden aus der Oberfläche. Bereits
+                erfasste Daten bleiben unangetastet.
               </CardDescription>
             </div>
             <Badge variant="outline" className="h-auto rounded-full px-3 py-1">

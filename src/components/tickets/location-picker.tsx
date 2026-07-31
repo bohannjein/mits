@@ -62,10 +62,6 @@ export function LocationPicker({
           ))}
         </SelectContent>
       </Select>
-      <p className="text-xs text-muted-foreground">
-        Hilft der Technik, vor Ort zu priorisieren. Gilt für alle drei
-        Eingabewege.
-      </p>
     </div>
   );
 }

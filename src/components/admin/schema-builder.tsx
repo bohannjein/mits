@@ -607,8 +607,7 @@ export function SchemaBuilder({
           <CardHeader>
             <CardTitle className="text-lg font-medium">JSON</CardTitle>
             <CardDescription>
-              Dieselbe Definition, direkt editierbar. Ungültiges JSON lässt die
-              Vorschau auf dem letzten gültigen Stand.
+              Dieselbe Definition, direkt editierbar.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
@@ -913,9 +912,8 @@ function FieldInspector({
             onBlur={(event) => onRename(name, event.target.value)}
           />
           <p className="text-xs text-muted-foreground">
-            Schlüssel in der Payload. Umbenennen zieht Pflicht-Eintrag und
-            Bedingungen mit — Antworten in bereits gespeicherten Tickets behalten
-            aber den alten Namen.
+            Schlüssel in der Payload. Antworten in bereits gespeicherten Tickets
+            behalten den alten Namen.
           </p>
         </div>
 
@@ -1099,9 +1097,7 @@ function FieldInspector({
                       <p className="text-xs text-muted-foreground">
                         Eine Zeile pro Wert des Feldes{" "}
                         <code>{cascade.field}</code>, Format{" "}
-                        <code>wert: option-a, option-b</code>. Die Vereinigung aller
-                        Optionen wird als <code>enum</code> ins Schema geschrieben,
-                        damit es gültiges JSON Schema bleibt.
+                        <code>wert: option-a, option-b</code>.
                       </p>
                     </>
                   )}

@@ -1,34 +1,26 @@
-import { ROLE_LABELS } from "@/lib/auth/roles";
-import { cn } from "@/lib/utils";
+import {
+  PresenceTabs,
+  type PresenceRow,
+} from "@/components/dashboard/presence-tabs";
+import { canViewBoard } from "@/lib/auth/roles";
 import type { AgentPresence } from "@/lib/presence";
-import { PRESENCE_LABELS, type PresenceState } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Who is around.
 
-   A server component: the state is derived from a timestamp on read, so there is
-   nothing to hydrate. It ages by itself between renders.
+   A server component, and it stays one: it splits the list by role and turns the
+   last-seen timestamp into text here, so `PresenceTabs` receives finished values and
+   never has to call `Date.now()` while rendering. That call would differ between the
+   server pass and hydration and produce a mismatch on exactly the field that is
+   supposed to say how long ago somebody was seen.
 
-   The colours are green / yellow / grey, corrected from the original
-   specification which had grey for idle and greyed-out for offline — two shades
-   nobody can tell apart at a glance. Do not revert.
+   Rendered only from `/mits`, which is behind the technician gate. That is what keeps
+   reporter presence out of a reporter's own view now that everyone is recorded.
    ────────────────────────────────────────────────────────────────────────── */
-
-const DOT: Record<PresenceState, string> = {
-  active: "bg-success",
-  idle: "bg-warning",
-  offline: "bg-muted-foreground/50",
-};
-
-const TEXT: Record<PresenceState, string> = {
-  active: "text-success",
-  idle: "text-warning",
-  offline: "text-muted-foreground",
-};
 
 /** Coarse on purpose — "vor 3 Min." is enough, a clock time invites tracking. */
 function ago(seenAt: Date | null): string {
-  if (!seenAt) return "noch nie gesehen";
+  if (!seenAt) return "noch nie";
 
   const minutes = Math.floor((Date.now() - seenAt.getTime()) / 60_000);
   if (minutes < 1) return "gerade eben";
@@ -36,63 +28,33 @@ function ago(seenAt: Date | null): string {
 
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `vor ${hours} Std.`;
-  return `vor ${Math.floor(hours / 24)} Tag(en)`;
+  return `vor ${Math.floor(hours / 24)} T.`;
 }
 
+const toRow = (entry: AgentPresence): PresenceRow => ({
+  id: entry.id,
+  name: entry.name,
+  state: entry.state,
+  seenLabel: ago(entry.seenAt),
+});
+
 export function PresenceList({
-  agents,
-  title = "Technik",
+  people,
+  title = "Anwesend",
 }: {
-  agents: AgentPresence[];
+  people: AgentPresence[];
   title?: string;
 }) {
-  if (agents.length === 0) return null;
-
-  const active = agents.filter((agent) => agent.state === "active").length;
+  // Same contract as the other portal widgets: nothing at all means no block.
+  if (people.length === 0) return null;
 
   return (
-    <section aria-label={title} className="grid gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="label-industrial">{title}</h2>
-        <span className="text-xs text-muted-foreground">
-          {active} von {agents.length} aktiv
-        </span>
-      </div>
-
-      <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card shadow-elev-1">
-        {agents.map((agent) => (
-          <li
-            key={agent.id}
-            className={cn(
-              "flex flex-wrap items-center gap-3 px-5 py-3",
-              agent.state === "offline" && "opacity-70",
-            )}
-          >
-            <span
-              aria-hidden
-              className={cn("size-2 shrink-0 rounded-full", DOT[agent.state])}
-            />
-            <div className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium">
-                {agent.name}
-              </span>
-              <span className="block truncate text-xs text-muted-foreground">
-                {ROLE_LABELS[agent.role]} · {ago(agent.seenAt)}
-              </span>
-            </div>
-
-            {agent.openTickets > 0 && (
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {agent.openTickets} offen
-              </span>
-            )}
-
-            <span className={cn("shrink-0 text-xs", TEXT[agent.state])}>
-              {PRESENCE_LABELS[agent.state]}
-            </span>
-          </li>
-        ))}
-      </ul>
+    <section aria-label={title} className="grid gap-2">
+      <h2 className="label-industrial">{title}</h2>
+      <PresenceTabs
+        staff={people.filter((entry) => canViewBoard(entry.role)).map(toRow)}
+        reporters={people.filter((entry) => !canViewBoard(entry.role)).map(toRow)}
+      />
     </section>
   );
 }
