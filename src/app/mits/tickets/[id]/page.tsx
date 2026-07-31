@@ -14,6 +14,11 @@ import { listCannedResponses } from "@/lib/canned-responses";
 import { getFeatureFlags } from "@/lib/features";
 import { getFormSchema } from "@/lib/form-schemas";
 import { resolveFields } from "@/lib/forms/schema-to-zod";
+import {
+  listCIsForTicket,
+  listConfigurationItems,
+  suggestCIsForTicket,
+} from "@/lib/cmdb";
 import { getLocation } from "@/lib/locations";
 import { formatDateTime } from "@/lib/format";
 import { getSystemTimezone } from "@/lib/system-settings";
@@ -24,6 +29,7 @@ import { getTicketFor } from "@/lib/tickets";
 import { getUserProfile } from "@/lib/user-profile";
 import { listUsers } from "@/lib/users";
 import {
+  type MITSConfigurationItem,
   TICKET_PRIORITY_LABELS,
   TICKET_STATUS_LABELS,
   fillCannedResponse,
@@ -75,6 +81,31 @@ export default async function AgentTicketPage({
       text: formatValue(value),
     }))
     .filter((row) => row.text !== "");
+
+  /*
+   * Assets, only while the module is on. Three lists rather than one: what is attached,
+   * what the reporter probably means, and everything else for the search. The reporter
+   * lookup uses the ticket's own location, so a device at the right site is offered even
+   * when nothing is assigned to the person.
+   */
+  const toAssetRow = (item: {
+    id: string;
+    name: string;
+    type: MITSConfigurationItem["type"];
+    asset_tag: string;
+  }) => ({ id: item.id, name: item.name, type: item.type, assetTag: item.asset_tag });
+
+  const assets = flags.feature_cmdb
+    ? {
+        attached: listCIsForTicket(id).map(toAssetRow),
+        suggestions: suggestCIsForTicket(
+          id,
+          ticket.created_by,
+          ticket.location_id,
+        ).map(toAssetRow),
+        candidates: listConfigurationItems().map(toAssetRow),
+      }
+    : null;
 
   // Only staff may hold a ticket, so only staff appear in the picker.
   const agents = listUsers()
@@ -168,6 +199,7 @@ export default async function AgentTicketPage({
                   canAdminister(user.role) ? listAuditFor(id) : null
                 }
                 timezone={getSystemTimezone()}
+                assets={assets}
                 links={
                   flags.feature_ticket_linking
                     ? listLinksFor(id, user).map((link) => ({

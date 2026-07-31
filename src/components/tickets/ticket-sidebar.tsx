@@ -27,6 +27,7 @@ import {
   type SidebarSection,
 } from "@/components/layout/sidebar-section";
 import { AuditTrail } from "@/components/tickets/audit-trail";
+import { TicketAssets, type AssetRow } from "@/components/tickets/ticket-assets";
 import { TicketLinks, type LinkRow } from "@/components/tickets/ticket-links";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -79,6 +80,8 @@ export function TicketSidebar({
   timezone,
   /** Null when the linking module is off — the section then does not exist. */
   links = null,
+  /** Null when the CMDB module is off. Same rule as `links`. */
+  assets = null,
 }: {
   ticket: MITSTicket;
   agents: { id: string; name: string }[];
@@ -90,6 +93,11 @@ export function TicketSidebar({
   auditEntries?: AuditEntry[] | null;
   timezone: string;
   links?: LinkRow[] | null;
+  assets?: {
+    attached: AssetRow[];
+    suggestions: AssetRow[];
+    candidates: AssetRow[];
+  } | null;
 }) {
   /*
    * Assembled here so the card can decide whether there is an address at all. A
@@ -372,6 +380,30 @@ export function TicketSidebar({
           </Badge>
         ) : undefined,
       content: <TicketLinks compact bare ticketId={ticket.id} links={links} />,
+    });
+  }
+
+  if (assets !== null) {
+    sections.push({
+      id: "assets",
+      title: "Betroffene Objekte",
+      badge:
+        assets.attached.length > 0 ? (
+          <Badge
+            variant="secondary"
+            className="h-auto rounded-full px-1.5 py-0 text-[10px] font-normal tabular-nums"
+          >
+            {assets.attached.length}
+          </Badge>
+        ) : undefined,
+      content: (
+        <TicketAssets
+          ticketId={ticket.id}
+          attached={assets.attached}
+          suggestions={assets.suggestions}
+          candidates={assets.candidates}
+        />
+      ),
     });
   }
 
