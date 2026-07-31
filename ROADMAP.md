@@ -198,6 +198,30 @@ Ausführlich in AGENTS.md; hier die Kurzliste, damit sie nicht zweimal auffallen
   Commit-Messages mit `"` über `git commit -F <datei>`, nicht per Here-String.
 - **Quick-Ticket-Schema:** `description` braucht min. 20 Zeichen — relevant für Testdaten.
 
+## Nach den acht Parts: CMDB
+
+Kein Part der Helpdesk-Liste, sondern ein eigenes Modul hinter `feature_cmdb`. Die
+Entscheidungen stehen in **AGENTS.md**, Abschnitt „CMDB"; hier nur, was beim Weiterbauen
+zuerst schiefgeht:
+
+- **`lib/csv.ts` trägt bewusst kein `server-only`.** Drei Aufrufer: die Maske im Browser,
+  der Server-Import, die Offline-Suite. Ein `server-only` dort nimmt die Vorschau *und*
+  die Tests mit.
+- **Alles, was in `importItemRecords` geht, ist ein String.** Auch Platzzahlen und Daten.
+  Wer der API einen `number` durchreicht, umgeht `parseSeats` und `normaliseImportDate`.
+- **Plätze nicht speichern.** Die Belegung kommt aus `seatCounts`. Eine `seats_used`-Spalte
+  wäre die zweite Wahrheit.
+- **Neue Beziehungsart:** Eintrag in `CIRelationKind`, `CI_RELATION_LABELS` **und**
+  `CI_RELATION_INVERSE_LABELS`. Der Offline-Check erzwingt alle drei.
+- **Objekt-Detailseite ist Technik-only** (`requireRole("technician")`) und zusätzlich
+  hinter dem Flag. Ein abgeschaltetes Modul antwortet 404, nicht mit einer leeren Liste —
+  eine leere Liste ist eine Aussage über den Bestand.
+
+Offen geblieben, bewusst: kein Papierkorb für gelöschte Objekte (soft-deleted sind sie,
+sichtbar wieder herstellen kann man sie noch nicht), keine Historie am Objekt
+(`mits_audit_log` hängt an `ticket_id`), keine Vererbung von Beziehungen für
+Auswirkungsanalyse.
+
 ## Verifikation für jeden Part
 
 ```bash

@@ -163,6 +163,12 @@ src/
     mock-schemas.ts         Beispiel-Schemata (Backend-Ersatz)
     icons.ts                erlaubte Lucide-Icons für schema.icon
     utils.ts                cn()
+    cmdb.ts                 Objekte, Beziehungen, Plätze, Ticket-Zuordnung
+    cmdb-import.ts          ein Importpfad für CSV und API
+    cmdb-api.ts             Guard + Wire-Format der REST-Endpunkte
+    csv.ts                  Parser + Wertumwandlung (kein server-only!)
+    organizations.ts        Firmen
+    api-tokens.ts           CMDB-Token: erzeugen, rotieren, prüfen
   types/mits.ts            MITSTicket, MITSFormSchema, MITSUser, AuthSettings
 scripts/verify-forms.mts   Checks für den Schema-Compiler (`npm test`)
 ```
@@ -305,8 +311,10 @@ mit Dateien, Entscheidungen und Stolperfallen steht in **[ROADMAP.md](ROADMAP.md
 | 4 | Agenten-Desk & Präsenz (`lib/presence.ts`) | ✅ |
 | 5 | Routentrennung `/customer` + `/mits`, Queue mit Tabs | ✅ |
 | 6 | Prioritäten `low/medium/high/critical` migriert | ✅ |
-| 7 | Ticket-Verknüpfung + Textbausteine (11 Flags) | ✅ |
+| 7 | Ticket-Verknüpfung + Textbausteine | ✅ |
 | 8 | Formular-Builder (Canvas, bedingte Logik, abhängige Dropdowns) | ✅ |
+| — | 16-stellige Ticketnummern ab 1 (Anzeigebreite, keine Kapazität) | ✅ |
+| — | CMDB: Firmen, Objekte, Beziehungen, Lizenzen, Import, REST (12. Flag) | ✅ |
 
 **Verknüpfungen sind ein Fenster in andere Tickets.** `listLinksFor` prüft **jedes** Ziel
 einzeln mit `getTicketFor` und lässt ein nicht sichtbares Ticket komplett weg — nicht als
@@ -359,6 +367,74 @@ geprüfte Standort ist die Spalte `mits_ticket.location_id`, nicht dieses Payloa
 Personen gehen **nur mit Id und Name** an den Browser — `listUsers()` liefert auch Adresse
 und Rolle, und ein Ticketformular hat keinen Grund, jedem Melder ein Adressbuch zu geben.
 
+## CMDB
+
+Anlagen, Lizenzen und Firmen. Fünf Tabellen, ein Modul, hinter `feature_cmdb`.
+
+| Tabelle | Inhalt |
+|---|---|
+| `mits_organization` | Firmen — Eigentümer von Objekten, Zuordnung für Anwender |
+| `mits_configuration_item` | **jede** Objektart, Unterschiede in `attributes` (JSON) |
+| `mits_ci_relation` | gerichtete Beziehungen, Umkehrung beim Lesen abgeleitet |
+| `mits_ticket_ci` | welche Objekte ein Ticket betrifft, Paar als Primärschlüssel |
+| `mits_user_profile.organization_id` | Firma einer Person (Spalte, keine eigene Tabelle) |
+
+**Firma ist nicht Standort.** Eine Firma hat mehrere Niederlassungen, ein geteiltes
+Gebäude beherbergt mehrere Firmen. Zusammenlegen war die naheliegende Abkürzung und
+hätte „alle Objekte von Kunde X" unbeantwortbar gemacht.
+
+**Eine Tabelle für alle Objektarten.** Was ein Notebook von einer Lizenz unterscheidet,
+sind die Attribute — dieselbe Begründung wie bei schema-first Ticket-Typen: kein
+`Laptop.tsx`, kein `mits_laptop`. Eine Spalte bekommt nur, was gefiltert oder sortiert
+wird.
+
+**Lizenzplätze werden nie gespeichert.** `seatCounts` zählt die `licensed_for`-Beziehungen
+aus der Lizenz heraus; „belegt" ist eine Folge von Zuordnungen. Ein gespeicherter Zähler
+plus eine Beziehungstabelle laufen beim ersten gelöschten Gerät auseinander, und die
+Differenz wäre eine Compliance-Angabe, die niemand nachrechnet. Ein Ziel, das
+soft-deleted ist, zählt nicht mit — der Platz wurde frei, als das Notebook verschrottet
+wurde.
+
+**`organization_id` am Profil ist nicht über `setUserProfile` schreibbar.** Der Parameter
+lässt das Feld weg (`Omit<…, "organization_id">`), ein Aufruf mit Firma kompiliert nicht.
+Nur `setUserOrganization` bewegt jemanden zwischen Firmen, und dieser Pfad prüft auf
+Admin. Wer sich selbst in eine fremde Firma setzen könnte, würde deren Objektliste
+filtern.
+
+**Löschen:** Eine Firma wird verweigert, solange Objekte oder Personen daran hängen —
+der Admin erfährt, was im Weg ist, statt eine stille Enteignung zu bekommen.
+Deaktivieren bleibt der Normalweg. Ein Objekt wird soft-deleted (`deleted_at`, wie
+Tickets), seine Beziehungen und Ticket-Zuordnungen dagegen echt gelöscht: das Objekt
+trägt die Historie, die man zurückhaben will, eine Beziehung darauf nicht.
+
+### Import und Schnittstelle
+
+**Ein Codepfad für CSV und API.** `importItemRecords` nimmt `ImportRecord[]`; der
+CSV-Importer bildet Spalten darauf ab, die API JSON-Felder. Alles danach — Abgleich per
+Inventarnummer, Auflösung von Firma/Standort/Konto, Beibehalten nicht gelieferter Felder
+— passiert einmal. Zwei Implementierungen von „aktualisiere das Objekt mit dieser
+Nummer" unterscheiden sich genau in der Regel, auf die es ankommt.
+
+**Alle Werte sind Strings**, auch Platzzahlen und Datumsangaben. Damit kann die API keine
+Datumsform annehmen, die der CSV-Weg ablehnt.
+
+**Zweimal geparst, absichtlich.** Die Maske parst im Browser für Kopfzeilen und Vorschau,
+der Server erneut aus demselben Rohtext. Die Zeilen des Clients werden nie gesendet.
+`lib/csv.ts` trägt deshalb **kein** `server-only` — drei Aufrufer (Maske, Server,
+Offline-Suite), ein Parser.
+
+**Weiche Fehler statt verworfener Zeilen.** Unbekannte Art → `other`, unbekannter Zustand
+→ `active` (nicht `retired`: ein falsch als verschrottet importiertes Gerät verschwindet
+unbemerkt aus Bestand und Lizenzzählung). Unauflösbare Firma → Feld leer plus Meldung.
+Importiert wird Zeile für Zeile, nicht als eine Transaktion — ein echter Export ist
+dreckig, und alles-oder-nichts scheitert bei Zeile sechshundert.
+
+**Die API ist fail closed.** Kein hinterlegter Token heißt, Token-Authentifizierung ist
+unmöglich, nicht dass sie übersprungen wird. Vergleich mit `timingSafeEqual` nach
+Längenprüfung. Der Token wird genau einmal angezeigt — beim Erzeugen; danach ist nur
+sichtbar, *dass* einer existiert. `/api/v1/*` liegt außerhalb des `proxy`-Matchers, ein
+Maschinenaufruf bekommt also JSON statt eines Redirects auf die Anmeldung.
+
 ## Zwei Welten
 
 ```
@@ -366,7 +442,9 @@ und Rolle, und ein Ticketformular hat keinen Grund, jedem Melder ein Adressbuch 
 /customer/…             Anwender: Portal, Ticket-Erstellung, eigene Tickets, schlanke Detailansicht
 /mits/                  Technik: Live-Queue mit Tabs, Präsenz + Statistik als Spalte
 /mits/tickets/[id]      Agenten-Detailansicht mit Workflow-Panel
+/mits/cmdb/…            Bestand, Lizenzen, Objekt-Detailansicht (Technik)
 /admin/…                Administration
+/api/v1/cmdb/…          REST-Schnittstelle, Token **oder** Technik-Sitzung
 ```
 
 **Eintrittsweg und In-App-Navigation sind zwei verschiedene Ziele.** Wer den bloßen
