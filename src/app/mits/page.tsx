@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { FilterIcon, FilterXIcon } from "lucide-react";
+import { FilterIcon, FilterXIcon, ServerIcon } from "lucide-react";
 
 import { PresenceList } from "@/components/dashboard/presence-list";
 import { StatsTiles } from "@/components/dashboard/stats-tiles";
@@ -113,15 +113,33 @@ export default async function AgentQueuePage({
       <AppHeader />
       <main className="flex flex-1 flex-col items-center px-6 py-10">
         <div className="w-full max-w-7xl">
-          <div>
-            <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
-              Queue
-            </h1>
-            <p className="mt-2 text-muted-foreground">
-              {AGENT_SCOPE_LABELS[scope]} · {AGENT_VIEW_LABELS[view]} —{" "}
-              {tickets.length} {tickets.length === 1 ? "Ticket" : "Tickets"},
-              angemeldet als {user.email}.
-            </p>
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
+                Queue
+              </h1>
+              <p className="mt-2 text-muted-foreground">
+                {AGENT_SCOPE_LABELS[scope]} · {AGENT_VIEW_LABELS[view]} —{" "}
+                {tickets.length} {tickets.length === 1 ? "Ticket" : "Tickets"},
+                angemeldet als {user.email}.
+              </p>
+            </div>
+
+            {/* Inside /mits, so no area-switch gate applies — a technician who may see
+                this page may see the CMDB. Hidden with the module, not merely disabled:
+                a link into a 404 is a worse answer than no link. */}
+            {flags.feature_cmdb && (
+              <Button
+                asChild
+                size="sm"
+                className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
+              >
+                <Link href="/mits/cmdb">
+                  <ServerIcon strokeWidth={1.5} />
+                  CMDB
+                </Link>
+              </Button>
+            )}
           </div>
 
           <Separator className="my-8 bg-border" />
