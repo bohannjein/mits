@@ -14,6 +14,7 @@ import {
   MapPinIcon,
   MegaphoneIcon,
   ToggleRightIcon,
+  UploadIcon,
   WandSparklesIcon,
 } from "lucide-react";
 
@@ -81,6 +82,12 @@ export default async function AdminPage() {
                 <Link href="/admin/organizations">
                   <BuildingIcon strokeWidth={1.5} />
                   Firmen
+                </Link>
+              </Button>
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
+                <Link href="/admin/cmdb/import">
+                  <UploadIcon strokeWidth={1.5} />
+                  CMDB-Import
                 </Link>
               </Button>
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">

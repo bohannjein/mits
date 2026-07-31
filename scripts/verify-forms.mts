@@ -24,6 +24,16 @@ import {
 } from "../src/lib/mock-schemas";
 import { pieSlice, sharePercent } from "../src/lib/chart";
 import {
+  ATTRIBUTE_PREFIX,
+  CI_IMPORT_TARGETS,
+  coerceCIStatus,
+  coerceCIType,
+  normaliseImportDate,
+  parseDelimited,
+  parseSeats,
+  sniffDelimiter,
+} from "../src/lib/csv";
+import {
   SEVERITY_TO_PRIORITY,
   classifyDefenderAlert,
   priorityForAlert,
@@ -1977,6 +1987,143 @@ console.log("cmdb — organizations");
     organizationIdForEmail("rita@inaktiv.de", orgs) === null,
   );
   check("no @ at all resolves to nothing", organizationIdForEmail("rita", orgs) === null);
+}
+
+console.log("cmdb — delimited parsing");
+{
+  check("a semicolon file is read as semicolon", sniffDelimiter("a;b;c") === ";");
+  check("a comma file is read as comma", sniffDelimiter("a,b,c") === ",");
+  check("a tab paste is read as tab", sniffDelimiter("a\tb\tc") === "\t");
+  check(
+    "a single column falls back to semicolon rather than splitting nothing",
+    sniffDelimiter("Bezeichnung") === ";",
+  );
+  check(
+    "the header line decides, not a quoted comma further down",
+    sniffDelimiter('a;b\n"x,y";z') === ";",
+    sniffDelimiter('a;b\n"x,y";z'),
+  );
+
+  const simple = parseDelimited("Name;Tag\nNotebook;INV-1\nDrucker;INV-2");
+  check("headers are read", simple.headers.join(",") === "Name,Tag");
+  check("rows are read", simple.rows.length === 2);
+  check("cells land under their header", simple.rows[0].Name === "Notebook");
+  check("values are trimmed", parseDelimited("A;B\n  x  ;y").rows[0].A === "x");
+
+  const quoted = parseDelimited('Name;Notiz\n"Notebook";"Kaputt; wirklich"');
+  check(
+    "a quoted delimiter stays inside the field",
+    quoted.rows[0].Notiz === "Kaputt; wirklich",
+    quoted.rows[0].Notiz,
+  );
+
+  const doubled = parseDelimited('Name\n"Der ""gute"" Drucker"');
+  check(
+    "a doubled quote becomes one quote",
+    doubled.rows[0].Name === 'Der "gute" Drucker',
+    doubled.rows[0].Name,
+  );
+
+  const multiline = parseDelimited('Name;Notiz\nX;"Zeile 1\nZeile 2"');
+  check("a quoted line break does not end the row", multiline.rows.length === 1);
+  check(
+    "…and is kept in the value",
+    multiline.rows[0].Notiz === "Zeile 1\nZeile 2",
+    JSON.stringify(multiline.rows[0].Notiz),
+  );
+
+  const bom = parseDelimited("﻿Name;Tag\nX;1");
+  check("a byte-order mark is not part of the first header", bom.headers[0] === "Name");
+
+  const crlf = parseDelimited("Name;Tag\r\nX;1\r\n");
+  check("CRLF files parse", crlf.rows.length === 1 && crlf.rows[0].Tag === "1");
+  check(
+    "a trailing newline does not add an empty row",
+    parseDelimited("Name\nX\n\n\n").rows.length === 1,
+    String(parseDelimited("Name\nX\n\n\n").rows.length),
+  );
+
+  const short = parseDelimited("Name;Tag;Notiz\nX;1");
+  check(
+    "a row with fewer cells is padded, not dropped",
+    short.rows.length === 1 && short.rows[0].Notiz === "",
+  );
+
+  const unnamed = parseDelimited("Name;;Tag\nX;y;1");
+  check(
+    "an unnamed column gets a stable key",
+    unnamed.headers[1] === "Spalte 2" && unnamed.rows[0]["Spalte 2"] === "y",
+    unnamed.headers.join(","),
+  );
+
+  check("empty text yields nothing", parseDelimited("").rows.length === 0);
+  check("empty text yields no headers", parseDelimited("").headers.length === 0);
+}
+
+console.log("cmdb — import coercion");
+{
+  check("German type labels map back", coerceCIType("Lizenz") === "license");
+  check("English keys map back", coerceCIType("license") === "license");
+  check("a device word maps to hardware", coerceCIType("Notebook") === "hardware");
+  check("case and spacing do not matter", coerceCIType("  SOFTWARE ") === "software");
+  check("an empty type defaults to hardware", coerceCIType("") === "hardware");
+  check(
+    "an unknown type becomes other rather than failing",
+    coerceCIType("Kaffeemaschine") === "other",
+  );
+  check(
+    "every coerced type is a legal enum value",
+    ["Lizenz", "Notebook", "", "Unfug", "Switch"].every(
+      (value) => CIType.safeParse(coerceCIType(value)).success,
+    ),
+  );
+
+  check("German status labels map back", coerceCIStatus("Im Einsatz") === "active");
+  check("scrapped maps to retired", coerceCIStatus("ausgemustert") === "retired");
+  check("broken maps to repair", coerceCIStatus("Defekt") === "repair");
+  check(
+    "an unknown status is in-service, not scrapped",
+    coerceCIStatus("weiß nicht") === "active",
+    coerceCIStatus("weiß nicht"),
+  );
+  check("an empty status is in-service", coerceCIStatus("") === "active");
+  check(
+    "every coerced status is a legal enum value",
+    ["Im Einsatz", "", "Unfug", "Lager"].every(
+      (value) => CIStatus.safeParse(coerceCIStatus(value)).success,
+    ),
+  );
+
+  check("ISO dates pass through", normaliseImportDate("2026-12-31") === "2026-12-31");
+  check(
+    "an ISO timestamp keeps only the day",
+    normaliseImportDate("2026-12-31 09:14:00") === "2026-12-31",
+  );
+  check("German dates convert", normaliseImportDate("31.12.2026") === "2026-12-31");
+  check(
+    "a single-digit day is padded",
+    normaliseImportDate("1.2.2026") === "2026-02-01",
+    normaliseImportDate("1.2.2026"),
+  );
+  check("slashes work too", normaliseImportDate("31/12/2026") === "2026-12-31");
+  check("an unreadable date is dropped, not guessed", normaliseImportDate("Q4") === "");
+  check("an empty date stays empty", normaliseImportDate("  ") === "");
+
+  check("a plain seat count reads", parseSeats("25") === 25);
+  check("a formatted number reads", parseSeats("1.200") === 1200);
+  check("nonsense is zero, not one", parseSeats("viele") === 0);
+  check("an empty cell is zero", parseSeats("") === 0);
+
+  check(
+    "the attribute prefix is what the mask writes",
+    ATTRIBUTE_PREFIX === "attr:",
+  );
+  check(
+    "the only required target is the name",
+    CI_IMPORT_TARGETS.filter((target) => "required" in target && target.required)
+      .map((target) => target.key)
+      .join(",") === "name",
+  );
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
