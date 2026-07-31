@@ -45,7 +45,7 @@ export function TicketSearch({
         defaultValue={defaultValue}
         aria-label="Tickets durchsuchen"
         placeholder={
-          compact ? "Ticket suchen …" : "Nummer, Titel oder E-Mail — z. B. 1001"
+          compact ? "Ticket suchen …" : "Nummer, Titel oder E-Mail"
         }
         className={cn(
           "rounded-full pl-9",

@@ -28,6 +28,7 @@ import {
   CommentVisibility,
   TicketPriority,
   TicketStatus,
+  formatTicketNumber,
   parseTicketNumber,
   type MITSTicket,
 } from "@/types/mits";
@@ -238,7 +239,10 @@ export async function addTicketLinkAction(
 
   const number = parseTicketNumber(String(formData.get("target") ?? ""));
   if (number === null) {
-    return { ok: false, error: "Bitte eine Ticket-Nummer angeben, z. B. 1001." };
+    return {
+      ok: false,
+      error: `Bitte eine Ticket-Nummer angeben, z. B. ${formatTicketNumber(1042)}.`,
+    };
   }
 
   try {

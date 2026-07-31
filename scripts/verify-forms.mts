@@ -431,7 +431,9 @@ console.log("ticket number parsing");
     "-5",
     "0",
     "rita@example.invalid",
-    "1234567890123",
+    // Seventeen digits: past the display width, and past what a JS number holds
+    // exactly. Sixteen is accepted, this is not.
+    "12345678901234567",
     "TICK-1001-2",
   ];
   for (const input of rejects) {
@@ -443,7 +445,25 @@ console.log("ticket number parsing");
     "formatting round-trips",
     parseTicketNumber(formatTicketNumber(1042)) === 1042,
   );
-  check("a number renders bare, without a prefix", formatTicketNumber(1042) === "1042");
+  check(
+    "a number renders padded to sixteen digits",
+    formatTicketNumber(1042) === "0000000000001042",
+    formatTicketNumber(1042),
+  );
+  check(
+    "the first ticket is all zeros but one",
+    formatTicketNumber(1) === "0000000000000001",
+    formatTicketNumber(1),
+  );
+  check(
+    "the padded form parses back",
+    parseTicketNumber("0000000000001042") === 1042,
+    "copy-paste out of a mail is now the common path",
+  );
+  check(
+    "a bare number still parses",
+    parseTicketNumber("1042") === 1042,
+  );
   check(
     "the retired TICK- form is still accepted",
     parseTicketNumber("TICK-1042") === 1042 &&
@@ -601,8 +621,12 @@ console.log("mail templates");
    * findable in a reply subject once inbound mail is wired up — asserting only "1042"
    * would pass on a subject that merely happened to contain those digits.
    */
-  check("subject carries the number in brackets", created.subject.includes("[1042]"));
-  check("html carries the number", created.html.includes("1042"));
+  check(
+    "subject carries the padded number in brackets",
+    created.subject.includes("[0000000000001042]"),
+    created.subject,
+  );
+  check("html carries the number", created.html.includes("0000000000001042"));
   check(
     "the retired prefix is gone from the subject",
     !created.subject.includes("TICK"),
@@ -646,7 +670,10 @@ console.log("mail templates");
     reply.html.includes("Zeile eins<br>Zeile zwei") &&
       reply.html.includes("&lt;b&gt;fett&lt;/b&gt;"),
   );
-  check("reply subject carries the number", reply.subject.includes("[1042]"));
+  check(
+    "reply subject carries the number",
+    reply.subject.includes("[0000000000001042]"),
+  );
 }
 
 /* ──────────────────────────────────────────────────────────────────────────

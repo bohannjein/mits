@@ -93,22 +93,31 @@ export const isElevatedPriority = (priority: TicketPriority): boolean =>
   ELEVATED_PRIORITIES.includes(priority);
 
 /**
- * Human-readable ticket number, e.g. 1001.
+ * Human-readable ticket number: sixteen digits, zero-padded, counted from 1.
  *
- * Stored as an integer and formatted on the way out, so sorting and the
- * search-by-number path work on a number rather than on a string.
+ * `0000000000000001`. Stored as an integer and padded on the way out, so sorting and the
+ * search-by-number path still work on a number — and a padded string sorts correctly as
+ * text too, which is what makes it usable in a mail subject or a spreadsheet column.
  *
- * Displayed bare. The old `TICK-1001` form is still *accepted* on input — see
- * `parseTicketNumber` — because every mail already sent and every number somebody wrote
- * down carries it, and refusing those would break the search for exactly the people who
- * kept a reference.
+ * Sixteen digits is beyond what JavaScript can represent exactly: `Number.MAX_SAFE_INTEGER`
+ * is about 9.007e15, a full sixteen-nine number is 9.999e15. The padding is therefore a
+ * display width, not a capacity — the counter would lose precision long before it filled
+ * the field, at roughly nine quadrillion tickets. Recorded rather than left as a surprise.
+ *
+ * `TICKET_NUMBER_START` only affects a fresh instance. An existing one keeps counting from
+ * its own highest number: renumbering would invalidate every reference in every mail
+ * already sent.
  */
-export const TICKET_NUMBER_START = 1001;
+export const TICKET_NUMBER_START = 1;
+
+/** Display width. Not a capacity — see above. */
+export const TICKET_NUMBER_DIGITS = 16;
 
 /** Retired from display, kept because the parser still recognises it. */
 export const LEGACY_TICKET_PREFIX = "TICK";
 
-export const formatTicketNumber = (n: number): string => String(n);
+export const formatTicketNumber = (n: number): string =>
+  String(n).padStart(TICKET_NUMBER_DIGITS, "0");
 
 /**
  * Pull a ticket number out of whatever a user typed: `1001`, `TICK-1001`,
@@ -123,7 +132,7 @@ export function parseTicketNumber(input: string): number | null {
   const match = input
     .trim()
     .replace(/^#/, "")
-    .match(/^(?:tick[\s-]*)?(\d{1,12})$/i);
+    .match(/^(?:tick[\s-]*)?(\d{1,16})$/i);
   if (!match) return null;
   const value = Number.parseInt(match[1], 10);
   return Number.isSafeInteger(value) && value > 0 ? value : null;

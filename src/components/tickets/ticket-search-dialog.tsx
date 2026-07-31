@@ -241,7 +241,7 @@ export function TicketSearchDialog({
                       id="search-number"
                       value={number}
                       onChange={(event) => setNumber(event.target.value)}
-                      placeholder="1001"
+                      placeholder={formatTicketNumber(1042)}
                       inputMode="numeric"
                       className="h-10 rounded-xl pl-9 font-mono"
                       onKeyDown={(event) => {

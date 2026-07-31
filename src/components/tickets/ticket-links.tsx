@@ -38,6 +38,7 @@ import {
   TICKET_LINK_LABELS,
   TICKET_STATUS_LABELS,
   TicketLinkKind,
+  formatTicketNumber,
   type MITSTicket,
 } from "@/types/mits";
 
@@ -159,7 +160,7 @@ export function TicketLinks({
             <Input
               id="link-target"
               name="target"
-              placeholder="1001"
+              placeholder={formatTicketNumber(1042)}
               disabled={busy}
               className="h-10 rounded-xl"
             />
