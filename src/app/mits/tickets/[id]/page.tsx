@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeftIcon } from "lucide-react";
 
 import { AppHeader } from "@/components/layout/app-header";
+import { BackLink } from "@/components/layout/back-link";
 import { TicketChat } from "@/components/tickets/ticket-chat";
 import { TicketLinks } from "@/components/tickets/ticket-links";
 import { TicketSidebar } from "@/components/tickets/ticket-sidebar";
@@ -83,17 +82,7 @@ export default async function AgentTicketPage({
       <AppHeader />
       <main className="flex flex-1 flex-col items-center px-6 py-6">
         <div className="flex min-h-0 w-full max-w-7xl flex-1 flex-col">
-          <Button
-            asChild
-            variant="ghost"
-            size="sm"
-            className="h-8 w-fit rounded-full px-3 text-muted-foreground"
-          >
-            <Link href="/mits">
-              <ArrowLeftIcon strokeWidth={1.5} />
-              Queue
-            </Link>
-          </Button>
+          <BackLink href="/mits" label="Zurück zur Queue" />
 
           <div className="mt-4 grid min-h-0 flex-1 gap-6 lg:grid-cols-[1fr_20rem] lg:items-start">
             {/* Left column. `min-h-0` on every ancestor is what lets the thread

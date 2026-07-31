@@ -4,6 +4,7 @@ import { ListIcon } from "lucide-react";
 
 import { AnnouncementBanner } from "@/components/dashboard/announcement-banner";
 import { AppHeader } from "@/components/layout/app-header";
+import { BackLink } from "@/components/layout/back-link";
 import { TriModalContainer } from "@/components/tickets/tri-modal-container";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -73,7 +74,8 @@ export default async function NewTicketPage({
             </div>
           )}
 
-          <div className="flex flex-wrap items-end justify-between gap-4">
+          <BackLink href="/customer" label="Zurück zum Portal" />
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
                 Neues Ticket

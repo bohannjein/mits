@@ -1,8 +1,7 @@
-import Link from "next/link";
-import { ArrowLeftIcon, MapPinIcon } from "lucide-react";
+import { MapPinIcon } from "lucide-react";
 
+import { BackLink } from "@/components/layout/back-link";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import type { MITSFormSchema, MITSLocation, MITSTicket } from "@/types/mits";
@@ -60,17 +59,7 @@ export function TicketDetail({
     <main className="flex flex-1 flex-col items-center px-6 py-10">
       <div className="grid w-full max-w-4xl gap-8">
         <div>
-          <Button
-            asChild
-            variant="ghost"
-            size="sm"
-            className="h-8 rounded-full px-3 text-muted-foreground"
-          >
-            <Link href={backHref}>
-              <ArrowLeftIcon strokeWidth={1.5} />
-              {backLabel}
-            </Link>
-          </Button>
+          <BackLink href={backHref} label={backLabel} />
 
           <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">

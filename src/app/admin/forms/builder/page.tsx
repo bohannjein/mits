@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { ArrowLeftIcon } from "lucide-react";
 
 import { SchemaBuilder } from "@/components/admin/schema-builder";
 import { AppHeader } from "@/components/layout/app-header";
+import { BackLink } from "@/components/layout/back-link";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { requireRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
@@ -52,7 +50,8 @@ export default async function FormBuilderPage() {
       <AppHeader />
       <main className="flex flex-1 flex-col items-center px-6 py-10">
         <div className="w-full max-w-7xl">
-          <div className="flex flex-wrap items-end justify-between gap-4">
+          <BackLink href="/admin" label="Zurück zum Admin-Desk" />
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
                 Formular-Builder
@@ -67,12 +66,6 @@ export default async function FormBuilderPage() {
               <Badge variant="outline" className="rounded-full">
                 {infos.length} Formulare · {stored} aus der Datenbank
               </Badge>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin">
-                  <ArrowLeftIcon />
-                  Admin-Desk
-                </Link>
-              </Button>
             </div>
           </div>
 

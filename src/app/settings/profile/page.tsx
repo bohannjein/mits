@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { ArrowLeftIcon, KeyRoundIcon, ShieldAlertIcon } from "lucide-react";
+import { KeyRoundIcon, ShieldAlertIcon } from "lucide-react";
 
 import { PasswordChangeForm } from "@/components/auth/password-change-form";
 import { AppHeader } from "@/components/layout/app-header";
+import { BackLink } from "@/components/layout/back-link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -15,7 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ROLE_LABELS } from "@/lib/auth/roles";
+import { ROLE_LABELS, homeFor } from "@/lib/auth/roles";
 import { requireUserForPasswordChange } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
@@ -38,7 +37,13 @@ export default async function ProfilePage() {
       <AppHeader />
       <main className="bg-aurora flex flex-1 flex-col items-center px-6 py-12">
         <div className="w-full max-w-2xl">
-          <div className="flex flex-wrap items-end justify-between gap-4">
+          {/* Hidden while the password gate is closed: `requireUser` sends every
+              other page straight back here, so the link would bounce. A visible
+              link that runs into a redirect is worse than no link. */}
+          {!user.mustChangePassword && (
+            <BackLink href={homeFor(user.role)} label="Zurück zur Startseite" />
+          )}
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
                 Profil
@@ -53,19 +58,6 @@ export default async function ProfilePage() {
                 </Badge>
               </p>
             </div>
-            {/* Hidden while the gate is closed: there is nowhere else to go. */}
-            {!user.mustChangePassword && (
-              <Button
-                asChild
-                size="sm"
-                className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
-              >
-                <Link href="/">
-                  <ArrowLeftIcon strokeWidth={1.5} />
-                  Portal
-                </Link>
-              </Button>
-            )}
           </div>
 
           <Separator className="my-8 bg-border" />

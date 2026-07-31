@@ -45,7 +45,7 @@ export default async function CustomerTicketPage({
         }
         location={ticket.location_id ? getLocation(ticket.location_id) : null}
         backHref="/customer/tickets"
-        backLabel="Meine Tickets"
+        backLabel="Zurück zu meinen Tickets"
       >
         <TicketThread
           ticketId={ticket.id}

@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { FilterIcon, FilterXIcon } from "lucide-react";
 
 import { PresenceList } from "@/components/dashboard/presence-list";
 import { StatsTiles } from "@/components/dashboard/stats-tiles";
 import { AppHeader } from "@/components/layout/app-header";
 import { QueueTabs } from "@/components/tickets/queue-tabs";
-import { TicketFilters } from "@/components/tickets/ticket-filters";
-import { TicketSearch } from "@/components/tickets/ticket-search";
+import type { TicketFilterValues } from "@/components/tickets/ticket-filters";
 import { TicketTable } from "@/components/tickets/ticket-table";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
   AGENT_SCOPE_LABELS,
@@ -32,7 +34,7 @@ import {
   type RawSearchParams,
 } from "@/lib/ticket-query";
 import { searchTickets, todayCounts } from "@/lib/tickets";
-import { listUsers } from "@/lib/users";
+import { TICKET_STATUS_LABELS, type TicketStatus } from "@/types/mits";
 
 export const metadata: Metadata = {
   title: "Queue — MITS",
@@ -104,9 +106,6 @@ export default async function AgentQueuePage({
   ) as Record<AgentView, number>;
 
   const locations = listLocations();
-  const agents = listUsers()
-    .filter((candidate) => canViewBoard(candidate.role))
-    .map((candidate) => ({ id: candidate.id, name: candidate.name }));
   const { opened, closed } = todayCounts();
 
   return (
@@ -131,17 +130,13 @@ export default async function AgentQueuePage({
             <div className="grid min-w-0 gap-4">
               <QueueTabs scope={scope} view={view} counts={counts} />
 
-              {flags.feature_ticket_search && (
-                <>
-                  <TicketSearch action="/mits" defaultValue={values.q} />
-                  <TicketFilters
-                    action="/mits"
-                    values={values}
-                    locations={locations}
-                    agents={agents}
-                    activeCount={activeCount}
-                  />
-                </>
+              {/* The filter block that used to sit here is gone. It occupied the
+                  screen permanently for an occasional operation and pushed the
+                  ticket list below the fold; searching now happens in the header
+                  dialog (Ctrl+K). Deep-link filters in the URL still apply — only
+                  the form is gone, not the capability. */}
+              {activeCount > 0 && (
+                <ActiveFilterNotice count={activeCount} values={values} />
               )}
 
               {tickets.length === 0 ? (
@@ -176,5 +171,49 @@ export default async function AgentQueuePage({
         </div>
       </main>
     </>
+  );
+}
+
+/**
+ * Says so when the URL carries deep filters.
+ *
+ * Without the old filter form on screen there is nothing else to reveal them, and
+ * a narrowed queue is indistinguishable from a complete one — the failure mode is a
+ * queue that looks like it is working while holding the wrong rows. The reset link
+ * drops the filters and keeps the tab.
+ */
+function ActiveFilterNotice({
+  count,
+  values,
+}: {
+  count: number;
+  values: TicketFilterValues;
+}) {
+  const parts: string[] = [];
+  if (values.q) parts.push(`Text „${values.q}“`);
+  if (values.locationId) parts.push("Standort");
+  if (values.status) parts.push(`Status ${TICKET_STATUS_LABELS[values.status as TicketStatus] ?? values.status}`);
+  if (values.priority) parts.push("Priorität");
+  if (values.assignedTo) parts.push("Bearbeiter");
+  if (values.from || values.to) parts.push("Zeitraum");
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3">
+      <FilterIcon className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden />
+      <span className="min-w-40 flex-1 text-sm">
+        {count} {count === 1 ? "Filter" : "Filter"} aktiv: {parts.join(" · ")}
+      </span>
+      <Button
+        asChild
+        variant="ghost"
+        size="sm"
+        className="h-8 rounded-full px-3 text-xs"
+      >
+        <Link href="/mits">
+          <FilterXIcon strokeWidth={1.5} />
+          Zurücksetzen
+        </Link>
+      </Button>
+    </div>
   );
 }

@@ -14,6 +14,7 @@ import {
 import { RegistrationSettingsForm } from "@/components/admin/registration-settings-form";
 import { UserRoleForm } from "@/components/admin/user-role-form";
 import { AppHeader } from "@/components/layout/app-header";
+import { BackLink } from "@/components/layout/back-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -50,7 +51,8 @@ export default async function AdminPage() {
       <AppHeader />
       <main className="flex flex-1 flex-col items-center px-6 py-12">
         <div className="w-full max-w-5xl">
-          <div className="flex flex-wrap items-end justify-between gap-4">
+          <BackLink href="/mits" label="Zurück zur Queue" />
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">Admin-Desk</h1>
               <p className="mt-2 text-muted-foreground">

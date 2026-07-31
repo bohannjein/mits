@@ -4,10 +4,12 @@ import { UserMenu } from "@/components/auth/user-menu";
 import { MITSLogo } from "@/components/branding/mits-logo";
 import { PresenceHeartbeat } from "@/components/dashboard/presence-heartbeat";
 import { TicketSearch } from "@/components/tickets/ticket-search";
+import { TicketSearchDialog } from "@/components/tickets/ticket-search-dialog";
 import { Button } from "@/components/ui/button";
 import { canViewBoard, homeFor } from "@/lib/auth/roles";
 import { getSessionUser } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
+import { listLocations } from "@/lib/locations";
 
 /**
  * Application header. A server component so the identity block renders with the
@@ -26,6 +28,8 @@ export async function AppHeader() {
     user !== null &&
     !user.mustChangePassword &&
     isFeatureEnabled("feature_ticket_search");
+
+  const staff = user !== null && canViewBoard(user.role);
 
   /*
    * The heartbeat lives here so every page a technician opens counts as a sign of
@@ -53,10 +57,24 @@ export async function AppHeader() {
           <MITSLogo />
         </Link>
 
-        {showSearch && (
+        {/*
+          Staff get the dialog, reporters the plain GET form.
+
+          The dialog carries filters an agent needs — location, status, priority,
+          date — and binds Ctrl+K here so it works on every page rather than only in
+          the queue. A reporter has none of that to filter and only their own
+          tickets to find, so a field that submits to a shareable URL is the better
+          answer for them than an overlay.
+        */}
+        {showSearch && staff && (
+          <div className="order-last w-full sm:order-none sm:ml-auto sm:mr-3 sm:w-auto">
+            <TicketSearchDialog locations={listLocations()} />
+          </div>
+        )}
+        {showSearch && !staff && (
           <TicketSearch
             compact
-            action={canViewBoard(user.role) ? "/mits" : "/customer/tickets"}
+            action="/customer/tickets"
             className="order-last w-full sm:order-none sm:ml-auto sm:mr-3 sm:w-auto"
           />
         )}
