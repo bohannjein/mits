@@ -13,7 +13,7 @@ import {
   resolveFields,
 } from "@/lib/forms/schema-to-zod";
 import { setCannedResponses } from "@/lib/canned-responses";
-import { LocationError, replaceLocations } from "@/lib/locations";
+import { LocationError, getLocation, replaceLocations } from "@/lib/locations";
 import { testMail } from "@/lib/mail-templates";
 import {
   SmtpError,
@@ -36,12 +36,20 @@ import {
   setSystemSettings,
 } from "@/lib/system-settings";
 import { unusableFaqAttachments } from "@/lib/storage";
-import { RoleChangeError, setUserRole } from "@/lib/users";
+import { UserProfileError, setUserProfile } from "@/lib/user-profile";
+import {
+  ProfileError,
+  RoleChangeError,
+  findUser,
+  setUserName,
+  setUserRole,
+} from "@/lib/users";
 import {
   CannedResponseSchema,
   FEATURE_FLAG_META,
   FeatureFlagsSchema,
   MITSLocationSchema,
+  NO_LOCATION,
   PortalConfigSchema,
   PortalContentSchema,
   PortalFaqSchema,
@@ -533,6 +541,79 @@ export async function saveAISettingsAction(
     if (error instanceof AISettingsError) return { ok: false, error: error.message };
     throw error;
   }
+}
+
+/* ── User records, on behalf of someone else ─────────────────────────────── */
+
+/**
+ * Edit another account's name and contact details.
+ *
+ * `userId` comes from the form here, and that is the difference from
+ * `changeOwnProfile`: this action exists precisely to act on somebody else. What
+ * makes it safe is `requireRole("admin")` — the id is only as trustworthy as the role
+ * that submitted it, and an admin may already read and change every account.
+ *
+ * The same `setUserProfile`/`setUserName` the self-service path uses, so the website
+ * check, the length limits and the stale-location refusal apply identically. An admin
+ * typing `javascript:` into a website field is refused for the same reason a reporter
+ * is.
+ */
+export async function saveUserRecordAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const userId = String(formData.get("userId") ?? "");
+  if (!userId) return { ok: false, error: "Kein Konto angegeben." };
+
+  const target = findUser(userId);
+  if (!target) return { ok: false, error: "Unbekanntes Konto." };
+
+  const text = (key: string) => String(formData.get(key) ?? "").trim();
+
+  // Optional: the mask may be used to fix an address without touching the name.
+  const name = text("name");
+  if (name && name !== target.name) {
+    try {
+      setUserName(userId, name);
+    } catch (error) {
+      if (error instanceof ProfileError) return { ok: false, error: error.message };
+      throw error;
+    }
+  }
+
+  const locationId = text("location_id");
+  try {
+    setUserProfile(
+      userId,
+      {
+        location_id:
+          locationId === "" || locationId === NO_LOCATION ? null : locationId,
+        phone: text("phone"),
+        street: text("street"),
+        postal_code: text("postal_code"),
+        city: text("city"),
+        country: text("country"),
+        website: text("website"),
+        note: text("note"),
+      },
+      (id) => getLocation(id) !== null,
+    );
+  } catch (error) {
+    if (error instanceof UserProfileError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+
+  revalidatePath("/admin/customers");
+  revalidatePath("/admin/staff");
+  // The agent sidebar renders these, and the header prints the name.
+  revalidatePath("/mits/tickets/[id]", "page");
+  revalidatePath("/", "layout");
+
+  return { ok: true, message: `Angaben zu ${name || target.name} gespeichert.` };
 }
 
 /* ── System: timezone and time server ───────────────────────────────────── */

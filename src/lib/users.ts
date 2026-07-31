@@ -18,6 +18,11 @@ export interface ManagedUser {
   createdAt: string;
 }
 
+/** One account, or null. Called before an admin action writes to it. */
+export function findUser(userId: string): ManagedUser | null {
+  return listUsers().find((candidate) => candidate.id === userId) ?? null;
+}
+
 export function countUsers(): number {
   const row = db.prepare("SELECT COUNT(*) AS count FROM user").get() as
     | { count: number }

@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   BookOpenIcon,
+  HeadsetIcon,
   ClockIcon,
+  UsersIcon,
   BrainIcon,
   MailIcon,
   MessageSquareTextIcon,
@@ -13,25 +15,17 @@ import {
 } from "lucide-react";
 
 import { RegistrationSettingsForm } from "@/components/admin/registration-settings-form";
-import { UserRoleForm } from "@/components/admin/user-role-form";
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { canViewBoard } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
 import { ensureAuthSchema } from "@/lib/auth/server";
 import { getAuthSettings } from "@/lib/settings";
 import { countTickets } from "@/lib/tickets";
-import { countAdmins, listUsers } from "@/lib/users";
+import { listUsers } from "@/lib/users";
 
 export const metadata: Metadata = {
   title: "Admin-Desk — MITS",
@@ -44,7 +38,7 @@ export default async function AdminPage() {
 
   const users = listUsers();
   const settings = getAuthSettings();
-  const admins = countAdmins();
+  const staff = users.filter((user) => canViewBoard(user.role)).length;
   const { total, open } = countTickets();
 
   return (
@@ -57,12 +51,13 @@ export default async function AdminPage() {
             <div>
               <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">Admin-Desk</h1>
               <p className="mt-2 text-muted-foreground">
-                Registrierung, Rollen und Bestand dieser Instanz.
+                Registrierung, Module und Bestand dieser Instanz. Konten werden
+                getrennt gepflegt — Technik und Anwender in eigenen Masken.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline" className="rounded-full">
-                {users.length} Konten
+                {users.length} Konten · {staff} Technik
               </Badge>
               <Badge variant="outline" className="rounded-full">
                 {total} Tickets · {open} offen
@@ -104,6 +99,18 @@ export default async function AdminPage() {
                 </Link>
               </Button>
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
+                <Link href="/admin/staff">
+                  <HeadsetIcon />
+                  Technik &amp; Administration
+                </Link>
+              </Button>
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
+                <Link href="/admin/customers">
+                  <UsersIcon />
+                  Anwender
+                </Link>
+              </Button>
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
                 <Link href="/admin/settings/system">
                   <ClockIcon />
                   System & Zeit
@@ -128,56 +135,6 @@ export default async function AdminPage() {
 
           <RegistrationSettingsForm settings={settings} />
 
-          <h2 className="label-industrial mt-10 mb-3">Benutzer & Rollen</h2>
-          <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-elev-1">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>E-Mail</TableHead>
-                  <TableHead>Rolle</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((user) => {
-                  const isSelf = user.id === actor.id;
-                  const isLastAdmin = user.role === "admin" && admins <= 1;
-
-                  return (
-                    <TableRow key={user.id}>
-                      <TableCell className="font-medium">
-                        {user.name}
-                        {isSelf && (
-                          <Badge
-                            variant="outline"
-                            className="ml-2 rounded-full"
-                          >
-                            du
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm">{user.email}</TableCell>
-                      <TableCell>
-                        <UserRoleForm
-                          userId={user.id}
-                          currentRole={user.role}
-                          // Both cases would leave the instance unadministrable.
-                          disabled={isSelf || isLastAdmin}
-                          disabledReason={
-                            isSelf
-                              ? "eigene Rolle"
-                              : isLastAdmin
-                                ? "letzter Administrator"
-                                : undefined
-                          }
-                        />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
         </div>
       </main>
     </>
