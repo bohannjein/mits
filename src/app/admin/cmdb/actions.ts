@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { clearApiToken, rotateApiToken } from "@/lib/api-tokens";
 import { requireRole } from "@/lib/auth/session";
 import { importConfigurationItems, type ImportSummary } from "@/lib/cmdb-import";
 import { isFeatureEnabled } from "@/lib/features";
@@ -78,4 +79,45 @@ export async function importCMDBAction(
   revalidatePath("/mits/cmdb/licenses");
 
   return { ok: true, summary };
+}
+
+/* ── REST token ─────────────────────────────────────────────────────────── */
+
+export type TokenActionResult =
+  | { ok: true; token?: string }
+  | { ok: false; error: string };
+
+/**
+ * Generate a token and return it once.
+ *
+ * The value is returned to the caller rather than read back on the next page load: a
+ * secret rendered on every visit is a secret in every screenshot of that page. A lost
+ * token is rotated, not recovered — which is also what makes rotation safe to offer as
+ * the only button.
+ */
+export async function rotateCMDBTokenAction(
+  _previous: TokenActionResult | null,
+  _formData: FormData,
+): Promise<TokenActionResult> {
+  await requireRole("admin");
+
+  if (!isFeatureEnabled("feature_cmdb")) {
+    return { ok: false, error: "Die CMDB ist abgeschaltet." };
+  }
+
+  const token = rotateApiToken();
+  revalidatePath("/admin/cmdb");
+  return { ok: true, token };
+}
+
+/** Remove it, closing token access. Sessions keep working. */
+export async function clearCMDBTokenAction(
+  _previous: TokenActionResult | null,
+  _formData: FormData,
+): Promise<TokenActionResult> {
+  await requireRole("admin");
+
+  clearApiToken();
+  revalidatePath("/admin/cmdb");
+  return { ok: true };
 }
