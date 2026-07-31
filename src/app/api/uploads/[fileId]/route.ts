@@ -1,5 +1,6 @@
 import { requireApiUser } from "@/lib/auth/session";
 import { openUploadFor } from "@/lib/storage";
+import { getTicketFor } from "@/lib/tickets";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Attachment download.
@@ -19,7 +20,15 @@ export async function GET(
   const user = auth.user;
 
   const { fileId } = await params;
-  const upload = openUploadFor(fileId, user);
+  /*
+   * The participant check is supplied here, not imported by the storage module —
+   * that would close an import cycle. See `openUploadFor`.
+   */
+  const upload = openUploadFor(
+    fileId,
+    user,
+    (ticketId) => getTicketFor(ticketId, user) !== null,
+  );
   if (!upload) {
     return Response.json({ error: "Datei nicht gefunden." }, { status: 404 });
   }

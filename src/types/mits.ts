@@ -202,6 +202,17 @@ export type MITSTicketDraft = z.infer<typeof MITSTicketDraftSchema>;
 export const CommentVisibility = z.enum(["public", "internal"]);
 export type CommentVisibility = z.infer<typeof CommentVisibility>;
 
+/**
+ * How `body` is to be read.
+ *
+ * `text` is rendered with `whitespace-pre-wrap`; `html` is handed to
+ * `dangerouslySetInnerHTML` and is only ever written after `sanitizeRichText` has
+ * cleaned it. Defaulted to `text` so a row from before the editor existed is never
+ * treated as markup — that direction is the safe one.
+ */
+export const CommentBodyFormat = z.enum(["text", "html"]);
+export type CommentBodyFormat = z.infer<typeof CommentBodyFormat>;
+
 export const TicketCommentSchema = z.object({
   id: z.string(),
   ticket_id: z.string(),
@@ -212,6 +223,7 @@ export const TicketCommentSchema = z.object({
   author_is_agent: z.boolean().default(false),
   visibility: CommentVisibility.default("public"),
   body: z.string().min(1).max(20000),
+  body_format: CommentBodyFormat.default("text"),
   created_at: z.coerce.date(),
 });
 export type TicketComment = z.infer<typeof TicketCommentSchema>;

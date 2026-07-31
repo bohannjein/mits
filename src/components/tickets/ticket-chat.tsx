@@ -22,10 +22,14 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { CommentBody } from "@/components/tickets/comment-body";
+import {
+  RichTextEditor,
+  type RichTextEditorHandle,
+} from "@/components/tickets/rich-text-editor";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useTimezone } from "@/components/providers/timezone-provider";
 import { formatDateTimeShort } from "@/lib/format";
@@ -59,6 +63,7 @@ export function TicketChat({
   const timezone = useTimezone();
   const [internal, setInternal] = useState(false);
   const [body, setBody] = useState("");
+  const [editor, setEditor] = useState<RichTextEditorHandle | null>(null);
   const [replyResult, replyAction, replying] = useActionState(
     addCommentAction,
     null,
@@ -129,9 +134,7 @@ export function TicketChat({
                     {formatDateTimeShort(comment.created_at, timezone)}
                   </time>
                 </header>
-                <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap">
-                  {comment.body}
-                </p>
+                <CommentBody comment={comment} />
               </article>
             ))
           )}
@@ -203,19 +206,22 @@ export function TicketChat({
           )}
         </div>
 
-        <Textarea
-          id="chat-body"
-          name="body"
+        {/* The body travels as a hidden field: the editor keeps its value in React
+            state, and a Server Action reads FormData. */}
+        <input type="hidden" name="body" value={body} />
+        <input type="hidden" name="bodyFormat" value="html" />
+
+        <RichTextEditor
           value={body}
-          onChange={(event) => setBody(event.target.value)}
-          rows={3}
+          onChange={setBody}
           disabled={busy}
+          tone={internal ? "warning" : "default"}
+          onReady={setEditor}
           placeholder={
             internal
               ? "Nur für die Technik sichtbar."
               : "Geht an den Melder und löst eine Benachrichtigung aus."
           }
-          className="resize-y rounded-xl"
         />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -300,4 +306,25 @@ export function TicketChat({
       </form>
     </div>
   );
+}
+
+/**
+ * Turn a plain-text canned response into paragraphs.
+ *
+ * The templates are stored as text, and inserting them raw would put their newlines
+ * into a single paragraph where the editor collapses them. Escaped first — a template
+ * is admin-authored, but this markup goes straight into the document and the editor
+ * has no sanitiser of its own.
+ */
+function toParagraphs(text: string): string {
+  const escape = (value: string) =>
+    value
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+
+  return text
+    .split(/\n{2,}/)
+    .map((block) => `<p>${escape(block).replaceAll("\n", "<br>")}</p>`)
+    .join("");
 }

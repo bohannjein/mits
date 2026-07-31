@@ -6,7 +6,14 @@ import { canViewBoard } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/sqlite";
 import {
+  hasVisibleContent,
+  sanitizeRichText,
+  uploadIdsInHtml,
+} from "@/lib/sanitize";
+import { UploadError, linkUploadsToTicket } from "@/lib/storage";
+import {
   TicketCommentSchema,
+  type CommentBodyFormat,
   type CommentVisibility,
   type TicketComment,
 } from "@/types/mits";
@@ -28,6 +35,7 @@ interface CommentRow {
   author_is_agent: number;
   visibility: string;
   body: string;
+  body_format: string;
   created_at: string;
 }
 
@@ -42,7 +50,7 @@ export class CommentError extends Error {}
 
 const SELECT = `
   SELECT id, ticket_id, author_id, author_email, author_name,
-         author_is_agent, visibility, body, created_at
+         author_is_agent, visibility, body, body_format, created_at
     FROM mits_ticket_comment
 `;
 
@@ -84,15 +92,41 @@ export function addComment(
   user: SessionUser,
   body: string,
   visibility: CommentVisibility,
+  /**
+   * `html` runs the body through `sanitizeRichText` before it is stored, so the
+   * column only ever holds markup this application produced. Plain text is the
+   * default — a caller that does not say otherwise cannot accidentally store
+   * unsanitised HTML.
+   */
+  format: CommentBodyFormat = "text",
 ): TicketComment {
-  const text = body.trim();
-  if (!text) throw new CommentError("Der Beitrag ist leer.");
-  if (text.length > 20000) throw new CommentError("Der Beitrag ist zu lang.");
-
   const isAgent = canViewBoard(user.role);
   if (visibility === "internal" && !isAgent) {
     throw new CommentError("Interne Notizen sind der Technik vorbehalten.");
   }
+
+  let text: string;
+  /** Upload ids the body embeds — bound to the ticket alongside the insert. */
+  let embedded: string[] = [];
+  if (format === "html") {
+    /*
+     * Sanitised here rather than at the call site, so there is exactly one door
+     * into this column and it cannot be walked past. The emptiness check happens
+     * *after* cleaning: a body consisting only of a remote tracking pixel reduces
+     * to nothing, and storing that would show an empty bubble.
+     */
+    const { html } = sanitizeRichText(body);
+    if (!hasVisibleContent(html)) {
+      throw new CommentError("Der Beitrag ist leer.");
+    }
+    text = html;
+    embedded = uploadIdsInHtml(html);
+  } else {
+    text = body.trim();
+    if (!text) throw new CommentError("Der Beitrag ist leer.");
+  }
+
+  if (text.length > 20000) throw new CommentError("Der Beitrag ist zu lang.");
 
   const row: CommentRow = {
     id: randomUUID(),
@@ -103,17 +137,39 @@ export function addComment(
     author_is_agent: isAgent ? 1 : 0,
     visibility,
     body: text,
+    body_format: format,
     created_at: new Date().toISOString(),
   };
 
-  db.prepare(
-    `INSERT INTO mits_ticket_comment
-       (id, ticket_id, author_id, author_email, author_name,
-        author_is_agent, visibility, body, created_at)
-     VALUES
-       (@id, @ticket_id, @author_id, @author_email, @author_name,
-        @author_is_agent, @visibility, @body, @created_at)`,
-  ).run(row);
+  /*
+   * Insert and bind in one transaction.
+   *
+   * A pasted screenshot is uploaded with no ticket, so without the binding
+   * `openUploadFor` would fall back to owner-or-staff and the reporter could not see
+   * the image in their own ticket. `linkUploadsToTicket` also re-checks that the
+   * caller owns every id, which is what stops a hand-built body from embedding
+   * somebody else's file and pulling it in through this ticket.
+   *
+   * One unit of work, because a comment whose images failed to bind renders as broken
+   * boxes and there is nothing the reader can do about it.
+   */
+  try {
+    db.transaction(() => {
+      db.prepare(
+        `INSERT INTO mits_ticket_comment
+           (id, ticket_id, author_id, author_email, author_name,
+            author_is_agent, visibility, body, body_format, created_at)
+         VALUES
+           (@id, @ticket_id, @author_id, @author_email, @author_name,
+            @author_is_agent, @visibility, @body, @body_format, @created_at)`,
+      ).run(row);
+
+      linkUploadsToTicket(embedded, ticketId, user);
+    })();
+  } catch (error) {
+    if (error instanceof UploadError) throw new CommentError(error.message);
+    throw error;
+  }
 
   return rowToComment(row);
 }

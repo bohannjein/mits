@@ -22,6 +22,11 @@ import {
   USER_ONBOARDING_SCHEMA,
 } from "../src/lib/mock-schemas";
 import { pieSlice, sharePercent } from "../src/lib/chart";
+import {
+  hasVisibleContent,
+  sanitizeRichText,
+  uploadIdsInHtml,
+} from "../src/lib/sanitize";
 import { ticketCreatedMail, ticketReplyMail } from "../src/lib/mail-templates";
 import {
   SYSTEM_TIMEZONES,
@@ -1189,6 +1194,102 @@ console.log("\nrefresh interval");
     "the follow-global sentinel is not a valid interval",
     !isRefreshInterval(Number(REFRESH_FOLLOW_GLOBAL)),
   );
+}
+
+console.log("\nrich-text sanitising");
+{
+  const clean = (input: string) => sanitizeRichText(input).html;
+
+  // The point of the module. Each of these is a way to run code in our own origin,
+  // and each would land in a ticket bubble rendered with dangerouslySetInnerHTML.
+  check("script is dropped with its content", !/alert/.test(clean("<script>alert(1)</script>")));
+  check(
+    "an event handler is stripped",
+    !/onerror/i.test(clean('<img src="/api/uploads/a" onerror="alert(1)">')),
+  );
+  check(
+    "javascript: in an href is refused",
+    !/javascript:/i.test(clean('<a href="javascript:alert(1)">x</a>')),
+  );
+  check(
+    "style attributes are stripped",
+    !/style=/i.test(clean('<p style="position:fixed;inset:0">x</p>')),
+  );
+  check("style elements are dropped", !/display/.test(clean("<style>body{display:none}</style>")));
+  check("iframes are dropped", !/<iframe/i.test(clean('<iframe src="https://x.invalid"></iframe>')));
+  check("svg is dropped", !/<svg/i.test(clean("<svg><script>alert(1)</script></svg>")));
+  check(
+    "form elements are dropped",
+    !/<form|<input/i.test(clean('<form action="https://x.invalid"><input name="p"></form>')),
+  );
+
+  // Formatting the toolbar produces has to survive, or the editor is pointless.
+  check("bold survives", /<strong>/.test(clean("<p><strong>fett</strong></p>")));
+  check("lists survive", /<ul>/.test(clean("<ul><li>a</li></ul>")));
+  check("code blocks survive", /<pre>/.test(clean("<pre><code>x</code></pre>")));
+  check("blockquotes survive", /<blockquote>/.test(clean("<blockquote>x</blockquote>")));
+  check(
+    "tables survive a mailed-in reply",
+    /<table>/.test(clean("<table><tr><td>a</td></tr></table>")),
+  );
+
+  const link = clean('<a href="https://example.invalid">x</a>');
+  check("an allowed link survives", link.includes('href="https://example.invalid"'));
+  check(
+    "…and opens detached",
+    link.includes('rel="noopener noreferrer nofollow"') && link.includes('target="_blank"'),
+  );
+
+  // Images: only our own upload route, because a remote one is a tracking pixel that
+  // reports back every time an agent opens the ticket.
+  check(
+    "an upload image survives",
+    clean('<img src="/api/uploads/abc-123?inline=1">').includes(
+      'src="/api/uploads/abc-123?inline=1"',
+    ),
+  );
+  check(
+    "a remote image is removed",
+    !/<img/.test(clean('<img src="https://tracker.invalid/p.gif">')),
+  );
+  check(
+    "…and it is reported so the UI can say so",
+    sanitizeRichText('<img src="https://tracker.invalid/p.gif">').removedRemoteImages,
+  );
+  check(
+    "a data: image is removed",
+    !/<img/.test(clean('<img src="data:image/png;base64,iVBORw0KGgo=">')),
+  );
+  check(
+    "a path that only looks like an upload is removed",
+    !/<img/.test(clean('<img src="/api/uploads/../../etc/passwd">')),
+  );
+
+  // Emptiness is judged after cleaning: a body that was only a tracking pixel has
+  // nothing left, and storing it would show an empty bubble.
+  check(
+    "a tracking-pixel-only body counts as empty",
+    !hasVisibleContent(clean('<img src="https://x.invalid/p.gif">')),
+  );
+  check(
+    "a surviving image counts as content",
+    hasVisibleContent(clean('<img src="/api/uploads/a">')),
+  );
+  check("whitespace-only markup counts as empty", !hasVisibleContent("<p> </p>"));
+  check("text counts as content", hasVisibleContent("<p>hallo</p>"));
+
+  // The ids are read back out of the stored markup, which is what binds the images to
+  // the ticket so a reporter can see an agent's screenshot.
+  check(
+    "embedded upload ids are found",
+    uploadIdsInHtml('<img src="/api/uploads/aaa?inline=1"><img src="/api/uploads/bbb">')
+      .join(",") === "aaa,bbb",
+  );
+  check(
+    "the same image twice yields one id",
+    uploadIdsInHtml('<img src="/api/uploads/aaa"><img src="/api/uploads/aaa">').length === 1,
+  );
+  check("no images yields none", uploadIdsInHtml("<p>x</p>").length === 0);
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

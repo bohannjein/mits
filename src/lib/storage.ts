@@ -216,23 +216,41 @@ export interface ReadableUpload {
  * A ticket attachment is readable by its owner and by technicians and admins — they
  * work the tickets these files belong to. A FAQ attachment is readable by anyone
  * signed in, which is the whole point of publishing it.
+ *
+ * `canSeeTicket` is passed in rather than imported: `lib/tickets.ts` already imports
+ * this module for `linkUploadsToTicket`, so calling `getTicketFor` from here would
+ * close a cycle. It happens to work today because both references sit inside function
+ * bodies, but a cycle is a trap that springs the first time either module needs the
+ * other at evaluation time. Inverting it keeps the visibility rule in one place —
+ * `getTicketFor` — while leaving this module a leaf.
+ *
+ * Omitting the callback denies participant access rather than granting it, so a
+ * caller that forgets it fails closed.
  */
 export function openUploadFor(
   id: string,
   user: SessionUser,
+  canSeeTicket?: (ticketId: string) => boolean,
 ): ReadableUpload | null {
   const row = db.prepare("SELECT * FROM mits_upload WHERE id = ?").get(id) as
     | UploadRow
     | undefined;
   if (!row) return null;
 
-  // Checked in this order so the FAQ case never depends on ownership: an admin
-  // publishes an article, and a reporter who was never near it can still read the
-  // attachment.
+  /*
+   * Four ways this may be readable, in the order they are cheapest to decide.
+   *
+   * The last one is what makes an embedded screenshot work: an agent pastes an image
+   * into a reply, the upload belongs to the *agent*, and the reporter is neither its
+   * owner nor staff — so without this the image in their own ticket would 404. If you
+   * may open the ticket, you may see what is attached to it; `getTicketFor` answers
+   * that question with the same rules the ticket page uses.
+   */
   const readable =
     row.scope === "faq" ||
     row.owner_id === user.id ||
-    canViewBoard(user.role);
+    canViewBoard(user.role) ||
+    (row.ticket_id !== null && (canSeeTicket?.(row.ticket_id) ?? false));
   if (!readable) return null;
 
   const directory = uploadsDir();

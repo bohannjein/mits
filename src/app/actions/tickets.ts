@@ -17,6 +17,7 @@ import {
   setTicketStatus,
 } from "@/lib/tickets";
 import {
+  CommentBodyFormat,
   CommentVisibility,
   TicketPriority,
   TicketStatus,
@@ -159,6 +160,18 @@ export async function setTicketPriorityAction(
  * Deliberately public-only. "Answer and close" that quietly filed an internal
  * note would close a ticket the reporter never heard about.
  */
+/**
+ * Which body format the form claims to be sending.
+ *
+ * A claim, not a decision: `addComment` sanitises anything marked `html` before it
+ * is stored, so the worst a forged value achieves is that plain text gets run
+ * through the sanitiser — which leaves plain text. Anything unrecognised falls back
+ * to `text`, the format that is never handed to `dangerouslySetInnerHTML`.
+ */
+function claimedFormat(formData: FormData): CommentBodyFormat {
+  return CommentBodyFormat.safeParse(formData.get("bodyFormat")).data ?? "text";
+}
+
 export async function replyAndCloseAction(
   _previous: TicketActionResult | null,
   formData: FormData,
@@ -174,6 +187,7 @@ export async function replyAndCloseAction(
       auth.user,
       String(formData.get("body") ?? ""),
       "public",
+      claimedFormat(formData),
     );
   } catch (error) {
     if (error instanceof CommentError) return { ok: false, error: error.message };
@@ -272,6 +286,7 @@ export async function addCommentAction(
       auth.user,
       String(formData.get("body") ?? ""),
       visibility.data,
+      claimedFormat(formData),
     );
   } catch (error) {
     if (error instanceof CommentError) return { ok: false, error: error.message };

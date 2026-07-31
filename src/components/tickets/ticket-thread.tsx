@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { CommentBody } from "@/components/tickets/comment-body";
 import { cn } from "@/lib/utils";
 import { useTimezone } from "@/components/providers/timezone-provider";
 import { formatDateTimeShort } from "@/lib/format";
@@ -101,9 +102,9 @@ export function TicketThread({
                   {formatDateTimeShort(comment.created_at, timezone)}
                 </span>
               </div>
-              <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap">
-                {comment.body}
-              </p>
+              {/* An agent reply is stored as sanitised HTML; a reporter's own is
+                  plain text. Both appear in this list, so both are rendered. */}
+              <CommentBody comment={comment} />
             </li>
           ))}
         </ul>

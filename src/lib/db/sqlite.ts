@@ -118,6 +118,8 @@ function migrateAppTables(database: Database.Database): void {
       author_is_agent INTEGER NOT NULL DEFAULT 0,
       visibility      TEXT NOT NULL DEFAULT 'public',
       body            TEXT NOT NULL,
+      -- 'text' or 'html'. Defaults to the safe one: see addColumns.
+      body_format     TEXT NOT NULL DEFAULT 'text',
       created_at      TEXT NOT NULL
     );
 
@@ -269,6 +271,19 @@ function addColumns(database: Database.Database): void {
       table: "mits_upload",
       column: "scope",
       definition: "TEXT NOT NULL DEFAULT 'ticket'",
+    },
+    /*
+     * Whether `body` is plain text or sanitised HTML.
+     *
+     * Defaults to `text`, which is the safe direction: every comment written before
+     * the rich-text editor existed is plain text, and rendering it as markup would
+     * turn a reporter's literal `<b>` into formatting — or worse, hand an old body
+     * to `dangerouslySetInnerHTML` without ever having passed the sanitiser.
+     */
+    {
+      table: "mits_ticket_comment",
+      column: "body_format",
+      definition: "TEXT NOT NULL DEFAULT 'text'",
     },
   ];
 
