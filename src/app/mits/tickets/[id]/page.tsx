@@ -5,10 +5,11 @@ import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
 import { TicketChat } from "@/components/tickets/ticket-chat";
 import { TicketLinks } from "@/components/tickets/ticket-links";
+import { AuditTrail } from "@/components/tickets/audit-trail";
 import { TicketSidebar } from "@/components/tickets/ticket-sidebar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { canViewBoard } from "@/lib/auth/roles";
+import { canAdminister, canViewBoard } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
 import { listCannedResponses } from "@/lib/canned-responses";
 import { getFeatureFlags } from "@/lib/features";
@@ -17,6 +18,7 @@ import { resolveFields } from "@/lib/forms/schema-to-zod";
 import { getLocation } from "@/lib/locations";
 import { formatDateTime } from "@/lib/format";
 import { getSystemTimezone } from "@/lib/system-settings";
+import { listAuditFor } from "@/lib/audit";
 import { listCommentsFor } from "@/lib/ticket-comments";
 import { listLinksFor } from "@/lib/ticket-links";
 import { getTicketFor } from "@/lib/tickets";
@@ -162,6 +164,16 @@ export default async function AgentTicketPage({
                 // where they sit. Read here because the sidebar is a client component.
                 reporter={getUserProfile(ticket.created_by)}
               >
+                {/* Admin only. The trail names who did what, which is not something a
+                    technician needs to read about a colleague — it answers "what
+                    happened to this ticket" for somebody accountable for the answer. */}
+                {canAdminister(user.role) && (
+                  <AuditTrail
+                    entries={listAuditFor(id)}
+                    timezone={getSystemTimezone()}
+                  />
+                )}
+
                 {flags.feature_ticket_linking && (
                   <TicketLinks
                     compact

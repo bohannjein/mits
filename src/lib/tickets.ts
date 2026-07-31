@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import type { SessionUser } from "@/lib/auth/session";
+import { recordAudit } from "@/lib/audit";
 import { canViewBoard, toRole } from "@/lib/auth/roles";
 import { db, nextTicketNumber } from "@/lib/db/sqlite";
 import { getFormSchema } from "@/lib/form-schemas";
@@ -196,6 +197,16 @@ function collectFileIds(
   return ids;
 }
 
+/**
+ * Soft-deleted rows are invisible to every read.
+ *
+ * Named and appended by hand at each site rather than baked into SELECT_TICKET,
+ * because each caller adds its own WHERE and SQLite has no way to merge two. The
+ * upside is that `grep ALIVE src/lib/tickets.ts` audits the whole file: a read path
+ * without it is a deletion that appears not to have worked.
+ */
+const ALIVE = "deleted_at IS NULL";
+
 const SELECT_TICKET = `
   SELECT id, ticket_number, location_id, created_by, created_by_email, source,
          form_schema_id, title, payload, status, priority, assigned_to, created_at
@@ -205,7 +216,7 @@ const SELECT_TICKET = `
 /** Tickets the user owns. The only listing a plain `user` role can reach. */
 export function listOwnTickets(userId: string): MITSTicket[] {
   const rows = db
-    .prepare(`${SELECT_TICKET} WHERE created_by = ? ORDER BY created_at DESC`)
+    .prepare(`${SELECT_TICKET} WHERE ${ALIVE} AND created_by = ? ORDER BY created_at DESC`)
     .all(userId) as TicketRow[];
   return rows.map(rowToTicket);
 }
@@ -213,7 +224,7 @@ export function listOwnTickets(userId: string): MITSTicket[] {
 /** Every ticket — technician board and admin desk only. */
 export function listAllTickets(): MITSTicket[] {
   const rows = db
-    .prepare(`${SELECT_TICKET} ORDER BY created_at DESC`)
+    .prepare(`${SELECT_TICKET} WHERE ${ALIVE} ORDER BY created_at DESC`)
     .all() as TicketRow[];
   return rows.map(rowToTicket);
 }
@@ -232,7 +243,7 @@ export function listTicketsFor(user: SessionUser): MITSTicket[] {
  * a 403-versus-404 difference.
  */
 export function getTicketFor(id: string, user: SessionUser): MITSTicket | null {
-  const row = db.prepare(`${SELECT_TICKET} WHERE id = ?`).get(id) as
+  const row = db.prepare(`${SELECT_TICKET} WHERE ${ALIVE} AND id = ?`).get(id) as
     | TicketRow
     | undefined;
   if (!row) return null;
@@ -248,7 +259,8 @@ export function countTickets(): { total: number; open: number } {
     .prepare(
       `SELECT COUNT(*) AS total,
               SUM(CASE WHEN status IN (${OPEN_PLACEHOLDERS}) THEN 1 ELSE 0 END) AS open
-         FROM mits_ticket`,
+         FROM mits_ticket
+        WHERE ${ALIVE}`,
     )
     .get(...OPEN_TICKET_STATUSES) as { total: number; open: number | null };
   return { total: row.total, open: row.open ?? 0 };
@@ -304,7 +316,9 @@ export function searchTickets(
   filter: TicketFilter,
   user: SessionUser,
 ): MITSTicket[] {
-  const clauses: string[] = [];
+  // Seeded, not appended: an empty filter would otherwise produce no WHERE at all
+  // and return deleted tickets.
+  const clauses: string[] = [ALIVE];
   const params: unknown[] = [];
 
   if (!canViewBoard(user.role) || filter.ownOnly) {
@@ -365,7 +379,7 @@ export function searchTickets(
     params.push(`${filter.to}T23:59:59.999Z`);
   }
 
-  const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+  const where = `WHERE ${clauses.join(" AND ")}`;
 
   const rows = db
     .prepare(`${SELECT_TICKET} ${where} ORDER BY created_at DESC LIMIT 500`)
@@ -380,7 +394,7 @@ export function getTicketByNumberFor(
   user: SessionUser,
 ): MITSTicket | null {
   const row = db
-    .prepare(`${SELECT_TICKET} WHERE ticket_number = ?`)
+    .prepare(`${SELECT_TICKET} WHERE ${ALIVE} AND ticket_number = ?`)
     .get(ticketNumber) as TicketRow | undefined;
   if (!row) return null;
   // Same rule as getTicketFor: a foreign ticket answers null, not 403, so the
@@ -393,7 +407,7 @@ export function getTicketByNumberFor(
 export function listUnassignedTickets(): MITSTicket[] {
   const rows = db
     .prepare(
-      `${SELECT_TICKET} WHERE assigned_to IS NULL
+      `${SELECT_TICKET} WHERE ${ALIVE} AND assigned_to IS NULL
          AND status IN (${OPEN_PLACEHOLDERS})
          ORDER BY created_at ASC`,
     )
@@ -405,7 +419,7 @@ export function listUnassignedTickets(): MITSTicket[] {
 export function listAssignedTickets(agentId: string): MITSTicket[] {
   const rows = db
     .prepare(
-      `${SELECT_TICKET} WHERE assigned_to = ?
+      `${SELECT_TICKET} WHERE ${ALIVE} AND assigned_to = ?
          AND status IN (${OPEN_PLACEHOLDERS})
          ORDER BY created_at ASC`,
     )
@@ -422,9 +436,20 @@ export class TicketUpdateError extends Error {}
  * technician or admin: assigning to a plain user would put a ticket in a queue
  * that person cannot open.
  */
+/*
+ * The three mutators below take the acting user as a required parameter, not an
+ * optional one, so that recording *who* changed something cannot be skipped by a new
+ * call site. The audit row is written next to the UPDATE rather than in the action
+ * layer for the same reason: one door, and it is not optional.
+ *
+ * The old value is read before the write. Reading it afterwards would log the new value
+ * twice, which looks like a change from nothing and is the kind of wrong that only
+ * shows up when somebody actually needs the history.
+ */
 export function assignTicket(
   ticketId: string,
   assigneeId: string | null,
+  actor: SessionUser,
 ): MITSTicket {
   if (assigneeId) {
     const target = db
@@ -439,39 +464,84 @@ export function assignTicket(
     }
   }
 
+  const before = requireTicket(ticketId);
+
   db.prepare("UPDATE mits_ticket SET assigned_to = ? WHERE id = ?").run(
     assigneeId,
     ticketId,
   );
 
+  if (before.assigned_to !== assigneeId) {
+    recordAudit(ticketId, actor, assigneeId ? "assigned" : "unassigned", {
+      field: "assigned_to",
+      from: nameOf(before.assigned_to),
+      to: nameOf(assigneeId),
+    });
+  }
+
   return requireTicket(ticketId);
+}
+
+/** A display name for the log — an opaque id in a history nobody can read is noise. */
+function nameOf(userId: string | null): string {
+  if (!userId) return "";
+  const row = db
+    .prepare("SELECT name, email FROM user WHERE id = ?")
+    .get(userId) as { name: string | null; email: string } | undefined;
+  return row ? (row.name?.trim() || row.email) : userId;
 }
 
 export function setTicketStatus(
   ticketId: string,
   status: TicketStatus,
+  actor: SessionUser,
 ): MITSTicket {
+  const before = requireTicket(ticketId);
+
   db.prepare("UPDATE mits_ticket SET status = ? WHERE id = ?").run(
     status,
     ticketId,
   );
+
+  // Only a real change is logged. A dropdown re-set to its current value would
+  // otherwise fill the history with entries that say nothing happened.
+  if (before.status !== status) {
+    recordAudit(ticketId, actor, "status_changed", {
+      field: "status",
+      from: before.status,
+      to: status,
+    });
+  }
+
   return requireTicket(ticketId);
 }
 
 export function setTicketPriority(
   ticketId: string,
   priority: TicketPriority,
+  actor: SessionUser,
 ): MITSTicket {
+  const before = requireTicket(ticketId);
+
   db.prepare("UPDATE mits_ticket SET priority = ? WHERE id = ?").run(
     priority,
     ticketId,
   );
+
+  if (before.priority !== priority) {
+    recordAudit(ticketId, actor, "priority_changed", {
+      field: "priority",
+      from: before.priority,
+      to: priority,
+    });
+  }
+
   return requireTicket(ticketId);
 }
 
 /** Read back after a write, so the caller always gets the persisted row. */
 function requireTicket(ticketId: string): MITSTicket {
-  const row = db.prepare(`${SELECT_TICKET} WHERE id = ?`).get(ticketId) as
+  const row = db.prepare(`${SELECT_TICKET} WHERE ${ALIVE} AND id = ?`).get(ticketId) as
     | TicketRow
     | undefined;
   if (!row) throw new TicketUpdateError("Ticket nicht gefunden.");
@@ -490,14 +560,16 @@ export function todayCounts(): { opened: number; closed: number } {
 
   const opened = db
     .prepare(
-      "SELECT COUNT(*) AS count FROM mits_ticket WHERE substr(created_at, 1, 10) = ?",
+      `SELECT COUNT(*) AS count FROM mits_ticket
+        WHERE ${ALIVE} AND substr(created_at, 1, 10) = ?`,
     )
     .get(today) as { count: number };
 
   const closed = db
     .prepare(
       `SELECT COUNT(*) AS count FROM mits_ticket
-        WHERE status IN ('closed', 'resolved')
+        WHERE ${ALIVE}
+          AND status IN ('closed', 'resolved')
           AND substr(created_at, 1, 10) = ?`,
     )
     .get(today) as { count: number };

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { canViewBoard } from "@/lib/auth/roles";
 import { requireUser, type SessionUser } from "@/lib/auth/session";
@@ -9,6 +10,12 @@ import { ticketReplyMail } from "@/lib/mail-templates";
 import { TicketLinkError, addLink, removeLink } from "@/lib/ticket-links";
 import { sendNotification, ticketUrl } from "@/lib/smtp";
 import { CommentError, addComment } from "@/lib/ticket-comments";
+import {
+  TrashError,
+  restoreComment,
+  restoreTicket,
+  softDeleteTicket,
+} from "@/lib/trash";
 import {
   TicketUpdateError,
   assignTicket,
@@ -83,7 +90,7 @@ export async function assignTicketAction(
   const assigneeId = raw === "" || raw === "__none" ? null : raw;
 
   try {
-    assignTicket(ticketId, assigneeId);
+    assignTicket(ticketId, assigneeId, auth.user);
   } catch (error) {
     if (error instanceof TicketUpdateError) {
       return { ok: false, error: error.message };
@@ -113,7 +120,7 @@ export async function setTicketStatusAction(
   const status = TicketStatus.safeParse(formData.get("status"));
   if (!status.success) return { ok: false, error: "Unbekannter Status." };
 
-  setTicketStatus(ticketId, status.data);
+  setTicketStatus(ticketId, status.data, auth.user);
   revalidatePath(`/customer/tickets/${ticketId}`);
   revalidatePath(`/mits/tickets/${ticketId}`);
   revalidatePath("/mits");
@@ -133,7 +140,7 @@ export async function setTicketPriorityAction(
   const priority = TicketPriority.safeParse(formData.get("priority"));
   if (!priority.success) return { ok: false, error: "Unbekannte Priorität." };
 
-  setTicketPriority(ticketId, priority.data);
+  setTicketPriority(ticketId, priority.data, auth.user);
   revalidatePath(`/customer/tickets/${ticketId}`);
   revalidatePath(`/mits/tickets/${ticketId}`);
   revalidatePath("/mits");
@@ -194,7 +201,7 @@ export async function replyAndCloseAction(
     throw error;
   }
 
-  setTicketStatus(ticketId, "closed");
+  setTicketStatus(ticketId, "closed", auth.user);
 
   revalidatePath(`/customer/tickets/${ticketId}`);
   revalidatePath(`/mits/tickets/${ticketId}`);
@@ -332,4 +339,90 @@ export async function addCommentAction(
         ? "Interne Notiz gespeichert — für den Melder nicht sichtbar."
         : "Antwort gespeichert.",
   };
+}
+
+/* ── Trash ──────────────────────────────────────────────────────────────── */
+
+/**
+ * Move a ticket to the trash.
+ *
+ * `authorize(..., true)` for staff, and `softDeleteTicket` checks the role again — not
+ * redundant paranoia but the same rule as everywhere else here: this action is
+ * reachable as a POST to any route it is used from, and the library function is
+ * reachable from a future caller that forgets.
+ *
+ * Redirects rather than returning a result. The page the agent is on renders a ticket
+ * that no longer passes `getTicketFor`, so staying would show a 404 — the queue is
+ * where they belong afterwards.
+ */
+export async function softDeleteTicketAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, true);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  try {
+    softDeleteTicket(ticketId, auth.user);
+  } catch (error) {
+    if (error instanceof TrashError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath("/mits");
+  revalidatePath("/admin/settings/data");
+  redirect("/mits");
+}
+
+/** Bring one back. Called from the trash view, which is admin-only. */
+export async function restoreTicketAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const user = await requireUser("/admin/settings/data");
+  if (!canViewBoard(user.role)) {
+    return { ok: false, error: "Diese Aktion ist der Technik vorbehalten." };
+  }
+
+  const ticketId = String(formData.get("ticketId") ?? "");
+
+  try {
+    restoreTicket(ticketId, user);
+  } catch (error) {
+    if (error instanceof TrashError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath("/mits");
+  revalidatePath("/admin/settings/data");
+  revalidatePath(`/mits/tickets/${ticketId}`);
+
+  return { ok: true, message: "Ticket wiederhergestellt." };
+}
+
+export async function restoreCommentAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const user = await requireUser("/admin/settings/data");
+  if (!canViewBoard(user.role)) {
+    return { ok: false, error: "Diese Aktion ist der Technik vorbehalten." };
+  }
+
+  const commentId = String(formData.get("commentId") ?? "");
+
+  let result;
+  try {
+    result = restoreComment(commentId, user);
+  } catch (error) {
+    if (error instanceof TrashError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath("/admin/settings/data");
+  revalidatePath(`/mits/tickets/${result.ticketId}`);
+  revalidatePath(`/customer/tickets/${result.ticketId}`);
+
+  return { ok: true, message: "Beitrag wiederhergestellt." };
 }

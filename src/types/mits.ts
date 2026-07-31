@@ -310,6 +310,68 @@ export const CANNED_PLACEHOLDERS = [
 ] as const;
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Audit trail.
+
+   What happened to a ticket, in a table nothing ever updates. The actions are a
+   closed set: an open string would let two call sites spell the same event
+   differently and the history would stop being groupable.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const AuditAction = z.enum([
+  "status_changed",
+  "priority_changed",
+  "assigned",
+  "unassigned",
+  "comment_added",
+  "comment_deleted",
+  "comment_restored",
+  "ticket_deleted",
+  "ticket_restored",
+  "attachment_deleted",
+  "link_added",
+  "link_removed",
+]);
+export type AuditAction = z.infer<typeof AuditAction>;
+
+export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
+  status_changed: "Status geändert",
+  priority_changed: "Priorität geändert",
+  assigned: "Zugewiesen",
+  unassigned: "Zuweisung entfernt",
+  comment_added: "Beitrag hinzugefügt",
+  comment_deleted: "Beitrag gelöscht",
+  comment_restored: "Beitrag wiederhergestellt",
+  ticket_deleted: "Ticket gelöscht",
+  ticket_restored: "Ticket wiederhergestellt",
+  attachment_deleted: "Anhang gelöscht",
+  link_added: "Verknüpfung gesetzt",
+  link_removed: "Verknüpfung entfernt",
+};
+
+export const AuditEntrySchema = z.object({
+  id: z.string(),
+  ticket_id: z.string(),
+  actor_id: z.string(),
+  actor_email: z.string(),
+  /**
+   * Parsed leniently: an entry written by a future version carries an action this
+   * build does not know, and a strict enum would make the whole history unreadable
+   * rather than showing one unfamiliar line. A log that refuses to render is worse
+   * than a log with a row you cannot label.
+   */
+  action: z.string(),
+  field: z.string().default(""),
+  old_value: z.string().default(""),
+  new_value: z.string().default(""),
+  created_at: z.coerce.date(),
+});
+export type AuditEntry = z.infer<typeof AuditEntrySchema>;
+
+/** The label for a stored action, or the raw value when it is unknown. */
+export const auditLabel = (action: string): string =>
+  AUDIT_ACTION_LABELS[action as AuditAction] ?? action;
+
+/* ──────────────────────────────────────────────────────────────────────────
    Mail ingest.
 
    Only the Defender rule's settings so far. The transport — IMAP, or a Graph app

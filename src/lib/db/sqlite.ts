@@ -169,6 +169,24 @@ function migrateAppTables(database: Database.Database): void {
       ON mits_ticket_link (from_ticket, to_ticket);
     CREATE INDEX IF NOT EXISTS idx_mits_link_to
       ON mits_ticket_link (to_ticket);
+
+    -- Immutable change history per ticket. Append only: nothing in the application
+    -- issues an UPDATE or a DELETE against this table, which is the whole point of
+    -- keeping it separate from the rows it describes.
+    CREATE TABLE IF NOT EXISTS mits_audit_log (
+      id          TEXT PRIMARY KEY,
+      ticket_id   TEXT NOT NULL,
+      actor_id    TEXT NOT NULL,
+      actor_email TEXT NOT NULL,
+      action      TEXT NOT NULL,
+      field       TEXT NOT NULL DEFAULT '',
+      old_value   TEXT NOT NULL DEFAULT '',
+      new_value   TEXT NOT NULL DEFAULT '',
+      created_at  TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mits_audit_ticket
+      ON mits_audit_log (ticket_id, created_at);
   `);
 
   addColumns(database);
@@ -303,6 +321,18 @@ function addColumns(database: Database.Database): void {
       column: "body_format",
       definition: "TEXT NOT NULL DEFAULT 'text'",
     },
+    /*
+     * Soft delete. NULL means alive; a timestamp means somebody removed it and it is
+     * to be excluded from every read.
+     *
+     * Nullable with no default on purpose — the alternative would be a boolean, and a
+     * boolean cannot answer "when", which is what a restore view and a retention
+     * policy both need. Every existing row gets NULL, which is correct: nothing was
+     * deleted before the column existed.
+     */
+    { table: "mits_ticket", column: "deleted_at", definition: "TEXT" },
+    { table: "mits_ticket_comment", column: "deleted_at", definition: "TEXT" },
+    { table: "mits_upload", column: "deleted_at", definition: "TEXT" },
   ];
 
   for (const { table, column, definition } of additions) {

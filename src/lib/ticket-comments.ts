@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
+import { recordAudit } from "@/lib/audit";
 import { canViewBoard } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/sqlite";
@@ -48,6 +49,9 @@ function rowToComment(row: CommentRow): TicketComment {
 
 export class CommentError extends Error {}
 
+/** Same rule as tickets: a soft-deleted comment is invisible to every read. */
+const ALIVE = "deleted_at IS NULL";
+
 const SELECT = `
   SELECT id, ticket_id, author_id, author_email, author_name,
          author_is_agent, visibility, body, body_format, created_at
@@ -67,11 +71,11 @@ export function listCommentsFor(
 ): TicketComment[] {
   const rows = canViewBoard(user.role)
     ? (db
-        .prepare(`${SELECT} WHERE ticket_id = ? ORDER BY created_at ASC`)
+        .prepare(`${SELECT} WHERE ${ALIVE} AND ticket_id = ? ORDER BY created_at ASC`)
         .all(ticketId) as CommentRow[])
     : (db
         .prepare(
-          `${SELECT} WHERE ticket_id = ? AND visibility = 'public'
+          `${SELECT} WHERE ${ALIVE} AND ticket_id = ? AND visibility = 'public'
              ORDER BY created_at ASC`,
         )
         .all(ticketId) as CommentRow[]);
@@ -165,6 +169,16 @@ export function addComment(
       ).run(row);
 
       linkUploadsToTicket(embedded, ticketId, user);
+
+      /*
+       * Inside the transaction, so a comment cannot exist without its history entry.
+       * The body is not copied into the log — it is already stored, and duplicating it
+       * would double the space for every reply and make the log the second place a
+       * correction has to reach.
+       */
+      recordAudit(ticketId, user, "comment_added", {
+        field: visibility === "internal" ? "interne Notiz" : "Antwort",
+      });
     })();
   } catch (error) {
     if (error instanceof UploadError) throw new CommentError(error.message);
@@ -179,7 +193,7 @@ export function countPublicComments(ticketId: string): number {
   const row = db
     .prepare(
       `SELECT COUNT(*) AS count FROM mits_ticket_comment
-        WHERE ticket_id = ? AND visibility = 'public'`,
+        WHERE ${ALIVE} AND ticket_id = ? AND visibility = 'public'`,
     )
     .get(ticketId) as { count: number };
   return row.count;

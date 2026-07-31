@@ -232,9 +232,11 @@ export function openUploadFor(
   user: SessionUser,
   canSeeTicket?: (ticketId: string) => boolean,
 ): ReadableUpload | null {
-  const row = db.prepare("SELECT * FROM mits_upload WHERE id = ?").get(id) as
-    | UploadRow
-    | undefined;
+  // A soft-deleted upload is not readable, so a removed attachment stops being
+  // served even though the blob is still on disk for a later restore.
+  const row = db
+    .prepare("SELECT * FROM mits_upload WHERE deleted_at IS NULL AND id = ?")
+    .get(id) as UploadRow | undefined;
   if (!row) return null;
 
   /*
@@ -285,7 +287,7 @@ export function unusableFaqAttachments(fileIds: string[]): string[] {
   if (fileIds.length === 0) return [];
 
   const select = db.prepare(
-    "SELECT scope FROM mits_upload WHERE id = ?",
+    "SELECT scope FROM mits_upload WHERE deleted_at IS NULL AND id = ?",
   );
 
   return fileIds.filter((id) => {
@@ -308,7 +310,7 @@ export function linkUploadsToTicket(
   if (fileIds.length === 0) return;
 
   const select = db.prepare(
-    "SELECT id, owner_id, ticket_id FROM mits_upload WHERE id = ?",
+    "SELECT id, owner_id, ticket_id FROM mits_upload WHERE deleted_at IS NULL AND id = ?",
   );
   const update = db.prepare("UPDATE mits_upload SET ticket_id = ? WHERE id = ?");
 

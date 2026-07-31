@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import type { SessionUser } from "@/lib/auth/session";
+import { recordAudit } from "@/lib/audit";
 import { db } from "@/lib/db/sqlite";
 import { getTicketFor } from "@/lib/tickets";
 import {
@@ -121,7 +122,11 @@ export function addLink(
   if (!from) throw new TicketLinkError("Ticket nicht gefunden.");
 
   const target = db
-    .prepare("SELECT id FROM mits_ticket WHERE ticket_number = ?")
+    .prepare(
+      // A deleted ticket cannot be linked to: it would render as a dead row in the
+      // relations card of whatever it was attached to.
+      "SELECT id FROM mits_ticket WHERE deleted_at IS NULL AND ticket_number = ?",
+    )
     .get(targetNumber) as { id: string } | undefined;
 
   // Same answer for "no such number" and "not yours", so the number space cannot
@@ -168,6 +173,20 @@ export function addLink(
      VALUES (@id, @from_ticket, @to_ticket, @kind, @created_by, @created_at)`,
   ).run(row);
 
+  /*
+   * Logged on both tickets. A relation is a fact about the pair, and an agent looking
+   * at the other one has to be able to see where it came from — a history that only
+   * exists on the side somebody happened to act from is half a history.
+   */
+  recordAudit(from.id, user, "link_added", {
+    field: TICKET_LINK_LABELS[parsedKind.data],
+    to: formatTicketNumber(to.ticket_number),
+  });
+  recordAudit(to.id, user, "link_added", {
+    field: TICKET_LINK_INVERSE_LABELS[parsedKind.data],
+    to: formatTicketNumber(from.ticket_number),
+  });
+
   return {
     id: row.id,
     label: TICKET_LINK_LABELS[parsedKind.data],
@@ -202,4 +221,8 @@ export function removeLink(
   if (result.changes === 0) {
     throw new TicketLinkError("Verknüpfung nicht gefunden.");
   }
+
+  // Only on the ticket it was removed from: the row is gone, so the other id is no
+  // longer available to log against without a second lookup for no benefit.
+  recordAudit(ticketId, user, "link_removed", { field: linkId });
 }

@@ -8,6 +8,7 @@ import {
   MailIcon,
   MapPinIcon,
   PhoneIcon,
+  Trash2Icon,
   TriangleAlertIcon,
   UserCheckIcon,
 } from "lucide-react";
@@ -17,6 +18,7 @@ import {
   assignTicketAction,
   setTicketPriorityAction,
   setTicketStatusAction,
+  softDeleteTicketAction,
 } from "@/app/actions/tickets";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -105,6 +107,10 @@ export function TicketSidebar({
   );
   const [assignResult, assignAction, assigning] = useActionState(
     assignTicketAction,
+    null,
+  );
+  const [deleteResult, deleteAction, deleting] = useActionState(
+    softDeleteTicketAction,
     null,
   );
 
@@ -337,6 +343,44 @@ export function TicketSidebar({
       )}
 
       {children}
+
+      {/*
+        Deleting is a soft delete: `deleted_at` is set, every read filters on it, and
+        the row stays for the trash view. Said out loud in the button's own text,
+        because "Löschen" that is reversible and "Löschen" that is not are different
+        promises and the agent is entitled to know which one this is.
+      */}
+      <form action={deleteAction} className="grid gap-2">
+        <input type="hidden" name="ticketId" value={ticket.id} />
+        {deleteResult && !deleteResult.ok && (
+          <Alert
+            variant="destructive"
+            className="rounded-2xl border-border px-3 py-2"
+          >
+            <TriangleAlertIcon strokeWidth={1.5} />
+            <AlertDescription className="text-xs">
+              {deleteResult.error}
+            </AlertDescription>
+          </Alert>
+        )}
+        <Button
+          type="submit"
+          variant="ghost"
+          size="sm"
+          disabled={deleting}
+          className="h-9 w-full justify-start rounded-xl px-3 text-xs text-muted-foreground hover:text-destructive"
+        >
+          {deleting ? (
+            <Loader2Icon className="animate-spin" />
+          ) : (
+            <Trash2Icon strokeWidth={1.5} />
+          )}
+          In den Papierkorb
+        </Button>
+        <p className="px-3 text-[11px] text-muted-foreground">
+          Wiederherstellbar unter Daten &amp; Aufbewahrung.
+        </p>
+      </form>
     </div>
   );
 }

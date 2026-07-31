@@ -120,7 +120,9 @@ export function ticketCountsByLocation(): Record<string, number> {
     .prepare(
       `SELECT location_id AS id, COUNT(*) AS count
          FROM mits_ticket
-        WHERE location_id IS NOT NULL
+        -- Soft-deleted tickets do not count towards a branch's load.
+        WHERE deleted_at IS NULL
+          AND location_id IS NOT NULL
         GROUP BY location_id`,
     )
     .all() as { id: string; count: number }[];
