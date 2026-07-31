@@ -1,13 +1,16 @@
 "use client";
 
+import { Reorder, useDragControls, useReducedMotion } from "framer-motion";
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
   CheckCircle2Icon,
-  ChevronDownIcon,
-  ChevronUpIcon,
   EyeIcon,
+  GripVerticalIcon,
   Loader2Icon,
   PlusIcon,
   SaveIcon,
+  SlidersHorizontalIcon,
   Trash2Icon,
   TriangleAlertIcon,
 } from "lucide-react";
@@ -38,21 +41,40 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  FormOptionsProvider,
+  type FormFieldOptions,
+} from "@/lib/forms/registry";
 import { ICON_NAMES } from "@/lib/icons";
+import { cn } from "@/lib/utils";
 import type {
+  MITSFieldUIHint,
   MITSFieldWidget,
   MITSFormSchema,
   MITSTicketDraft,
 } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Split-screen form builder.
+   Form builder: canvas, inspector, live preview.
 
-   Left: the schema, editable either field by field or as raw JSON. Right: the
-   real <SchemaForm> rendering that schema. The preview is not a mock-up — it is
-   the same component and the same compiler the intake uses, so what passes here
-   passes in production.
+   Left: the field canvas — drag to reorder, click to select. Right: the inspector
+   for whatever is selected, above a preview rendered by the real <SchemaForm> with
+   the real compiler. The preview is not a mock-up, so a form that works here works
+   in the intake.
+
+   Two things this file is careful about:
+
+   - **The output has to stay valid JSON Schema.** It is handed to Ollama as the
+     extraction target, so presentation-only settings go to `uiHints` and never into
+     `schema`. A cascading field keeps the union of its mapped values as its own
+     `enum` for exactly that reason.
+   - **Renaming a field rewrites everything that points at it.** The property, its
+     hint, its `required` entry and any condition referencing it. A rename that left
+     a condition pointing at a name that no longer exists would hide the dependent
+     field forever, with nothing on screen to explain why.
    ────────────────────────────────────────────────────────────────────────── */
+
+const SPRING = { type: "spring" as const, stiffness: 520, damping: 38 };
 
 /** Widgets offered in the builder, with the JSON Schema each one produces. */
 const FIELD_TYPES: {
@@ -65,6 +87,11 @@ const FIELD_TYPES: {
   { widget: "number", label: "Zahl", build: (title) => ({ type: "integer", title, minimum: 0 }) },
   { widget: "email", label: "E-Mail", build: (title) => ({ type: "string", title, format: "email" }) },
   { widget: "date", label: "Datum", build: (title) => ({ type: "string", title, format: "date" }) },
+  {
+    widget: "datetime",
+    label: "Datum & Zeit",
+    build: (title) => ({ type: "string", title, format: "date-time" }),
+  },
   {
     widget: "select",
     label: "Auswahl (eine)",
@@ -87,6 +114,16 @@ const FIELD_TYPES: {
   { widget: "checkbox", label: "Checkbox", build: (title) => ({ type: "boolean", title }) },
   { widget: "switch", label: "Schalter", build: (title) => ({ type: "boolean", title }) },
   {
+    widget: "location",
+    label: "Standort",
+    build: (title) => ({ type: "string", title, maxLength: 64 }),
+  },
+  {
+    widget: "user",
+    label: "Person",
+    build: (title) => ({ type: "string", title, maxLength: 64 }),
+  },
+  {
     widget: "file",
     label: "Datei-Anhang",
     build: (title) => ({
@@ -97,6 +134,10 @@ const FIELD_TYPES: {
     }),
   },
 ];
+
+const WIDGET_LABELS: Record<string, string> = Object.fromEntries(
+  FIELD_TYPES.map((type) => [type.widget, type.label]),
+);
 
 const EMPTY_SCHEMA: MITSFormSchema = {
   id: "",
@@ -113,15 +154,26 @@ const EMPTY_SCHEMA: MITSFormSchema = {
 
 export function SchemaBuilder({
   existing,
+  /**
+   * `feature_advanced_form_builder`. Gates *authoring* of conditions and cascades,
+   * never their evaluation — see the note rendered in the inspector.
+   */
+  advanced = true,
+  /** Live choices so the preview's location and person pickers are populated. */
+  fieldOptions = { locations: [], users: [] },
 }: {
   /** Schemas already in effect, so one can be loaded for editing. */
   existing: { id: string; title: string; builtIn: boolean }[];
+  advanced?: boolean;
+  fieldOptions?: FormFieldOptions;
 }) {
   const [draft, setDraft] = useState<MITSFormSchema>(EMPTY_SCHEMA);
   const [jsonText, setJsonText] = useState(() => pretty(EMPTY_SCHEMA));
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, formAction, saving] = useActionState(saveFormSchemaAction, null);
+  const reduced = useReducedMotion();
 
   /** Replace the whole draft and re-render the JSON pane from it. */
   const applyDraft = (next: MITSFormSchema) => {
@@ -152,6 +204,7 @@ export function SchemaBuilder({
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = (await response.json()) as { schema: MITSFormSchema };
       applyDraft(body.schema);
+      setSelected(null);
     } catch {
       setJsonError("Schema konnte nicht geladen werden.");
     } finally {
@@ -159,118 +212,207 @@ export function SchemaBuilder({
     }
   };
 
-  const fields = Object.entries(draft.schema?.properties ?? {});
+  const properties = draft.schema?.properties ?? {};
   const required = new Set(draft.schema?.required ?? []);
+
+  /*
+   * Canvas order. `uiHints.order` wins when present so a drag survives a
+   * round-trip through the JSON pane; property order is the fallback, which is
+   * what a hand-written schema without any hints relies on.
+   */
+  const order = useMemo(() => {
+    const names = Object.keys(properties);
+    return names
+      .map((name, index) => ({
+        name,
+        order: draft.uiHints?.[name]?.order ?? index + 1,
+      }))
+      .sort((a, b) => a.order - b.order)
+      .map((entry) => entry.name);
+  }, [properties, draft.uiHints]);
+
+  // A field removed in the JSON pane must not stay selected, or the inspector
+  // edits a property that no longer exists.
+  useEffect(() => {
+    if (selected && !(selected in properties)) setSelected(null);
+  }, [selected, properties]);
+
+  const writeOrder = (names: string[]) => {
+    const uiHints = { ...(draft.uiHints ?? {}) };
+    names.forEach((name, index) => {
+      uiHints[name] = { ...(uiHints[name] ?? {}), order: index + 1 };
+    });
+    applyDraft({ ...draft, uiHints });
+  };
+
+  const moveField = (name: string, delta: -1 | 1) => {
+    const from = order.indexOf(name);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= order.length) return;
+    const next = [...order];
+    [next[from], next[to]] = [next[to], next[from]];
+    writeOrder(next);
+  };
 
   const addField = (widget: MITSFieldWidget) => {
     const type = FIELD_TYPES.find((entry) => entry.widget === widget);
     if (!type) return;
 
     const name = uniqueFieldName(draft, widget);
-    const next: MITSFormSchema = {
+    applyDraft({
       ...draft,
       schema: {
         ...draft.schema,
         type: "object",
-        properties: {
-          ...(draft.schema?.properties ?? {}),
-          [name]: type.build("Neues Feld"),
-        },
+        properties: { ...properties, [name]: type.build("Neues Feld") },
       },
       uiHints: {
         ...(draft.uiHints ?? {}),
-        [name]: { widget, order: fields.length + 1 },
+        [name]: { widget, order: order.length + 1 },
       },
-    };
-    applyDraft(next);
-  };
-
-  const updateField = (
-    name: string,
-    change: { title?: string; required?: boolean; placeholder?: string; options?: string },
-  ) => {
-    const property = draft.schema?.properties?.[name];
-    if (!property || typeof property !== "object") return;
-
-    const nextProperty: JSONSchema7 = { ...property };
-    if (change.title !== undefined) nextProperty.title = change.title;
-
-    if (change.options !== undefined) {
-      const values = change.options
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter(Boolean);
-      if (nextProperty.type === "array") {
-        nextProperty.items = { type: "string", enum: values };
-      } else {
-        nextProperty.enum = values;
-      }
-    }
-
-    const nextRequired = new Set(required);
-    if (change.required === true) nextRequired.add(name);
-    if (change.required === false) nextRequired.delete(name);
-
-    applyDraft({
-      ...draft,
-      schema: {
-        ...draft.schema,
-        required: [...nextRequired],
-        properties: { ...(draft.schema?.properties ?? {}), [name]: nextProperty },
-      },
-      uiHints:
-        change.placeholder === undefined
-          ? draft.uiHints
-          : {
-              ...(draft.uiHints ?? {}),
-              [name]: { ...(draft.uiHints?.[name] ?? {}), placeholder: change.placeholder },
-            },
     });
+    setSelected(name);
   };
 
   const removeField = (name: string) => {
-    const properties = { ...(draft.schema?.properties ?? {}) };
-    delete properties[name];
+    const nextProperties = { ...properties };
+    delete nextProperties[name];
     const uiHints = { ...(draft.uiHints ?? {}) };
     delete uiHints[name];
+
+    // Anything that pointed at the removed field loses its condition rather than
+    // keeping a reference to a name that is gone — a dangling `visibleWhen` would
+    // hide its field permanently with no way to see why.
+    for (const [key, hint] of Object.entries(uiHints)) {
+      if (hint.visibleWhen?.field === name) {
+        uiHints[key] = { ...hint, visibleWhen: undefined };
+      }
+      if (hint.optionsFrom?.field === name) {
+        uiHints[key] = { ...uiHints[key], optionsFrom: undefined };
+      }
+    }
 
     applyDraft({
       ...draft,
       schema: {
         ...draft.schema,
-        properties,
-        required: (draft.schema?.required ?? []).filter((entry) => entry !== name),
+        properties: nextProperties,
+        required: [...required].filter((entry) => entry !== name),
       },
       uiHints,
     });
+    if (selected === name) setSelected(null);
   };
 
-  const moveField = (name: string, direction: -1 | 1) => {
-    const order = fields.map(([key]) => key);
-    const from = order.indexOf(name);
-    const to = from + direction;
-    if (from < 0 || to < 0 || to >= order.length) return;
-    [order[from], order[to]] = [order[to], order[from]];
+  /** Move a property to a new name, carrying everything that references it. */
+  const renameField = (from: string, to: string) => {
+    const target = to.trim();
+    if (!target || target === from || target in properties) return;
 
-    // Order is expressed through uiHints, so the JSON Schema property order stays
-    // untouched and the change survives a round-trip through the JSON pane.
-    const uiHints = { ...(draft.uiHints ?? {}) };
-    order.forEach((key, index) => {
-      uiHints[key] = { ...(uiHints[key] ?? {}), order: index + 1 };
+    const nextProperties: Record<string, JSONSchema7 | boolean> = {};
+    for (const [key, value] of Object.entries(properties)) {
+      nextProperties[key === from ? target : key] = value;
+    }
+
+    const uiHints: Record<string, MITSFieldUIHint> = {};
+    for (const [key, hint] of Object.entries(draft.uiHints ?? {})) {
+      const moved: MITSFieldUIHint = { ...hint };
+      if (moved.visibleWhen?.field === from) {
+        moved.visibleWhen = { ...moved.visibleWhen, field: target };
+      }
+      if (moved.optionsFrom?.field === from) {
+        moved.optionsFrom = { ...moved.optionsFrom, field: target };
+      }
+      uiHints[key === from ? target : key] = moved;
+    }
+
+    applyDraft({
+      ...draft,
+      schema: {
+        ...draft.schema,
+        properties: nextProperties,
+        required: [...required].map((entry) => (entry === from ? target : entry)),
+      },
+      uiHints,
     });
-    applyDraft({ ...draft, uiHints });
+    setSelected(target);
   };
 
-  // A save is only meaningful once the form has an id and at least one field.
+  const patchProperty = (name: string, patch: Partial<JSONSchema7>) => {
+    const property = properties[name];
+    if (typeof property !== "object" || property === null) return;
+    applyDraft({
+      ...draft,
+      schema: {
+        ...draft.schema,
+        properties: { ...properties, [name]: { ...property, ...patch } },
+      },
+    });
+  };
+
+  const patchHint = (name: string, patch: Partial<MITSFieldUIHint>) => {
+    const merged: MITSFieldUIHint = {
+      ...(draft.uiHints?.[name] ?? {}),
+      ...patch,
+    };
+    // Explicit undefined means "clear it"; leaving the key in place would emit
+    // `"visibleWhen": undefined`, which is not valid JSON.
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) delete merged[key as keyof MITSFieldUIHint];
+    }
+    applyDraft({
+      ...draft,
+      uiHints: { ...(draft.uiHints ?? {}), [name]: merged },
+    });
+  };
+
+  const setRequired = (name: string, value: boolean) => {
+    const next = new Set(required);
+    if (value) next.add(name);
+    else next.delete(name);
+    applyDraft({
+      ...draft,
+      schema: { ...draft.schema, required: [...next] },
+    });
+  };
+
+  /** Options for an enum field, written back in the shape its type demands. */
+  const setOptions = (name: string, values: string[]) => {
+    const property = properties[name];
+    if (typeof property !== "object" || property === null) return;
+
+    const next: JSONSchema7 = { ...property };
+    if (next.type === "array") {
+      next.items = { type: "string", enum: values };
+    } else {
+      next.enum = values;
+    }
+    patchProperty(name, next);
+  };
+
+  /**
+   * Store a cascade and mirror its value union into the field's own enum.
+   *
+   * Without the mirror the property would carry no `enum` at all: the browser
+   * would still narrow correctly, but the schema handed to Ollama would describe a
+   * free-text field and the model would invent values nothing accepts.
+   */
+  const setCascade = (name: string, field: string, map: Record<string, string[]>) => {
+    const union = [...new Set(Object.values(map).flat())];
+    setOptions(name, union);
+    patchHint(name, { optionsFrom: { field, map } });
+  };
+
   const idPattern = /^[a-z0-9][a-z0-9-]{1,48}$/;
   const idValid = idPattern.test(draft.id);
+  const fieldCount = order.length;
   const canSave =
-    !jsonError && idValid && draft.title.trim().length > 0 && fields.length > 0;
+    !jsonError && idValid && draft.title.trim().length > 0 && fieldCount > 0;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-      {/* ── left: configurator ─────────────────────────────────────────── */}
-      <div className="grid gap-5">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
+      {/* ── left: header, canvas, palette, JSON ────────────────────────── */}
+      <div className="grid min-w-0 gap-5">
         <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
           <CardHeader>
             <CardTitle className="text-lg font-medium">Formular</CardTitle>
@@ -298,7 +440,7 @@ export function SchemaBuilder({
               </div>
             )}
 
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="schema-id">ID</Label>
                 <Input
@@ -367,7 +509,7 @@ export function SchemaBuilder({
               />
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label>Icon</Label>
                 <Select
@@ -401,115 +543,42 @@ export function SchemaBuilder({
           </CardContent>
         </Card>
 
+        {/* ── canvas ──────────────────────────────────────────────────── */}
         <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
           <CardHeader>
-            <CardTitle className="text-lg font-medium">Felder</CardTitle>
+            <CardTitle className="text-lg font-medium">Canvas</CardTitle>
             <CardDescription>
-              {fields.length === 0
+              {fieldCount === 0
                 ? "Noch keine Felder — unten einen Typ hinzufügen."
-                : `${fields.length} Feld${fields.length === 1 ? "" : "er"}.`}
+                : "Ziehen ordnet um, Klick öffnet das Feld im Inspektor."}
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
-            {fields.map(([name, property], index) => {
-              const schemaProperty =
-                typeof property === "object" && property !== null ? property : {};
-              const widget = draft.uiHints?.[name]?.widget;
-              const enumValues =
-                (schemaProperty.enum as string[] | undefined) ??
-                (typeof schemaProperty.items === "object" &&
-                schemaProperty.items !== null &&
-                !Array.isArray(schemaProperty.items)
-                  ? ((schemaProperty.items as JSONSchema7).enum as string[] | undefined)
-                  : undefined);
-
-              return (
-                <div key={name} className="grid gap-3 rounded-2xl border border-border p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="rounded-full">
-                        {name}
-                      </Badge>
-                      {widget && (
-                        <Badge variant="secondary" className="rounded-full">
-                          {widget}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        aria-label="nach oben"
-                        disabled={index === 0}
-                        onClick={() => moveField(name, -1)}
-                      >
-                        <ChevronUpIcon />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        aria-label="nach unten"
-                        disabled={index === fields.length - 1}
-                        onClick={() => moveField(name, 1)}
-                      >
-                        <ChevronDownIcon />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        aria-label={`${name} entfernen`}
-                        onClick={() => removeField(name)}
-                      >
-                        <Trash2Icon />
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor={`title-${name}`}>Beschriftung</Label>
-                    <Input
-                      id={`title-${name}`}
-                      value={schemaProperty.title ?? ""}
-                      className="h-10 rounded-xl"
-                      onChange={(event) =>
-                        updateField(name, { title: event.target.value })
-                      }
-                    />
-                  </div>
-
-                  {enumValues && (
-                    <div className="grid gap-2">
-                      <Label htmlFor={`options-${name}`}>
-                        Optionen (kommagetrennt)
-                      </Label>
-                      <Input
-                        id={`options-${name}`}
-                        defaultValue={enumValues.join(", ")}
-                        className="h-10 rounded-xl font-mono"
-                        onBlur={(event) =>
-                          updateField(name, { options: event.target.value })
-                        }
-                      />
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-3">
-                    <Switch
-                      id={`required-${name}`}
-                      checked={required.has(name)}
-                      onCheckedChange={(checked) =>
-                        updateField(name, { required: checked === true })
-                      }
-                    />
-                    <Label htmlFor={`required-${name}`}>Pflichtfeld</Label>
-                  </div>
-                </div>
-              );
-            })}
+            {fieldCount > 0 && (
+              <Reorder.Group
+                axis="y"
+                values={order}
+                onReorder={writeOrder}
+                className="grid list-none gap-2"
+              >
+                {order.map((name, index) => (
+                  <CanvasRow
+                    key={name}
+                    name={name}
+                    index={index}
+                    total={fieldCount}
+                    property={properties[name]}
+                    hint={draft.uiHints?.[name]}
+                    required={required.has(name)}
+                    selected={selected === name}
+                    reduced={reduced === true}
+                    onSelect={() => setSelected(name)}
+                    onMove={(delta) => moveField(name, delta)}
+                    onRemove={() => removeField(name)}
+                  />
+                ))}
+              </Reorder.Group>
+            )}
 
             <Separator className="bg-border" />
 
@@ -546,7 +615,7 @@ export function SchemaBuilder({
             <Textarea
               value={jsonText}
               onChange={(event) => onJsonChange(event.target.value)}
-              rows={18}
+              rows={16}
               spellCheck={false}
               className="rounded-xl font-mono text-xs"
               aria-label="Schema als JSON"
@@ -592,25 +661,476 @@ export function SchemaBuilder({
         </form>
       </div>
 
-      {/* ── right: live preview ────────────────────────────────────────── */}
-      <div className="lg:sticky lg:top-6">
+      {/* ── right: inspector above preview ─────────────────────────────── */}
+      <div className="grid gap-5 lg:sticky lg:top-6">
+        <FieldInspector
+          name={selected}
+          property={selected ? properties[selected] : undefined}
+          hint={selected ? draft.uiHints?.[selected] : undefined}
+          required={selected ? required.has(selected) : false}
+          siblings={order.filter((name) => name !== selected)}
+          advanced={advanced}
+          onRename={renameField}
+          onProperty={patchProperty}
+          onHint={patchHint}
+          onRequired={setRequired}
+          onOptions={setOptions}
+          onCascade={setCascade}
+        />
+
         <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-2">
           <CardHeader>
             <EyeIcon className="size-5 text-primary" aria-hidden />
             <CardTitle className="mt-4 text-lg font-medium">Live-Vorschau</CardTitle>
             <CardDescription>
               Gerendert von derselben <code>&lt;SchemaForm /&gt;</code> wie im
-              Ticket-Eingang. Absenden ist hier abgeschaltet.
+              Ticket-Eingang. Bedingungen greifen hier genauso. Absenden ist
+              abgeschaltet.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <SchemaPreview draft={draft} />
+            <FormOptionsProvider options={fieldOptions}>
+              <SchemaPreview draft={draft} />
+            </FormOptionsProvider>
           </CardContent>
         </Card>
       </div>
     </div>
   );
 }
+
+/* ── canvas row ─────────────────────────────────────────────────────────── */
+
+function CanvasRow({
+  name,
+  index,
+  total,
+  property,
+  hint,
+  required,
+  selected,
+  reduced,
+  onSelect,
+  onMove,
+  onRemove,
+}: {
+  name: string;
+  index: number;
+  total: number;
+  property: JSONSchema7 | boolean | undefined;
+  hint: MITSFieldUIHint | undefined;
+  required: boolean;
+  selected: boolean;
+  reduced: boolean;
+  onSelect: () => void;
+  onMove: (delta: -1 | 1) => void;
+  onRemove: () => void;
+}) {
+  // Drag starts on the handle only. With the whole row draggable, clicking to
+  // select would start a drag instead.
+  const controls = useDragControls();
+  const schema = typeof property === "object" && property !== null ? property : {};
+  const widget = hint?.widget;
+  const conditional = hint?.visibleWhen !== undefined;
+  const cascading = hint?.optionsFrom !== undefined;
+
+  return (
+    <Reorder.Item
+      value={name}
+      dragListener={false}
+      dragControls={controls}
+      transition={reduced ? { duration: 0 } : SPRING}
+      className={cn(
+        "flex flex-wrap items-center gap-2 rounded-2xl border bg-background px-3 py-2.5 transition-colors",
+        selected
+          ? "border-primary/50 shadow-elev-1"
+          : "border-border hover:border-foreground/20",
+      )}
+    >
+      <button
+        type="button"
+        aria-label={`${name} verschieben`}
+        onPointerDown={(event) => controls.start(event)}
+        className="cursor-grab touch-none rounded-lg p-1 text-muted-foreground transition-colors hover:text-foreground active:cursor-grabbing"
+      >
+        <GripVerticalIcon className="size-4" strokeWidth={1.5} />
+      </button>
+
+      {/* The row's select target. Restyled through className rather than rebuilt:
+          the default Button centres a single line, this needs a left-aligned stack. */}
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={onSelect}
+        className="h-auto min-w-40 flex-1 flex-col items-start gap-0.5 px-2 py-1 text-left"
+      >
+        <span className="flex items-center gap-1.5 text-sm font-medium">
+          {schema.title || name}
+          {required && (
+            <span aria-hidden className="text-destructive">
+              *
+            </span>
+          )}
+        </span>
+        <span className="font-mono text-[11px] text-muted-foreground">{name}</span>
+      </Button>
+
+      <div className="flex flex-wrap items-center gap-1">
+        {widget && (
+          <Badge variant="secondary" className="rounded-full text-[11px] font-normal">
+            {WIDGET_LABELS[widget] ?? widget}
+          </Badge>
+        )}
+        {conditional && (
+          <Badge variant="outline" className="rounded-full text-[11px] font-normal">
+            bedingt
+          </Badge>
+        )}
+        {cascading && (
+          <Badge variant="outline" className="rounded-full text-[11px] font-normal">
+            abhängig
+          </Badge>
+        )}
+      </div>
+
+      {/* The keyboard path. `Reorder` is pointer-only. */}
+      <div className="flex items-center gap-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`${name} nach oben`}
+          disabled={index === 0}
+          onClick={() => onMove(-1)}
+          className="rounded-full"
+        >
+          <ArrowUpIcon strokeWidth={1.5} />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`${name} nach unten`}
+          disabled={index === total - 1}
+          onClick={() => onMove(1)}
+          className="rounded-full"
+        >
+          <ArrowDownIcon strokeWidth={1.5} />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`${name} entfernen`}
+          onClick={onRemove}
+          className="rounded-full"
+        >
+          <Trash2Icon strokeWidth={1.5} />
+        </Button>
+      </div>
+    </Reorder.Item>
+  );
+}
+
+/* ── inspector ──────────────────────────────────────────────────────────── */
+
+function FieldInspector({
+  name,
+  property,
+  hint,
+  required,
+  siblings,
+  advanced,
+  onRename,
+  onProperty,
+  onHint,
+  onRequired,
+  onOptions,
+  onCascade,
+}: {
+  name: string | null;
+  property: JSONSchema7 | boolean | undefined;
+  hint: MITSFieldUIHint | undefined;
+  required: boolean;
+  /** Candidate controlling fields — everything but the selected one. */
+  siblings: string[];
+  advanced: boolean;
+  onRename: (from: string, to: string) => void;
+  onProperty: (name: string, patch: Partial<JSONSchema7>) => void;
+  onHint: (name: string, patch: Partial<MITSFieldUIHint>) => void;
+  onRequired: (name: string, value: boolean) => void;
+  onOptions: (name: string, values: string[]) => void;
+  onCascade: (name: string, field: string, map: Record<string, string[]>) => void;
+}) {
+  if (!name || typeof property !== "object" || property === null) {
+    return (
+      <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
+        <CardHeader>
+          <SlidersHorizontalIcon className="size-5 text-muted-foreground" aria-hidden />
+          <CardTitle className="mt-4 text-lg font-medium">Inspektor</CardTitle>
+          <CardDescription>
+            Ein Feld im Canvas anklicken, um Beschriftung, Pflicht, Optionen und
+            Bedingungen zu bearbeiten.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  const options = enumOf(property);
+  const cascade = hint?.optionsFrom;
+  const condition = hint?.visibleWhen;
+
+  return (
+    <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
+      <CardHeader>
+        <CardTitle className="text-lg font-medium">Inspektor</CardTitle>
+        <CardDescription>
+          <span className="font-mono text-xs">{name}</span>
+          {hint?.widget && ` · ${WIDGET_LABELS[hint.widget] ?? hint.widget}`}
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent className="grid gap-4">
+        <div className="grid gap-2">
+          <Label htmlFor="insp-title">Beschriftung</Label>
+          <Input
+            id="insp-title"
+            value={property.title ?? ""}
+            className="h-10 rounded-xl"
+            onChange={(event) => onProperty(name, { title: event.target.value })}
+          />
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="insp-name">Feldname</Label>
+          <Input
+            id="insp-name"
+            key={name}
+            defaultValue={name}
+            spellCheck={false}
+            className="h-10 rounded-xl font-mono"
+            onBlur={(event) => onRename(name, event.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Schlüssel in der Payload. Umbenennen zieht Pflicht-Eintrag und
+            Bedingungen mit — Antworten in bereits gespeicherten Tickets behalten
+            aber den alten Namen.
+          </p>
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="insp-placeholder">Platzhalter</Label>
+          <Input
+            id="insp-placeholder"
+            value={hint?.placeholder ?? ""}
+            className="h-10 rounded-xl"
+            onChange={(event) => onHint(name, { placeholder: event.target.value })}
+          />
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="insp-help">Hilfetext</Label>
+          <Input
+            id="insp-help"
+            value={hint?.help ?? ""}
+            className="h-10 rounded-xl"
+            onChange={(event) => onHint(name, { help: event.target.value })}
+          />
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="insp-group">Gruppe</Label>
+          <Input
+            id="insp-group"
+            value={hint?.group ?? ""}
+            placeholder="Fieldset-Überschrift, leer für keine"
+            className="h-10 rounded-xl"
+            onChange={(event) => onHint(name, { group: event.target.value || undefined })}
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Switch
+            id="insp-required"
+            checked={required}
+            onCheckedChange={(checked) => onRequired(name, checked === true)}
+          />
+          <Label htmlFor="insp-required" className="font-normal">
+            Pflichtfeld
+          </Label>
+        </div>
+
+        {options && !cascade && (
+          <>
+            <Separator className="bg-border" />
+            <div className="grid gap-2">
+              <Label htmlFor="insp-options">Optionen (kommagetrennt)</Label>
+              <Input
+                id="insp-options"
+                key={`${name}-options`}
+                defaultValue={options.join(", ")}
+                spellCheck={false}
+                className="h-10 rounded-xl font-mono text-xs"
+                onBlur={(event) =>
+                  onOptions(
+                    name,
+                    event.target.value
+                      .split(",")
+                      .map((entry) => entry.trim())
+                      .filter(Boolean),
+                  )
+                }
+              />
+            </div>
+          </>
+        )}
+
+        {advanced ? (
+          <>
+            <Separator className="bg-border" />
+
+            {/* ── conditional visibility ─────────────────────────────── */}
+            <div className="grid gap-2">
+              <Label>Nur zeigen, wenn</Label>
+              <div className="grid gap-2">
+                <Select
+                  value={condition?.field ?? "__none"}
+                  onValueChange={(value) =>
+                    onHint(
+                      name,
+                      value === "__none"
+                        ? { visibleWhen: undefined }
+                        : {
+                            visibleWhen: {
+                              field: value,
+                              equals: condition?.equals ?? [],
+                            },
+                          },
+                    )
+                  }
+                >
+                  <SelectTrigger className="h-10 w-full rounded-xl">
+                    <SelectValue placeholder="Immer zeigen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">Immer zeigen</SelectItem>
+                    {siblings.map((field) => (
+                      <SelectItem key={field} value={field}>
+                        {field}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {condition && (
+                  <Input
+                    key={`${name}-cond`}
+                    defaultValue={condition.equals.join(", ")}
+                    placeholder="einen dieser Werte hat, z. B. laptop, desktop"
+                    spellCheck={false}
+                    className="h-10 rounded-xl font-mono text-xs"
+                    aria-label="Werte, die das Feld einblenden"
+                    onBlur={(event) =>
+                      onHint(name, {
+                        visibleWhen: {
+                          field: condition.field,
+                          equals: event.target.value
+                            .split(",")
+                            .map((entry) => entry.trim())
+                            .filter(Boolean),
+                        },
+                      })
+                    }
+                  />
+                )}
+              </div>
+              {condition && condition.equals.length === 0 && (
+                <p className="text-xs font-medium text-warning">
+                  Ohne Werte bleibt das Feld dauerhaft verborgen.
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Bei Checkbox und Schalter sind die Werte <code>true</code> und{" "}
+                <code>false</code>.
+              </p>
+            </div>
+
+            {/* ── cascading options ──────────────────────────────────── */}
+            {(options || cascade) && (
+              <>
+                <Separator className="bg-border" />
+                <div className="grid gap-2">
+                  <Label>Auswahl abhängig von</Label>
+                  <Select
+                    value={cascade?.field ?? "__none"}
+                    onValueChange={(value) =>
+                      value === "__none"
+                        ? onHint(name, { optionsFrom: undefined })
+                        : onCascade(name, value, cascade?.map ?? {})
+                    }
+                  >
+                    <SelectTrigger className="h-10 w-full rounded-xl">
+                      <SelectValue placeholder="Feste Optionen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">Feste Optionen</SelectItem>
+                      {siblings.map((field) => (
+                        <SelectItem key={field} value={field}>
+                          {field}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {cascade && (
+                    <>
+                      <Textarea
+                        key={`${name}-cascade`}
+                        defaultValue={formatCascade(cascade.map)}
+                        rows={5}
+                        spellCheck={false}
+                        className="rounded-xl font-mono text-xs"
+                        aria-label="Zuordnung von Elternwert zu Optionen"
+                        onBlur={(event) =>
+                          onCascade(name, cascade.field, parseCascade(event.target.value))
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Eine Zeile pro Wert des Feldes{" "}
+                        <code>{cascade.field}</code>, Format{" "}
+                        <code>wert: option-a, option-b</code>. Die Vereinigung aller
+                        Optionen wird als <code>enum</code> ins Schema geschrieben,
+                        damit es gültiges JSON Schema bleibt.
+                      </p>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <Separator className="bg-border" />
+            <Alert className="rounded-2xl border-border px-4 py-3">
+              <TriangleAlertIcon strokeWidth={1.5} />
+              <AlertTitle>Erweiterter Builder ist aus</AlertTitle>
+              <AlertDescription>
+                Bedingte Sichtbarkeit und abhängige Auswahl lassen sich nicht
+                bearbeiten. Bereits gespeicherte Bedingungen bleiben wirksam — ein
+                Schalter im Admin-Bereich soll nicht die Pflichtfelder
+                veröffentlichter Formulare verändern. Einschalten unter{" "}
+                <code>/admin/settings/features</code>.
+              </AlertDescription>
+            </Alert>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── preview ────────────────────────────────────────────────────────────── */
 
 /**
  * The preview form.
@@ -659,8 +1179,52 @@ function SchemaPreview({ draft }: { draft: MITSFormSchema }) {
   );
 }
 
+/* ── helpers ────────────────────────────────────────────────────────────── */
+
 function pretty(schema: MITSFormSchema): string {
   return JSON.stringify(schema, null, 2);
+}
+
+/** Enum values of a property, whether it carries them directly or on `items`. */
+function enumOf(property: JSONSchema7): string[] | undefined {
+  if (Array.isArray(property.enum)) {
+    return property.enum.filter((value): value is string => typeof value === "string");
+  }
+  const { items } = property;
+  if (typeof items === "object" && items !== null && !Array.isArray(items)) {
+    const inner = (items as JSONSchema7).enum;
+    if (Array.isArray(inner)) {
+      return inner.filter((value): value is string => typeof value === "string");
+    }
+  }
+  return undefined;
+}
+
+/** `parent: a, b` per line → `{ parent: ["a", "b"] }`. */
+function parseCascade(text: string): Record<string, string[]> {
+  const map: Record<string, string[]> = {};
+
+  for (const line of text.split("\n")) {
+    const separator = line.indexOf(":");
+    if (separator < 0) continue;
+
+    const key = line.slice(0, separator).trim();
+    if (!key) continue;
+
+    map[key] = line
+      .slice(separator + 1)
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  return map;
+}
+
+function formatCascade(map: Record<string, string[]>): string {
+  return Object.entries(map)
+    .map(([key, values]) => `${key}: ${values.join(", ")}`)
+    .join("\n");
 }
 
 /** `text_1`, `text_2`, … — never collides with an existing property. */

@@ -1,7 +1,6 @@
 # Enterprise-Helpdesk — Umsetzungsplan
 
-Arbeitsstand des Helpdesk-Ausbaus. **Part 1 bis 7 sind fertig und verifiziert** (bis
-Commit `d50b252`). Offen ist nur noch **Part 8 — der Formular-Builder**.
+Arbeitsstand des Helpdesk-Ausbaus. **Alle acht Parts sind fertig.**
 
 | Part | Inhalt | Status |
 |---|---|---|
@@ -11,18 +10,16 @@ Commit `d50b252`). Offen ist nur noch **Part 8 — der Formular-Builder**.
 | 4 | Agenten-Desk & Präsenz | ✅ `4fef5e6` |
 | 5+6 | Routentrennung `/customer` + `/mits`, Prioritäts-Migration | ✅ `900ad2e` |
 | 7 | Ticket-Verknüpfung + Textbausteine | ✅ `d50b252` |
-| 8 | Formular-Builder | ⬜ **letzter** |
+| 8 | Formular-Builder (Canvas, Inspektor, bedingte Logik, Kaskaden) | ✅ |
 
-Die Detailbeschreibungen der abgeschlossenen Parts stehen weiter unten; **Part 8 ist der
-einzige Abschnitt, der noch Arbeit beschreibt.** Alles, was in der ursprünglichen
-Anforderung stand, ist damit umgesetzt außer dem Builder sowie Typing-Indicator,
+Damit ist alles aus der ursprünglichen Anforderung umgesetzt außer Typing-Indicator,
 SLA-Countdown und Duplikat-Vorschlägen — deren Flags sind in der Maske als „noch ohne
-Funktion" markiert.
+Funktion" markiert, damit niemand einschaltet und auf eine Wirkung wartet.
 
-Jeder Part ist so geschnitten, dass er allein baubar, testbar und committebar ist. Die
-Reihenfolge folgt den Abhängigkeiten: E-Mail macht den Agenten-Workflow rund, Suche und
-Dashboard bauen auf den bereits vorhandenen Query-Funktionen auf, der Formular-Builder
-hängt an nichts und kommt deshalb zuletzt.
+Jeder Part war so geschnitten, dass er allein baubar, testbar und committebar ist. Die
+Reihenfolge folgte den Abhängigkeiten: E-Mail macht den Agenten-Workflow rund, Suche und
+Dashboard bauen auf den vorhandenen Query-Funktionen auf, der Formular-Builder hing an
+nichts und kam deshalb zuletzt.
 
 ---
 
@@ -141,35 +138,45 @@ umstellt, muss die Sitzung neu aufbauen.
 
 ---
 
-## ⬜ Part 5 — Formular-Builder (OTRS-Funktionsumfang, Apple-Optik)
+## ✅ Part 8 — Formular-Builder
 
-Gate: `feature_advanced_form_builder` (Default an).
+Gate: `feature_advanced_form_builder` (Default an) — schaltet das **Bearbeiten** von
+Bedingungen und Kaskaden ab, nicht deren Auswertung.
 
-Der größte Part, hängt an nichts. Bestand: `/admin/forms/builder` mit
-`components/admin/schema-builder.tsx` — funktioniert, ist aber ein Formular über dem
-Schema, kein Canvas. Zielroute laut Anforderung: `/admin/schema-builder`.
+Geblieben auf `/admin/forms/builder` statt der in der Anforderung genannten Route
+`/admin/schema-builder`: die Seite existierte, war verlinkt und hätte für eine Umbenennung
+ohne Funktionsgewinn dieselbe Link-Umzugsarbeit wie Part 5 verursacht.
 
-Zu bauen:
+Gebaut:
 
-- Drag-Canvas in der Mitte (`Reorder` aus `framer-motion`, wie in
-  `components/admin/portal-layout-form.tsx` — **keine** neue Dependency), Inspector rechts
-- Feldtypen: die bestehenden aus `MITSFieldWidget` plus `datetime`, `location` (aus
-  `mits_location`), `user` (aus `listUsers`)
-- Bedingte Sichtbarkeit: „Zeige X, wenn Y den Wert Z hat“ → in `uiHints`, Auswertung in
-  `components/forms/schema-form.tsx`
-- Abhängige Dropdowns: Eltern-Kind über eine Wertetabelle in `uiHints`
+- **Canvas** (`Reorder` aus `framer-motion`, keine neue Dependency): Ziehen am Griff ordnet
+  um, Klick wählt aus, Pfeiltasten-Buttons sind der Tastaturweg — `Reorder` ist pointer-only.
+  Reihenfolge landet in `uiHints.order`, überlebt also die JSON-Fläche.
+- **Inspektor** rechts über der Live-Vorschau: Beschriftung, Feldname, Platzhalter,
+  Hilfetext, Gruppe, Pflicht, Optionen, Sichtbarkeit, Kaskade.
+- **Drei neue Widgets**: `datetime` (`format: "date-time"` → `datetime-local`), `location`,
+  `user`.
+- **Bedingte Sichtbarkeit** und **abhängige Dropdowns**, beides in `uiHints`, ausgewertet in
+  `lib/forms/schema-to-zod.ts` — also für Browser und Server in derselben Funktion.
 
-Punkte:
+Entscheidungen, die nicht offensichtlich sind:
 
-- **Ein neues Widget braucht `MITSFieldWidget` *und* `FIELD_REGISTRY`** — sonst rendert das
-  Feld als Text-Input. Steht so in AGENTS.md.
-- Bedingte Sichtbarkeit ist **keine** Sicherheitsgrenze. Ein verstecktes Feld kommt trotzdem
-  im Payload an, wenn jemand es sendet. Die Validierung in `createTicket` ist `strictObject`
-  — das bleibt die Grenze.
-- `uiHints` ist `Record<string, MITSFieldUIHint>`, gekeyt nach Feldname, **ohne**
-  `.fields`-Zwischenebene und **ohne** `label`. Labels kommen aus `resolveFields`.
-- Der Builder muss weiter gültiges JSON Schema erzeugen — es geht als `format` an Ollama
-  (siehe KI-Pipeline in AGENTS.md). Kein `enumNames`, Labels nach `uiHints.optionLabels`.
+- **`format: "date-time"` rendert jetzt `datetime`, nicht mehr `date`.** Vorher fiel die
+  Uhrzeit still weg, obwohl das Schema sie verlangte. Verhaltensänderung für bestehende
+  Schemata mit `date-time` — gewollt.
+- **Umbenennen eines Feldes zieht alles mit**, was darauf zeigt: Property, Hint,
+  `required`-Eintrag und jede `visibleWhen`/`optionsFrom`-Referenz. Ohne das Letzte würde
+  eine Umbenennung stillschweigend eine Bedingung zerreißen.
+- **Löschen räumt Verweise auf.** Und `saveFormSchemaAction` lehnt über
+  `danglingConditions` ein Schema mit tot gelaufener Referenz ab — sonst ist ein
+  Pflichtfeld dauerhaft unsichtbar und das Formular für alle unabsendbar.
+- **Eine Kaskade spiegelt die Vereinigung ihrer Werte ins `enum`.** Ohne das beschreibt das
+  an Ollama gegebene Schema ein Freitextfeld.
+- **`useWatch({ disabled })`**: ein Schema ohne Bedingungen abonniert nichts und zahlt kein
+  Re-Render pro Tastenanschlag.
+
+Die vollständige Begründung steht in AGENTS.md unter „Bedingte Felder und abhängige
+Auswahl“ — die eigentliche Falle ist, dass Client und Server dieselbe Ableitung brauchen.
 
 ---
 

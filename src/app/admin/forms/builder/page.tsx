@@ -8,7 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { requireRole } from "@/lib/auth/session";
+import { isFeatureEnabled } from "@/lib/features";
 import { listSchemaInfos } from "@/lib/form-schemas";
+import { listActiveLocations } from "@/lib/locations";
+import { listUsers } from "@/lib/users";
 
 export const metadata: Metadata = {
   title: "Formular-Builder — MITS",
@@ -25,6 +28,24 @@ export default async function FormBuilderPage() {
     builtIn: info.builtIn,
   }));
   const stored = infos.filter((info) => info.overridden).length;
+
+  // Gates authoring of conditions and cascades, not their evaluation — see the
+  // note the inspector renders when it is off.
+  const advanced = isFeatureEnabled("feature_advanced_form_builder");
+
+  // Same choices the intake hands its pickers, so the preview shows the dropdowns
+  // a reporter will actually see rather than two empty selects. Users are reduced
+  // to id and name; a form preview has no business carrying the staff directory.
+  const fieldOptions = {
+    locations: listActiveLocations().map((location) => ({
+      value: location.id,
+      label: location.code ? `${location.name} (${location.code})` : location.name,
+    })),
+    users: listUsers().map((candidate) => ({
+      value: candidate.id,
+      label: candidate.name,
+    })),
+  };
 
   return (
     <>
@@ -57,7 +78,11 @@ export default async function FormBuilderPage() {
 
           <Separator className="my-8 bg-border" />
 
-          <SchemaBuilder existing={existing} />
+          <SchemaBuilder
+            existing={existing}
+            advanced={advanced}
+            fieldOptions={fieldOptions}
+          />
         </div>
       </main>
     </>

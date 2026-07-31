@@ -7,7 +7,11 @@ import { isRole } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
 import { setFeatureFlags } from "@/lib/features";
 import { saveFormSchema } from "@/lib/form-schemas";
-import { resolveFields } from "@/lib/forms/schema-to-zod";
+import {
+  conditionCycles,
+  danglingConditions,
+  resolveFields,
+} from "@/lib/forms/schema-to-zod";
 import { setCannedResponses } from "@/lib/canned-responses";
 import { LocationError, replaceLocations } from "@/lib/locations";
 import { testMail } from "@/lib/mail-templates";
@@ -550,6 +554,34 @@ export async function saveFormSchemaAction(
   }
   if (fieldCount === 0) {
     return { ok: false, error: "Das Formular hat kein renderbares Feld." };
+  }
+
+  /*
+   * Conditions have to point at fields that exist.
+   *
+   * The builder rewrites references when a field is renamed and clears them when
+   * one is deleted, but the JSON pane accepts anything. A condition naming a
+   * property that is gone hides its field permanently — and if that field is
+   * required, the form can never be submitted by anyone, with nothing on screen to
+   * explain why. Cheaper to refuse the save than to debug it later.
+   */
+  const dangling = danglingConditions(schema);
+  if (dangling.length > 0) {
+    return {
+      ok: false,
+      error: `Bedingung verweist auf ein Feld, das es nicht gibt: ${dangling
+        .slice(0, 5)
+        .join(", ")}.`,
+    };
+  }
+
+  // A ring of conditions has no sensible runtime answer — see `conditionCycles`.
+  const cycles = conditionCycles(schema);
+  if (cycles.length > 0) {
+    return {
+      ok: false,
+      error: `Bedingungen bilden einen Kreis: ${cycles.slice(0, 3).join("; ")}.`,
+    };
   }
 
   saveFormSchema(schema, actor.id);
