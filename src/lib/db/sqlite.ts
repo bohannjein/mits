@@ -77,7 +77,10 @@ function migrateAppTables(database: Database.Database): void {
       stored_name   TEXT NOT NULL,
       mime_type     TEXT NOT NULL,
       size_bytes    INTEGER NOT NULL,
-      created_at    TEXT NOT NULL
+      created_at    TEXT NOT NULL,
+      -- 'ticket' (owner + staff) or 'faq' (any signed-in user). See addColumns
+      -- for why the default is the narrower of the two.
+      scope         TEXT NOT NULL DEFAULT 'ticket'
     );
 
     CREATE INDEX IF NOT EXISTS idx_mits_upload_owner
@@ -250,6 +253,23 @@ function addColumns(database: Database.Database): void {
   const additions: { table: string; column: string; definition: string }[] = [
     { table: "mits_ticket", column: "ticket_number", definition: "INTEGER" },
     { table: "mits_ticket", column: "location_id", definition: "TEXT" },
+    /*
+     * What an upload is for, and therefore who may read it.
+     *
+     * `ticket` keeps the original rule — owner plus staff. `faq` is readable by
+     * anyone signed in, because a help article whose screenshots only the author
+     * can open is not a help article.
+     *
+     * Defaulted to `ticket`, so every row written before this column keeps the
+     * narrower rule. That direction matters: the opposite default would publish
+     * every existing ticket attachment to every user on the first start after an
+     * update, and nothing about the running system would look different.
+     */
+    {
+      table: "mits_upload",
+      column: "scope",
+      definition: "TEXT NOT NULL DEFAULT 'ticket'",
+    },
   ];
 
   for (const { table, column, definition } of additions) {

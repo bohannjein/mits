@@ -4,9 +4,10 @@ import { openUploadFor } from "@/lib/storage";
 /* ──────────────────────────────────────────────────────────────────────────
    Attachment download.
 
-   Access is decided per request: the owner, or a technician/admin working the
-   board. A file that exists but belongs to someone else answers 404, identical to
-   a file that never existed, so ids cannot be probed.
+   Access is decided per request: the owner, a technician/admin working the board,
+   or anyone signed in when the file was published as a FAQ attachment. A file that
+   exists but is not readable answers 404, identical to a file that never existed,
+   so ids cannot be probed.
    ────────────────────────────────────────────────────────────────────────── */
 
 export async function GET(
@@ -23,13 +24,28 @@ export async function GET(
     return Response.json({ error: "Datei nicht gefunden." }, { status: 404 });
   }
 
+  /*
+   * `?inline=1` renders in place instead of downloading — needed for the images in
+   * a FAQ article, which have to appear in an <img> rather than as a link.
+   *
+   * Honoured only for raster images, and that restriction is what makes it safe:
+   * the storage allow-list contains no SVG and no HTML, so nothing that can carry
+   * script is reachable through this branch. `nosniff` plus the stored
+   * Content-Type — taken from the extension, never from the browser — keeps a
+   * mislabelled file from being reinterpreted. Everything else stays a download,
+   * so the request cannot opt a document into inline rendering.
+   */
+  const inline =
+    upload.inlineImage &&
+    new URL(request.url).searchParams.get("inline") === "1";
+
+  const filename = `filename*=UTF-8''${encodeURIComponent(upload.name)}`;
+
   return new Response(upload.stream(), {
     headers: {
       "Content-Type": upload.type,
       "Content-Length": String(upload.size),
-      // Always a download, never rendered in place: an uploaded SVG or HTML file
-      // served inline would execute in the app's own origin.
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(upload.name)}`,
+      "Content-Disposition": `${inline ? "inline" : "attachment"}; ${filename}`,
       "X-Content-Type-Options": "nosniff",
       // Attachments are per-user; a shared cache must not hand them to anyone else.
       "Cache-Control": "private, no-store",

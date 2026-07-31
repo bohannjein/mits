@@ -30,6 +30,7 @@ import {
   setPortalServices,
 } from "@/lib/portal";
 import { normaliseDomains, setAuthSettings } from "@/lib/settings";
+import { unusableFaqAttachments } from "@/lib/storage";
 import { RoleChangeError, setUserRole } from "@/lib/users";
 import {
   CannedResponseSchema,
@@ -222,7 +223,10 @@ function revalidatePortal(): void {
   revalidatePath("/");
   revalidatePath("/customer");
   revalidatePath("/admin/portal");
+  revalidatePath("/admin/faq");
   revalidatePath("/customer/new");
+  // Each article has its own page; the layout segment covers every id at once.
+  revalidatePath("/customer/faq/[id]", "page");
 }
 
 export async function savePortalConfigAction(
@@ -255,6 +259,21 @@ export async function savePortalFaqsAction(
 
   const payload = parsePayload(formData, "faqs", z.array(PortalFaqSchema));
   if (!payload.ok) return { ok: false, error: payload.error };
+
+  // Every referenced file has to be one that was uploaded as a FAQ attachment.
+  // See `unusableFaqAttachments`: pointing an article at a ticket attachment does
+  // not expose it, but it does publish a link that answers 404.
+  const unusable = unusableFaqAttachments(
+    payload.data.flatMap((entry) =>
+      entry.attachments.map((attachment) => attachment.fileId),
+    ),
+  );
+  if (unusable.length > 0) {
+    return {
+      ok: false,
+      error: `${unusable.length} Anhang/Anhänge sind keine FAQ-Dateien und wurden nicht gespeichert. Bitte erneut hochladen.`,
+    };
+  }
 
   const faqs = setPortalFaqs(payload.data);
   revalidatePortal();

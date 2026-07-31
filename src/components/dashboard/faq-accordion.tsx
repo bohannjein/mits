@@ -1,5 +1,8 @@
 "use client";
 
+import { ArrowRightIcon, PaperclipIcon } from "lucide-react";
+import Link from "next/link";
+
 import {
   Accordion,
   AccordionContent,
@@ -52,11 +55,31 @@ export function FaqAccordion({
                   <AccordionTrigger className="gap-4 py-3 hover:no-underline">
                     {faq.question}
                   </AccordionTrigger>
-                  <AccordionContent className="pb-3 leading-relaxed text-muted-foreground">
+                  <AccordionContent className="grid gap-3 pb-3 leading-relaxed text-muted-foreground">
                     {/* Plain text, deliberately: the answer is admin-authored,
                         and rendering it as HTML would make the editor a stored
                         XSS vector against every portal visitor. */}
                     <p className="whitespace-pre-wrap">{faq.answer}</p>
+
+                    {/* The attachments themselves stay on the article page. A
+                        collapsed row is the wrong place for a gallery, and loading
+                        every image of every entry to render six closed accordions
+                        would be paid for by everyone who opens the portal. */}
+                    {faq.attachments.length > 0 && (
+                      <span className="flex items-center gap-1.5 text-xs">
+                        <PaperclipIcon className="size-3.5" strokeWidth={1.5} aria-hidden />
+                        {faq.attachments.length}{" "}
+                        {faq.attachments.length === 1 ? "Anhang" : "Anhänge"}
+                      </span>
+                    )}
+
+                    <Link
+                      href={`/customer/faq/${faq.id}`}
+                      className="flex w-fit items-center gap-1.5 text-xs text-foreground underline-offset-4 hover:underline"
+                    >
+                      Ganzen Beitrag öffnen
+                      <ArrowRightIcon className="size-3.5" strokeWidth={1.5} aria-hidden />
+                    </Link>
                   </AccordionContent>
                 </AccordionItem>
               ))}

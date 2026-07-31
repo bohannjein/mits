@@ -901,6 +901,41 @@ export function fillPortalText(template: string, name: string): string {
 
 /* ── FAQ ────────────────────────────────────────────────────────────────── */
 
+/**
+ * A file published alongside a FAQ article.
+ *
+ * Same shape as `AttachmentMetaSchema` but with `fileId` and `url` required: a FAQ
+ * attachment always comes from the upload endpoint, so there is no pre-storage era
+ * to stay compatible with. `type` decides the presentation — raster images render
+ * inline, everything else is listed as a download.
+ */
+export const FaqAttachmentSchema = z.object({
+  fileId: z.string().min(1),
+  name: z.string().min(1).max(200),
+  size: z.number().int().nonnegative(),
+  type: z.string().max(160).default(""),
+});
+export type FaqAttachment = z.infer<typeof FaqAttachmentSchema>;
+
+/** Raster formats only — see the inline branch in the download route. */
+const INLINE_FAQ_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/bmp",
+];
+
+export const isImageAttachment = (attachment: FaqAttachment): boolean =>
+  INLINE_FAQ_TYPES.includes(attachment.type);
+
+/** `1,4 MB`, `312 KB`, `840 B` — sized for a card, not for a report. */
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1).replace(".", ",")} MB`;
+}
+
 export const PortalFaqSchema = z.object({
   id: z.string(),
   question: z.string().min(1).max(300),
@@ -908,6 +943,8 @@ export const PortalFaqSchema = z.object({
   /** Free-text grouping headline. Empty means "ungrouped". */
   category: z.string().max(120).default(""),
   order_index: z.number().int().nonnegative().default(0),
+  /** Defaulted, so entries written before attachments existed still parse. */
+  attachments: z.array(FaqAttachmentSchema).default([]),
 });
 export type PortalFaq = z.infer<typeof PortalFaqSchema>;
 
@@ -924,6 +961,7 @@ export const DEFAULT_PORTAL_FAQS: PortalFaq[] = [
       "Ticket im Service-Katalog unter „Benutzer-Onboarding“ anlegen und dort eine bestehende Person mit denselben Aufgaben als Referenz angeben. Die Rechte werden von diesem Konto übernommen, statt einzeln aufgelistet zu werden — das verkürzt die Einrichtung deutlich und vermeidet vergessene Freigaben.",
     category: "Konten & Rechte",
     order_index: 0,
+    attachments: [],
   },
   {
     id: "faq-rechte",
@@ -932,6 +970,7 @@ export const DEFAULT_PORTAL_FAQS: PortalFaq[] = [
       "Bitte über den Service-Katalog anfragen und dabei benennen, welche Anwendung und welche Tätigkeit gemeint ist. Rechteänderungen brauchen die Freigabe der Führungskraft; nennen Sie sie im Ticket, dann holen wir die Zustimmung direkt ein.",
     category: "Konten & Rechte",
     order_index: 1,
+    attachments: [],
   },
   {
     id: "faq-hardware",
@@ -940,6 +979,7 @@ export const DEFAULT_PORTAL_FAQS: PortalFaq[] = [
       "Über den Service-Katalog, Eintrag „Hardware-Bestellung“. Kostenstelle und gewünschter Termin gehören dazu; bei Geräten außerhalb des Standards bitte kurz begründen, damit die Beschaffung nicht nachfragen muss.",
     category: "Arbeitsplatz",
     order_index: 2,
+    attachments: [],
   },
   {
     id: "faq-netzlaufwerk",
@@ -948,6 +988,7 @@ export const DEFAULT_PORTAL_FAQS: PortalFaq[] = [
       "Zuerst ab- und neu anmelden — Laufwerke werden bei der Anmeldung verbunden, und nach einem VPN-Wechsel fehlt die Verbindung häufig nur in dieser Sitzung. Bleibt es leer, bitte ein Ticket mit dem Laufwerksbuchstaben und dem Pfad aufgeben.",
     category: "Netzwerk & Zugriff",
     order_index: 3,
+    attachments: [],
   },
   {
     id: "faq-sgate",
@@ -956,6 +997,7 @@ export const DEFAULT_PORTAL_FAQS: PortalFaq[] = [
       "Bitte einen Screenshot der Meldung an das Ticket hängen und angeben, welcher Vorgang betroffen ist. Der KI-Assistent liest den Text aus dem Screenshot und ordnet die Meldung vor, das beschleunigt die Bearbeitung.",
     category: "Anwendungen",
     order_index: 4,
+    attachments: [],
   },
   {
     id: "faq-xphone",
@@ -964,6 +1006,7 @@ export const DEFAULT_PORTAL_FAQS: PortalFaq[] = [
       "Prüfen Sie zuerst den Status im Client und ob das richtige Endgerät ausgewählt ist. Wenn Anrufe gar nicht ankommen, bitte Ihre Durchwahl und die Uhrzeit eines Beispielanrufs ins Ticket schreiben — damit lässt sich der Weg im Protokoll nachvollziehen.",
     category: "Telefonie",
     order_index: 5,
+    attachments: [],
   },
 ];
 

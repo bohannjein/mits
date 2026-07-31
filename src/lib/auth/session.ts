@@ -132,6 +132,34 @@ export async function requireApiUser(
 }
 
 /**
+ * Route-handler guard with a role floor.
+ *
+ * `requireApiUser` plus `hasAtLeast`, so a handler that only staff or only admins
+ * may reach states that in one line instead of re-deriving it. The answer for an
+ * authenticated caller without the role is 403, not 404: unlike a ticket id, the
+ * existence of an admin endpoint is not a secret, and a 404 here would send someone
+ * hunting for a typo in a URL that is perfectly correct.
+ */
+export async function requireApiRole(
+  role: MITSRole,
+  request: Request,
+): Promise<{ user: SessionUser } | { response: Response }> {
+  const auth = await requireApiUser(request);
+  if ("response" in auth) return auth;
+
+  if (!hasAtLeast(auth.user.role, role)) {
+    return {
+      response: Response.json(
+        { error: "Für diese Aktion fehlen die Rechte." },
+        { status: 403 },
+      ),
+    };
+  }
+
+  return auth;
+}
+
+/**
  * Page guard with a role floor.
  *
  * An authenticated user who lacks the role is not sent to the login form —

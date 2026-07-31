@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
+  BookOpenIcon,
   BrainIcon,
-  LayoutDashboardIcon,
   MailIcon,
   MessageSquareTextIcon,
   MapPinIcon,
@@ -103,15 +103,15 @@ export default async function AdminPage() {
                 </Link>
               </Button>
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/forms/builder">
-                  <WandSparklesIcon />
-                  Formular-Builder
+                <Link href="/admin/faq">
+                  <BookOpenIcon />
+                  Selbsthilfe / FAQ
                 </Link>
               </Button>
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/mits">
-                  <LayoutDashboardIcon />
-                  Board
+                <Link href="/admin/forms/builder">
+                  <WandSparklesIcon />
+                  Formular-Builder
                 </Link>
               </Button>
             </div>

@@ -38,6 +38,8 @@ import {
   PortalConfigSchema,
   PortalFaqSchema,
   fillPortalText,
+  formatFileSize,
+  isImageAttachment,
   formatTicketNumber,
   parseTicketNumber,
   resolveSmtpPassword,
@@ -952,6 +954,49 @@ console.log("\nnew widgets");
       // An id read live from mits_location must keep validating after the site is
       // renamed — an enum frozen at authoring time would invalidate stored payloads.
     }).safeParse({ site: "loc-anything-at-all" }).success,
+  );
+}
+
+console.log("\nfaq attachments");
+{
+  check("bytes stay bytes", formatFileSize(840) === "840 B");
+  check("kilobytes round", formatFileSize(320_000) === "313 KB");
+  check(
+    "megabytes get a german decimal comma",
+    formatFileSize(1_500_000) === "1,4 MB",
+    formatFileSize(1_500_000),
+  );
+
+  const png = { fileId: "a", name: "screenshot.png", size: 1, type: "image/png" };
+  const pdf = { fileId: "b", name: "handbuch.pdf", size: 1, type: "application/pdf" };
+
+  check("a png renders inline", isImageAttachment(png));
+  check("a pdf does not", !isImageAttachment(pdf));
+  check(
+    "an svg is never inline — it can carry script",
+    !isImageAttachment({ ...png, name: "logo.svg", type: "image/svg+xml" }),
+  );
+  check(
+    "an unknown type is not inline",
+    !isImageAttachment({ ...png, type: "" }),
+  );
+
+  /*
+   * Entries written before attachments existed have to keep parsing. Without the
+   * default, one stored FAQ row would fail the array parse and `getPortalFaqs`
+   * would fall back to the built-in list — the admin's articles would silently be
+   * replaced by the sample ones, which looks like a portal nobody configured.
+   */
+  const legacy = PortalFaqSchema.safeParse({
+    id: "old",
+    question: "Frage?",
+    answer: "Antwort.",
+    category: "",
+    order_index: 0,
+  });
+  check(
+    "a faq row without attachments still parses",
+    legacy.success && legacy.data.attachments.length === 0,
   );
 }
 

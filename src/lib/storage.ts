@@ -50,6 +50,32 @@ const ALLOWED_EXTENSIONS: Record<string, string> = {
 
 export class UploadError extends Error {}
 
+/**
+ * What a stored file is for, and therefore who may read it.
+ *
+ * - `ticket`: the owner and staff, unchanged.
+ * - `faq`: anyone signed in — a help article whose screenshots only its author can
+ *   open is not a help article.
+ *
+ * Set once, at insert. There is deliberately no function that changes it: promoting
+ * an existing row to `faq` would publish somebody else's ticket attachment to every
+ * user of the instance, and it would do so without anything on screen changing.
+ * A file becomes a FAQ attachment by being uploaded as one.
+ */
+export type UploadScope = "ticket" | "faq";
+
+/** Images we are willing to render inline rather than only offer as a download. */
+const INLINE_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/bmp",
+]);
+
+export const isInlineImage = (type: string): boolean =>
+  INLINE_IMAGE_TYPES.has(type);
+
 export interface StoredUpload {
   id: string;
   name: string;
@@ -67,6 +93,7 @@ interface UploadRow {
   mime_type: string;
   size_bytes: number;
   created_at: string;
+  scope: UploadScope;
 }
 
 function uploadsDir(): string {
@@ -111,6 +138,8 @@ function displayName(originalName: string): string {
 export async function storeUpload(
   file: File,
   user: SessionUser,
+  /** Who will be allowed to read it. Defaults to the narrower rule. */
+  scope: UploadScope = "ticket",
 ): Promise<StoredUpload> {
   if (file.size === 0) throw new UploadError("Die Datei ist leer.");
   if (file.size > MAX_UPLOAD_BYTES) {
@@ -140,16 +169,17 @@ export async function storeUpload(
     mime_type: mimeType,
     size_bytes: bytes.byteLength,
     created_at: new Date().toISOString(),
+    scope,
   };
 
   try {
     db.prepare(
       `INSERT INTO mits_upload
          (id, owner_id, ticket_id, original_name, stored_name, mime_type,
-          size_bytes, created_at)
+          size_bytes, created_at, scope)
        VALUES
          (@id, @owner_id, @ticket_id, @original_name, @stored_name, @mime_type,
-          @size_bytes, @created_at)`,
+          @size_bytes, @created_at, @scope)`,
     ).run(row);
   } catch (error) {
     // Do not leave a blob behind that nothing points at.
@@ -174,6 +204,8 @@ export interface ReadableUpload {
   name: string;
   type: string;
   size: number;
+  /** Safe to render in an <img>. Everything else is download-only. */
+  inlineImage: boolean;
   stream: () => ReadableStream<Uint8Array>;
 }
 
@@ -181,8 +213,9 @@ export interface ReadableUpload {
  * Open an upload for download, or return null when it does not exist **or** the
  * user may not read it. Same answer for both, so ids cannot be probed.
  *
- * Readable by the owner, and by technicians and admins — they work the tickets
- * these files belong to.
+ * A ticket attachment is readable by its owner and by technicians and admins — they
+ * work the tickets these files belong to. A FAQ attachment is readable by anyone
+ * signed in, which is the whole point of publishing it.
  */
 export function openUploadFor(
   id: string,
@@ -192,7 +225,15 @@ export function openUploadFor(
     | UploadRow
     | undefined;
   if (!row) return null;
-  if (row.owner_id !== user.id && !canViewBoard(user.role)) return null;
+
+  // Checked in this order so the FAQ case never depends on ownership: an admin
+  // publishes an article, and a reporter who was never near it can still read the
+  // attachment.
+  const readable =
+    row.scope === "faq" ||
+    row.owner_id === user.id ||
+    canViewBoard(user.role);
+  if (!readable) return null;
 
   const directory = uploadsDir();
   const path = resolve(join(directory, row.stored_name));
@@ -205,11 +246,34 @@ export function openUploadFor(
     name: row.original_name,
     type: row.mime_type,
     size: row.size_bytes,
+    inlineImage: isInlineImage(row.mime_type),
     stream: () =>
       // Node stream -> web stream; Next serves the latter directly. Streaming
       // rather than reading into memory keeps a 10 MB download off the heap.
       Readable.toWeb(createReadStream(path)) as ReadableStream<Uint8Array>,
   };
+}
+
+/**
+ * Which of these ids are not usable as FAQ attachments.
+ *
+ * Referencing a ticket attachment from an article would not expose it — the row's
+ * `scope` decides who may read it, not who points at it, so the download would
+ * still 404. What it would produce is a published article with a dead attachment,
+ * which nobody notices until a reporter clicks it. Rejecting the save instead puts
+ * the error in front of the admin who caused it.
+ */
+export function unusableFaqAttachments(fileIds: string[]): string[] {
+  if (fileIds.length === 0) return [];
+
+  const select = db.prepare(
+    "SELECT scope FROM mits_upload WHERE id = ?",
+  );
+
+  return fileIds.filter((id) => {
+    const row = select.get(id) as { scope: UploadScope } | undefined;
+    return !row || row.scope !== "faq";
+  });
 }
 
 /**

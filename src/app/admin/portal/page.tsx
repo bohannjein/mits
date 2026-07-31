@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { BookOpenIcon } from "lucide-react";
 
-import { FaqEditor } from "@/components/admin/faq-editor";
 import { PortalContentForm } from "@/components/admin/portal-content-form";
 import { PortalLayoutForm } from "@/components/admin/portal-layout-form";
 import { PortalOperationsForm } from "@/components/admin/portal-operations-form";
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { requireRole } from "@/lib/auth/session";
@@ -14,7 +16,6 @@ import {
   getMaintenanceNotices,
   getPortalConfig,
   getPortalContent,
-  getPortalFaqs,
   getPortalServices,
 } from "@/lib/portal";
 
@@ -22,9 +23,13 @@ export const metadata: Metadata = {
   title: "Portal — MITS",
 };
 
+/*
+ * Three tabs, not four. Selbsthilfe moved to `/admin/faq` when attachments made it
+ * the largest editor here by some distance — and, more importantly, two masks
+ * writing the same `portal_faqs` key would let two admins overwrite each other.
+ */
 const TABS = [
   { value: "layout", label: "Layout & Texte" },
-  { value: "faq", label: "Selbsthilfe" },
   { value: "operations", label: "Betrieb" },
   { value: "content", label: "Meldungen & Kacheln" },
 ];
@@ -35,7 +40,6 @@ export default async function AdminPortalPage() {
 
   const config = getPortalConfig();
   const content = getPortalContent();
-  const faqs = getPortalFaqs();
   const services = getPortalServices();
   const maintenance = getMaintenanceNotices();
 
@@ -55,7 +59,7 @@ export default async function AdminPortalPage() {
                 Portal
               </h1>
               <p className="mt-2 max-w-2xl text-muted-foreground">
-                Widgets, Texte, Selbsthilfe und Betriebsmeldungen der Startseite.
+                Widgets, Texte und Betriebsmeldungen der Startseite.
                 Änderungen greifen sofort, ohne Neustart.
               </p>
             </div>
@@ -63,6 +67,16 @@ export default async function AdminPortalPage() {
               <Badge variant="outline" className="h-auto rounded-full px-3 py-1">
                 {active} von {config.widget_order.length} Widgets aktiv
               </Badge>
+              <Button
+                asChild
+                size="sm"
+                className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
+              >
+                <Link href="/admin/faq">
+                  <BookOpenIcon strokeWidth={1.5} />
+                  Selbsthilfe / FAQ
+                </Link>
+              </Button>
             </div>
           </div>
 
@@ -85,10 +99,6 @@ export default async function AdminPortalPage() {
 
             <TabsContent value="layout">
               <PortalLayoutForm config={config} />
-            </TabsContent>
-
-            <TabsContent value="faq">
-              <FaqEditor faqs={faqs} />
             </TabsContent>
 
             <TabsContent value="operations">

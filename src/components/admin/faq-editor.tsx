@@ -13,6 +13,7 @@ import {
 import { useActionState, useState } from "react";
 
 import { savePortalFaqsAction } from "@/app/admin/actions";
+import { FaqAttachments } from "@/components/admin/faq-attachments";
 import { FaqAccordion } from "@/components/dashboard/faq-accordion";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -171,6 +172,19 @@ export function FaqEditor({ faqs }: { faqs: PortalFaq[] }) {
                   Portal zusammengefasst.
                 </p>
               </div>
+
+              <div className="grid gap-2">
+                <Label>Anhänge</Label>
+                <FaqAttachments
+                  attachments={entry.attachments}
+                  disabled={saving}
+                  onChange={(attachments) => patch(entry.id, { attachments })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Bilder erscheinen im Beitrag, andere Dateien darunter als
+                  Download. Für alle angemeldeten Personen lesbar.
+                </p>
+              </div>
             </div>
           ))}
 
@@ -187,6 +201,7 @@ export function FaqEditor({ faqs }: { faqs: PortalFaq[] }) {
                   answer: "",
                   category: "",
                   order_index: current.length,
+                  attachments: [],
                 },
               ])
             }
