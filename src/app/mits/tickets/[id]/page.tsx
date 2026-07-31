@@ -3,9 +3,8 @@ import { notFound } from "next/navigation";
 
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
+import { SplitView } from "@/components/layout/split-view";
 import { TicketChat } from "@/components/tickets/ticket-chat";
-import { TicketLinks } from "@/components/tickets/ticket-links";
-import { AuditTrail } from "@/components/tickets/audit-trail";
 import { TicketSidebar } from "@/components/tickets/ticket-sidebar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -85,19 +84,19 @@ export default async function AgentTicketPage({
   return (
     <>
       <AppHeader />
-      <main className="flex flex-1 flex-col items-center px-6 py-6">
+      {/*
+        `overflow-hidden` on the page frame: the two columns scroll, the page does not.
+        Without it the outer main would grow and the browser would show one scrollbar for
+        everything, which is the arrangement this layout exists to avoid.
+      */}
+      <main className="flex min-h-0 flex-1 flex-col items-center overflow-hidden px-6 py-6">
         <div className="flex min-h-0 w-full max-w-7xl flex-1 flex-col">
-          <BackLink href="/mits" label="Zurück zur Queue" />
-
-          <div className="mt-4 grid min-h-0 flex-1 gap-6 lg:grid-cols-[1fr_20rem] lg:items-start">
-            {/* Left column. `min-h-0` on every ancestor is what lets the thread
-                scroll instead of stretching the page. */}
-            <section
-              aria-label="Verlauf"
-              className="flex min-h-0 flex-1 flex-col lg:h-[calc(100vh-11rem)]"
-            >
-              <header className="mb-4">
-                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <SplitView
+            sidebarLabel="Details"
+            header={
+              <>
+                <BackLink href="/mits" label="Zurück zur Queue" />
+                <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <span className="font-mono text-sm text-muted-foreground">
                     {formatTicketNumber(ticket.ticket_number)}
                   </span>
@@ -127,8 +126,9 @@ export default async function AgentTicketPage({
                     {TICKET_PRIORITY_LABELS[ticket.priority]}
                   </Badge>
                 </div>
-              </header>
-
+              </>
+            }
+            main={
               <TicketChat
                 ticketId={ticket.id}
                 comments={listCommentsFor(id, user)}
@@ -149,9 +149,8 @@ export default async function AgentTicketPage({
                     : []
                 }
               />
-            </section>
-
-            <aside className="lg:sticky lg:top-6">
+            }
+            sidebar={
               <TicketSidebar
                 ticket={ticket}
                 agents={agents}
@@ -163,34 +162,27 @@ export default async function AgentTicketPage({
                 // The reporter's own details, so the technician does not have to ask
                 // where they sit. Read here because the sidebar is a client component.
                 reporter={getUserProfile(ticket.created_by)}
-              >
-                {/* Admin only. The trail names who did what, which is not something a
-                    technician needs to read about a colleague — it answers "what
-                    happened to this ticket" for somebody accountable for the answer. */}
-                {canAdminister(user.role) && (
-                  <AuditTrail
-                    entries={listAuditFor(id)}
-                    timezone={getSystemTimezone()}
-                  />
-                )}
-
-                {flags.feature_ticket_linking && (
-                  <TicketLinks
-                    compact
-                    ticketId={ticket.id}
-                    links={listLinksFor(id, user).map((link) => ({
-                      id: link.id,
-                      label: link.label,
-                      otherId: link.other.id,
-                      otherNumber: link.otherNumber,
-                      otherTitle: link.other.title,
-                      otherStatus: link.other.status,
-                    }))}
-                  />
-                )}
-              </TicketSidebar>
-            </aside>
-          </div>
+                auditEntries={
+                  // Admin only. The trail names who did what, which is not something a
+                  // technician needs to read about a colleague.
+                  canAdminister(user.role) ? listAuditFor(id) : null
+                }
+                timezone={getSystemTimezone()}
+                links={
+                  flags.feature_ticket_linking
+                    ? listLinksFor(id, user).map((link) => ({
+                        id: link.id,
+                        label: link.label,
+                        otherId: link.other.id,
+                        otherNumber: link.otherNumber,
+                        otherTitle: link.other.title,
+                        otherStatus: link.other.status,
+                      }))
+                    : null
+                }
+              />
+            }
+          />
         </div>
       </main>
     </>

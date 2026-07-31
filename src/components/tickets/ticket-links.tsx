@@ -63,10 +63,13 @@ export function TicketLinks({
   links,
   /** Sidebar variant: tighter card, no description, stacked add form. */
   compact = false,
+  /** No card and no heading — the sidebar section supplies them. */
+  bare = false,
 }: {
   ticketId: string;
   links: LinkRow[];
   compact?: boolean;
+  bare?: boolean;
 }) {
   const [addResult, addAction, adding] = useActionState(addTicketLinkAction, null);
   const [removeResult, removeAction, removing] = useActionState(
@@ -76,26 +79,7 @@ export function TicketLinks({
   const result = addResult ?? removeResult;
   const busy = adding || removing;
 
-  return (
-    <Card
-      className={cn(
-        "border border-border bg-card ring-0 shadow-elev-1",
-        compact ? "rounded-2xl" : "rounded-3xl",
-      )}
-    >
-      <CardHeader>
-        <CardTitle className={compact ? "text-sm font-medium" : "text-lg font-medium"}>
-          Verknüpfungen
-        </CardTitle>
-        {!compact && (
-          <CardDescription className="mt-1 leading-relaxed">
-            Bezug zu anderen Tickets. Nur Tickets, die du selbst öffnen darfst,
-            erscheinen hier.
-          </CardDescription>
-        )}
-      </CardHeader>
-
-      <CardContent className="grid gap-4">
+  const body = <div className="grid gap-4">
         {links.length > 0 && (
           <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border">
             {links.map((link) => (
@@ -210,7 +194,29 @@ export function TicketLinks({
             </AlertDescription>
           </Alert>
         )}
-      </CardContent>
+      </div>;
+
+  if (bare) return body;
+
+  return (
+    <Card
+      className={cn(
+        "border border-border bg-card ring-0 shadow-elev-1",
+        compact ? "rounded-2xl" : "rounded-3xl",
+      )}
+    >
+      <CardHeader>
+        <CardTitle className={compact ? "text-sm font-medium" : "text-lg font-medium"}>
+          Verknüpfungen
+        </CardTitle>
+        {!compact && (
+          <CardDescription className="mt-1 leading-relaxed">
+            Bezug zu anderen Tickets. Nur Tickets, die du selbst öffnen darfst,
+            erscheinen hier.
+          </CardDescription>
+        )}
+      </CardHeader>
+      <CardContent>{body}</CardContent>
     </Card>
   );
 }

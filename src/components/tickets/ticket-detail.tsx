@@ -1,11 +1,10 @@
 import { MapPinIcon } from "lucide-react";
 
 import { BackLink } from "@/components/layout/back-link";
+import { SplitView } from "@/components/layout/split-view";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib/format";
 import { getSystemTimezone } from "@/lib/system-settings";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import type { MITSFormSchema, MITSLocation, MITSTicket } from "@/types/mits";
 import { resolveFields } from "@/lib/forms/schema-to-zod";
 import {
@@ -59,92 +58,82 @@ export function TicketDetail({
     .filter((row) => row.text !== "");
 
   return (
-    <main className="flex flex-1 flex-col items-center px-6 py-10">
-      <div className="grid w-full max-w-4xl gap-8">
-        <div>
-          <BackLink href={backHref} label={backLabel} />
-
-          <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <span className="font-mono text-sm text-muted-foreground">
+    /*
+     * `overflow-hidden` on the frame: the thread and the metadata each scroll, the page
+     * does not. Before this the answers sat *below* the conversation, so a reporter with
+     * a long thread had to scroll past all of it to check what they had submitted.
+     */
+    <main className="flex min-h-0 flex-1 flex-col items-center overflow-hidden px-6 py-8">
+      <div className="flex min-h-0 w-full max-w-6xl flex-1 flex-col">
+        <SplitView
+          sidebarLabel="Angaben"
+          sidebarWidth="20rem"
+          header={
+            <>
+              <BackLink href={backHref} label={backLabel} />
+              <span className="mt-3 block font-mono text-sm text-muted-foreground">
                 {formatTicketNumber(ticket.ticket_number)}
               </span>
               <h1 className="mt-1 text-2xl font-normal tracking-tight sm:text-3xl">
                 {ticket.title}
               </h1>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Gemeldet von {ticket.created_by_email} am{" "}
-                {formatDateTime(ticket.created_at, timezone)}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary" className="h-auto rounded-full px-3 py-1">
-                {TICKET_STATUS_LABELS[ticket.status]}
-              </Badge>
-              <Badge
-                variant={
-                  isElevatedPriority(ticket.priority)
-                    ? "default"
-                    : "outline"
-                }
-                className="h-auto rounded-full px-3 py-1"
-              >
-                {TICKET_PRIORITY_LABELS[ticket.priority]}
-              </Badge>
-              {location && (
-                <Badge
-                  variant="outline"
-                  className="h-auto rounded-full px-3 py-1 font-normal"
-                >
-                  <MapPinIcon className="size-3" strokeWidth={1.5} />
-                  {location.name}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Badge variant="secondary" className="h-auto rounded-full px-3 py-1">
+                  {TICKET_STATUS_LABELS[ticket.status]}
                 </Badge>
+                <Badge
+                  variant={isElevatedPriority(ticket.priority) ? "default" : "outline"}
+                  className="h-auto rounded-full px-3 py-1"
+                >
+                  {TICKET_PRIORITY_LABELS[ticket.priority]}
+                </Badge>
+                {location && (
+                  <Badge
+                    variant="outline"
+                    className="h-auto rounded-full px-3 py-1 font-normal"
+                  >
+                    <MapPinIcon className="size-3" strokeWidth={1.5} />
+                    {location.name}
+                  </Badge>
+                )}
+              </div>
+            </>
+          }
+          main={children}
+          sidebar={
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <span className="label-industrial">{schema?.title ?? "Angaben"}</span>
+                {fields.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Keine strukturierten Angaben.
+                  </p>
+                ) : (
+                  <dl className="grid gap-3 rounded-2xl border border-border bg-card px-4 py-3">
+                    {fields.map((field) => (
+                      <div key={field.name} className="grid gap-0.5">
+                        <dt className="text-xs text-muted-foreground">{field.label}</dt>
+                        <dd className="text-sm break-words whitespace-pre-wrap">
+                          {field.text}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Gemeldet von {ticket.created_by_email}
+              </p>
+
+              {assigneeName !== undefined && (
+                <p className="text-xs text-muted-foreground">
+                  Bearbeitung: {assigneeName ?? "noch nicht zugewiesen"}
+                </p>
               )}
             </div>
-          </div>
-        </div>
-
-        <Separator className="bg-border" />
-
-        <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
-          <CardHeader>
-            <CardTitle className="text-lg font-medium">
-              {schema?.title ?? "Angaben"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {fields.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Keine strukturierten Angaben.
-              </p>
-            ) : (
-              <dl className="grid gap-0 divide-y divide-border overflow-hidden rounded-2xl border border-border">
-                {fields.map((field) => (
-                  <div
-                    key={field.name}
-                    className="grid gap-0.5 p-3 sm:grid-cols-[14rem_1fr]"
-                  >
-                    <dt className="text-xs font-medium text-muted-foreground">
-                      {field.label}
-                    </dt>
-                    <dd className="text-sm break-words whitespace-pre-wrap">
-                      {field.text}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-
-            {assigneeName !== undefined && (
-              <p className="mt-4 text-xs text-muted-foreground">
-                Bearbeitung: {assigneeName ?? "noch nicht zugewiesen"}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        {children}
+          }
+        />
       </div>
     </main>
   );

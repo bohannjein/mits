@@ -47,11 +47,15 @@ export default async function CustomerTicketPage({
         backHref="/customer/tickets"
         backLabel="Zurück zu meinen Tickets"
       >
-        <TicketThread
-          ticketId={ticket.id}
-          comments={listCommentsFor(id, user)}
-          isAgent={false}
-        />
+        {/* Wrapped so the conversation scrolls inside its column instead of
+            stretching the page — the same arrangement the agent view uses. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
+          <TicketThread
+            ticketId={ticket.id}
+            comments={listCommentsFor(id, user)}
+            isAgent={false}
+          />
+        </div>
       </TicketDetail>
     </>
   );

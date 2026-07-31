@@ -29,28 +29,20 @@ import { auditLabel } from "@/types/mits";
 export function AuditTrail({
   entries,
   timezone,
+  /**
+   * Drop the card and the heading — the sidebar section already provides both, and two
+   * nested frames with two headings is what a panel looks like when a component was
+   * moved without being adapted.
+   */
+  bare = false,
 }: {
   entries: AuditEntry[];
   /** Resolved server-side, same as everywhere else — see `lib/format.ts`. */
   timezone: string;
+  bare?: boolean;
 }) {
-  return (
-    <Card className="rounded-2xl border border-border bg-card ring-0 shadow-elev-1">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <HistoryIcon
-            className="size-4 text-muted-foreground"
-            strokeWidth={1.5}
-            aria-hidden
-          />
-          Historie
-          <span className="ml-auto text-xs font-normal text-muted-foreground tabular-nums">
-            {entries.length}
-          </span>
-        </CardTitle>
-      </CardHeader>
-
-      <CardContent>
+  const body = (
+    <>
         {entries.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             Noch keine Änderungen protokolliert.
@@ -89,7 +81,27 @@ export function AuditTrail({
             </ol>
           </ScrollArea>
         )}
-      </CardContent>
+    </>
+  );
+
+  if (bare) return body;
+
+  return (
+    <Card className="rounded-2xl border border-border bg-card ring-0 shadow-elev-1">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-sm font-medium">
+          <HistoryIcon
+            className="size-4 text-muted-foreground"
+            strokeWidth={1.5}
+            aria-hidden
+          />
+          Historie
+          <span className="ml-auto text-xs font-normal text-muted-foreground tabular-nums">
+            {entries.length}
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>{body}</CardContent>
     </Card>
   );
 }
