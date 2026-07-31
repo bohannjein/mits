@@ -29,7 +29,12 @@ import {
   setPortalFaqs,
   setPortalServices,
 } from "@/lib/portal";
+import { queryNtp } from "@/lib/ntp";
 import { normaliseDomains, setAuthSettings } from "@/lib/settings";
+import {
+  SystemSettingsError,
+  setSystemSettings,
+} from "@/lib/system-settings";
 import { unusableFaqAttachments } from "@/lib/storage";
 import { RoleChangeError, setUserRole } from "@/lib/users";
 import {
@@ -43,6 +48,8 @@ import {
   PortalMaintenanceSchema,
   PortalServiceSchema,
   SmtpSettingsSchema,
+  SystemSettingsSchema,
+  clockHealth,
   isSafeResourceHref,
   isSmtpConfigured,
   parseFormSchema,
@@ -526,6 +533,88 @@ export async function saveAISettingsAction(
     throw error;
   }
 }
+
+/* ── System: timezone and time server ───────────────────────────────────── */
+
+export async function saveSystemSettingsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const parsed = SystemSettingsSchema.safeParse({
+    timezone: String(formData.get("timezone") ?? ""),
+    ntpHost: String(formData.get("ntpHost") ?? ""),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: "Zeitzone oder Zeitserver fehlen." };
+  }
+
+  let saved;
+  try {
+    saved = setSystemSettings(parsed.data);
+  } catch (error) {
+    if (error instanceof SystemSettingsError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+
+  /*
+   * The timezone is read in the root layout, so every rendered page carries it.
+   * Revalidating the layout is what makes a change visible without a restart —
+   * without it a cached page would keep formatting in the previous zone, and the
+   * setting would look like it had not been saved.
+   */
+  revalidatePath("/", "layout");
+
+  return {
+    ok: true,
+    message: `Zeitzone ${saved.timezone}, Zeitserver ${saved.ntpHost}.`,
+  };
+}
+
+/**
+ * Measure the system clock against the configured time server.
+ *
+ * Read-only by design — see `lib/ntp.ts`. The host owns the clock, so this reports
+ * a number and names who has to act on it.
+ */
+export async function checkTimeSyncAction(
+  _previous: TimeSyncResult | null,
+  formData: FormData,
+): Promise<TimeSyncResult> {
+  await requireRole("admin");
+
+  const host = String(formData.get("ntpHost") ?? "").trim();
+  const result = await queryNtp(host);
+
+  if (!result.ok) return { ok: false, error: result.error };
+
+  const health = clockHealth(result.offsetMs);
+  return {
+    ok: true,
+    offsetMs: result.offsetMs,
+    roundTripMs: result.roundTripMs,
+    stratum: result.stratum,
+    health,
+    message:
+      health === "ok"
+        ? `${host} bestätigt die Systemzeit.`
+        : `${host} meldet eine Abweichung. Die Korrektur erfolgt auf dem Host, nicht in MITS.`,
+  };
+}
+
+export type TimeSyncResult =
+  | {
+      ok: true;
+      message: string;
+      offsetMs: number;
+      roundTripMs: number;
+      stratum: number;
+      health: "ok" | "warn" | "critical";
+    }
+  | { ok: false; error: string };
 
 /* ── Form schemas ───────────────────────────────────────────────────────── */
 

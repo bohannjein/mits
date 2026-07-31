@@ -23,6 +23,14 @@ import {
 } from "../src/lib/mock-schemas";
 import { ticketCreatedMail, ticketReplyMail } from "../src/lib/mail-templates";
 import {
+  SYSTEM_TIMEZONES,
+  formatDateTime,
+  formatDateTimeShort,
+  formatOffsetMs,
+  isValidTimezone,
+  timezoneOffsetLabel,
+} from "../src/lib/format";
+import {
   DEFAULT_PORTAL_FAQS,
   KEEP_SMTP_PASSWORD,
   type MITSFormSchema,
@@ -37,6 +45,8 @@ import {
   presenceStateFor,
   PortalConfigSchema,
   PortalFaqSchema,
+  clockHealth,
+  isValidNtpHost,
   fillPortalText,
   formatFileSize,
   isImageAttachment,
@@ -998,6 +1008,77 @@ console.log("\nfaq attachments");
     "a faq row without attachments still parses",
     legacy.success && legacy.data.attachments.length === 0,
   );
+}
+
+console.log("\ntimezone and clock");
+{
+  // Fixed instant: 2026-07-31T12:00:00Z. Berlin is UTC+2 in July, so a formatter
+  // that ignored the zone would render 12:00 and pass nothing here.
+  const instant = new Date("2026-07-31T12:00:00.000Z");
+
+  check(
+    "formatting honours the given zone",
+    formatDateTime(instant, "Europe/Berlin").includes("14:00"),
+    formatDateTime(instant, "Europe/Berlin"),
+  );
+  check(
+    "…and a different zone gives a different time",
+    formatDateTime(instant, "UTC").includes("12:00"),
+    formatDateTime(instant, "UTC"),
+  );
+  check(
+    "short format stays short",
+    formatDateTimeShort(instant, "Europe/Berlin") === "31.07.26, 14:00",
+    formatDateTimeShort(instant, "Europe/Berlin"),
+  );
+
+  check("a real zone is accepted", isValidTimezone("Europe/Berlin"));
+  check("UTC is accepted", isValidTimezone("UTC"));
+  check("nonsense is refused", !isValidTimezone("Europe/Berlyn"));
+  check("empty is refused", !isValidTimezone("   "));
+  check(
+    "every offered zone is one the runtime knows",
+    SYSTEM_TIMEZONES.every(isValidTimezone),
+    SYSTEM_TIMEZONES.filter((zone) => !isValidTimezone(zone)).join(","),
+  );
+
+  check(
+    "summer offset is reported, not the standard one",
+    timezoneOffsetLabel("Europe/Berlin", instant) === "UTC+02:00",
+    timezoneOffsetLabel("Europe/Berlin", instant),
+  );
+  check(
+    "…and winter differs",
+    timezoneOffsetLabel("Europe/Berlin", new Date("2026-01-15T12:00:00Z")) ===
+      "UTC+01:00",
+  );
+  check(
+    "zero offset is spelled out rather than left as GMT",
+    timezoneOffsetLabel("UTC", instant) === "UTC+00:00",
+    timezoneOffsetLabel("UTC", instant),
+  );
+
+  check("sub-second offsets stay in ms", formatOffsetMs(412) === "+412 ms");
+  check(
+    "a negative offset keeps its sign",
+    formatOffsetMs(-1300) === "−1,3 s",
+    formatOffsetMs(-1300),
+  );
+
+  check("a small offset is healthy", clockHealth(500) === "ok");
+  check("a few seconds warns", clockHealth(5000) === "warn");
+  check("half a minute is critical", clockHealth(-45_000) === "critical");
+  check(
+    "health ignores the direction",
+    clockHealth(-5000) === clockHealth(5000),
+  );
+
+  check("a hostname is accepted", isValidNtpHost("pool.ntp.org"));
+  check("an ip literal is accepted", isValidNtpHost("192.168.1.1"));
+  check("a scheme is refused", !isValidNtpHost("http://pool.ntp.org"));
+  check("a port is refused", !isValidNtpHost("pool.ntp.org:123"));
+  check("a shell metacharacter is refused", !isValidNtpHost("pool.ntp.org; ls"));
+  check("empty is refused", !isValidNtpHost(""));
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

@@ -15,6 +15,8 @@ import { getFeatureFlags } from "@/lib/features";
 import { getFormSchema } from "@/lib/form-schemas";
 import { resolveFields } from "@/lib/forms/schema-to-zod";
 import { getLocation } from "@/lib/locations";
+import { formatDateTime } from "@/lib/format";
+import { getSystemTimezone } from "@/lib/system-settings";
 import { listCommentsFor } from "@/lib/ticket-comments";
 import { listLinksFor } from "@/lib/ticket-links";
 import { getTicketFor } from "@/lib/tickets";
@@ -102,10 +104,7 @@ export default async function AgentTicketPage({
                 </div>
                 <p className="mt-1.5 text-xs text-muted-foreground">
                   {ticket.created_by_email} ·{" "}
-                  {ticket.created_at.toLocaleString("de-DE", {
-                    dateStyle: "long",
-                    timeStyle: "short",
-                  })}
+                  {formatDateTime(ticket.created_at, getSystemTimezone())}
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <Badge

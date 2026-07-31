@@ -2,6 +2,8 @@ import { MapPinIcon } from "lucide-react";
 
 import { BackLink } from "@/components/layout/back-link";
 import { Badge } from "@/components/ui/badge";
+import { formatDateTime } from "@/lib/format";
+import { getSystemTimezone } from "@/lib/system-settings";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import type { MITSFormSchema, MITSLocation, MITSTicket } from "@/types/mits";
@@ -41,6 +43,7 @@ export function TicketDetail({
   assigneeName?: string | null;
   children: React.ReactNode;
 }) {
+  const timezone = getSystemTimezone();
   // `resolveFields` is the same label resolution the renderer and the AI preview
   // use, so a field is named identically wherever it appears.
   const labels = new Map(
@@ -71,10 +74,7 @@ export function TicketDetail({
               </h1>
               <p className="mt-2 text-sm text-muted-foreground">
                 Gemeldet von {ticket.created_by_email} am{" "}
-                {ticket.created_at.toLocaleString("de-DE", {
-                  dateStyle: "long",
-                  timeStyle: "short",
-                })}
+                {formatDateTime(ticket.created_at, timezone)}
               </p>
             </div>
 

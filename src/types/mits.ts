@@ -686,6 +686,55 @@ export const DEFAULT_AUTH_SETTINGS: AuthSettings = {
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
+   System settings: display timezone and time server.
+
+   The timezone is a *display* setting. Timestamps are stored as ISO strings in
+   UTC and stay that way; this only decides how they are rendered, so changing it
+   reinterprets nothing and cannot corrupt a stored date.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const SystemSettingsSchema = z.object({
+  /** IANA zone name, e.g. `Europe/Berlin`. Validated against the runtime's ICU data. */
+  timezone: z.string().max(64),
+  /** Hostname or IP of an NTP server. No scheme, no port — this is UDP to 123. */
+  ntpHost: z.string().max(253),
+});
+export type SystemSettings = z.infer<typeof SystemSettingsSchema>;
+
+export const DEFAULT_NTP_HOST = "pool.ntp.org";
+
+/**
+ * A hostname or IP literal, nothing else.
+ *
+ * The value is admin-supplied and goes to a socket, so the shape is checked rather
+ * than trusted. Deliberately no scheme and no port: this is UDP to 123, and
+ * accepting `http://…` would only invite the wrong thing being pasted in.
+ *
+ * Here rather than in `lib/ntp.ts` for the same reason `isValidModelName` is here:
+ * that module imports `node:dgram` and is marked `server-only`, which makes it
+ * unreachable from the offline test script — and a host validator nobody can test
+ * is the one place a typo in the pattern would go unnoticed.
+ */
+const NTP_HOST_PATTERN = /^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/;
+
+export const isValidNtpHost = (value: string): boolean =>
+  NTP_HOST_PATTERN.test(value.trim());
+
+/** Above these the clock is worth acting on rather than just noting. */
+export const NTP_WARN_OFFSET_MS = 2000;
+export const NTP_CRITICAL_OFFSET_MS = 30_000;
+
+export type ClockHealth = "ok" | "warn" | "critical";
+
+/** Direction does not matter — a clock two minutes behind is as wrong as one ahead. */
+export function clockHealth(offsetMs: number): ClockHealth {
+  const magnitude = Math.abs(offsetMs);
+  if (magnitude >= NTP_CRITICAL_OFFSET_MS) return "critical";
+  if (magnitude >= NTP_WARN_OFFSET_MS) return "warn";
+  return "ok";
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
    AI settings.
 
    Configured in the UI, not in the environment. The web app reads them per

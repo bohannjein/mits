@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   BookOpenIcon,
+  ClockIcon,
   BrainIcon,
   MailIcon,
   MessageSquareTextIcon,
@@ -100,6 +101,12 @@ export default async function AdminPage() {
                 <Link href="/admin/portal">
                   <MegaphoneIcon />
                   Portal-Inhalte
+                </Link>
+              </Button>
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
+                <Link href="/admin/settings/system">
+                  <ClockIcon />
+                  System & Zeit
                 </Link>
               </Button>
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">

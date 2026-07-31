@@ -1,6 +1,7 @@
 import { requireApiUser } from "@/lib/auth/session";
 import { ticketCreatedMail } from "@/lib/mail-templates";
 import { sendNotification, ticketUrl } from "@/lib/smtp";
+import { getSystemTimezone } from "@/lib/system-settings";
 import { parseTicketQuery } from "@/lib/ticket-query";
 import {
   TicketValidationError,
@@ -104,7 +105,7 @@ export async function POST(request: Request) {
      */
     await sendNotification({
       to: ticket.created_by_email,
-      ...ticketCreatedMail(ticket, ticketUrl(ticket.id)),
+      ...ticketCreatedMail(ticket, ticketUrl(ticket.id), getSystemTimezone()),
     });
 
     return Response.json({ ticket }, { status: 201 });

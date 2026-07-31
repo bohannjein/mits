@@ -27,6 +27,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useTimezone } from "@/components/providers/timezone-provider";
+import { formatDateTimeShort } from "@/lib/format";
 import type { TicketComment } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -54,6 +56,7 @@ export function TicketChat({
   isAgent: boolean;
   cannedResponses?: { id: string; title: string; body: string }[];
 }) {
+  const timezone = useTimezone();
   const [internal, setInternal] = useState(false);
   const [body, setBody] = useState("");
   const [replyResult, replyAction, replying] = useActionState(
@@ -123,10 +126,7 @@ export function TicketChat({
                     </Badge>
                   )}
                   <time className="ml-auto font-mono text-[11px] text-muted-foreground">
-                    {comment.created_at.toLocaleString("de-DE", {
-                      dateStyle: "short",
-                      timeStyle: "short",
-                    })}
+                    {formatDateTimeShort(comment.created_at, timezone)}
                   </time>
                 </header>
                 <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap">

@@ -1,3 +1,4 @@
+import { DEFAULT_TIMEZONE, formatDateTime } from "@/lib/format";
 import { formatTicketNumber, type MITSTicket } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -149,7 +150,17 @@ function layout(options: {
 }
 
 /** Sent once, when a ticket has been filed. */
-export function ticketCreatedMail(ticket: MITSTicket, url: string | null) {
+/**
+ * `timeZone` is a parameter rather than a lookup: this module is imported by the
+ * offline test script, so it must stay free of `server-only` imports. A mail is also
+ * sent outside any request, so there is no context to read it from — the caller,
+ * which is inside one, passes it in.
+ */
+export function ticketCreatedMail(
+  ticket: MITSTicket,
+  url: string | null,
+  timeZone: string = DEFAULT_TIMEZONE,
+) {
   const number = formatTicketNumber(ticket.ticket_number);
 
   const { html, text } = layout({
@@ -160,7 +171,7 @@ export function ticketCreatedMail(ticket: MITSTicket, url: string | null) {
         text: `Ihre Meldung liegt bei der IT und wird bearbeitet. Sobald es etwas zu berichten gibt, erhalten Sie eine Nachricht an diese Adresse.`,
       },
       {
-        text: `Ticket-Nummer: ${number}\nEingegangen am: ${ticket.created_at.toLocaleString("de-DE", { dateStyle: "long", timeStyle: "short" })}`,
+        text: `Ticket-Nummer: ${number}\nEingegangen am: ${formatDateTime(ticket.created_at, timeZone)}`,
       },
     ],
     url,

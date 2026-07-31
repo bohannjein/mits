@@ -8,6 +8,7 @@ import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useTimezone } from "@/components/providers/timezone-provider";
 import {
   MITSTicketSchema,
   TICKET_PRIORITY_LABELS,
@@ -63,6 +64,7 @@ export function OpenTicketsPanel({
   initialTickets: MITSTicket[];
   title?: string;
 }) {
+  const timezone = useTimezone();
   const { data, isFetching, refetch } = useQuery({
     queryKey: ["tickets", "own"],
     queryFn: fetchOwnTickets,
@@ -142,6 +144,7 @@ export function OpenTicketsPanel({
                     day: "2-digit",
                     month: "2-digit",
                     year: "2-digit",
+                    timeZone: timezone,
                   })}
                 </span>
               </Link>

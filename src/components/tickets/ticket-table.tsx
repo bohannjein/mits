@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
+import { formatDateTimeShort } from "@/lib/format";
+import { getSystemTimezone } from "@/lib/system-settings";
 import {
   Table,
   TableBody,
@@ -41,6 +43,7 @@ export function TicketTable({
   locations?: MITSLocation[];
   detailBase?: string;
 }) {
+  const timezone = getSystemTimezone();
   if (tickets.length === 0) {
     return (
       <p className="rounded-2xl border border-border p-6 text-sm text-muted-foreground">
@@ -114,10 +117,7 @@ export function TicketTable({
                   </Badge>
                 </TableCell>
                 <TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
-                  {ticket.created_at.toLocaleString("de-DE", {
-                    dateStyle: "short",
-                    timeStyle: "short",
-                  })}
+                  {formatDateTimeShort(ticket.created_at, timezone)}
                 </TableCell>
               </TableRow>
             );

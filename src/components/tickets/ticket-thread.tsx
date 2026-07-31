@@ -17,6 +17,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useTimezone } from "@/components/providers/timezone-provider";
+import { formatDateTimeShort } from "@/lib/format";
 import type { TicketComment } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -40,6 +42,7 @@ export function TicketThread({
   isAgent: boolean;
   cannedResponses?: { id: string; title: string; body: string }[];
 }) {
+  const timezone = useTimezone();
   const [internal, setInternal] = useState(false);
   const [body, setBody] = useState("");
   const [result, formAction, sending] = useActionState(addCommentAction, null);
@@ -95,10 +98,7 @@ export function TicketThread({
                   </Badge>
                 )}
                 <span className="ml-auto text-xs text-muted-foreground">
-                  {comment.created_at.toLocaleString("de-DE", {
-                    dateStyle: "short",
-                    timeStyle: "short",
-                  })}
+                  {formatDateTimeShort(comment.created_at, timezone)}
                 </span>
               </div>
               <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap">

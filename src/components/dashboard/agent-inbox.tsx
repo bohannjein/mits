@@ -16,6 +16,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useTimezone } from "@/components/providers/timezone-provider";
 import {
   TICKET_PRIORITY_LABELS,
   TICKET_STATUS_LABELS,
@@ -51,6 +52,7 @@ export function AgentInbox({
   emptyText: string;
   claimable?: boolean;
 }) {
+  const timezone = useTimezone();
   const [result, formAction, pending] = useActionState(assignTicketAction, null);
 
   const byId = new Map(locations.map((entry) => [entry.id, entry]));
@@ -142,6 +144,7 @@ export function AgentInbox({
                   {ticket.created_at.toLocaleDateString("de-DE", {
                     day: "2-digit",
                     month: "2-digit",
+                    timeZone: timezone,
                   })}
                 </span>
 

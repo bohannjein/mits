@@ -3,6 +3,8 @@ import { Roboto, Roboto_Mono } from "next/font/google";
 
 import { ThemeProvider } from "@/components/branding/theme-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
+import { TimezoneProvider } from "@/components/providers/timezone-provider";
+import { getSystemTimezone } from "@/lib/system-settings";
 
 import "./globals.css";
 
@@ -32,11 +34,15 @@ export const metadata: Metadata = {
     "KI-first IT-Service-Portal mit drei Ticket-Eingängen: klassisch, geführter Wizard und KI-Chat.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Resolved once per request and handed to the client tree, so both halves format
+  // timestamps in the same zone — see TimezoneProvider.
+  const timezone = getSystemTimezone();
+
   return (
     // `className="dark"` matches the ThemeProvider default so the first paint is
     // already dark; suppressHydrationWarning covers next-themes rewriting it.
@@ -47,7 +53,9 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col">
         <ThemeProvider>
-          <QueryProvider>{children}</QueryProvider>
+          <TimezoneProvider timezone={timezone}>
+            <QueryProvider>{children}</QueryProvider>
+          </TimezoneProvider>
         </ThemeProvider>
       </body>
     </html>
