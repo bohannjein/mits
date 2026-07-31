@@ -1,5 +1,6 @@
 import { InboxIcon, CheckCheckIcon } from "lucide-react";
 
+import { OpenClosedPie } from "@/components/dashboard/open-closed-pie";
 import { cn } from "@/lib/utils";
 import type { MITSLocation } from "@/types/mits";
 
@@ -38,6 +39,11 @@ export function StatsTiles({
   return (
     <section aria-label="Kennzahlen" className="grid gap-3">
       <h2 className="label-industrial">Heute</h2>
+
+      {/* The ratio, with both figures in its legend. The two tiles below keep the
+          absolute numbers at a glance — the pie answers "are we keeping up", the
+          tiles answer "how much". */}
+      <OpenClosedPie opened={opened} closed={closed} />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Tile

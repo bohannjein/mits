@@ -19,7 +19,7 @@ export const AGENT_SCOPES = ["pool", "mine"] as const;
 export type AgentScope = (typeof AGENT_SCOPES)[number];
 
 export const AGENT_SCOPE_LABELS: Record<AgentScope, string> = {
-  pool: "Team-Pool",
+  pool: "Pool",
   mine: "Mein Bereich",
 };
 

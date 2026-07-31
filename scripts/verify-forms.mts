@@ -21,6 +21,7 @@ import {
   SOFTWARE_ACCESS_SCHEMA,
   USER_ONBOARDING_SCHEMA,
 } from "../src/lib/mock-schemas";
+import { pieSlice, sharePercent } from "../src/lib/chart";
 import { ticketCreatedMail, ticketReplyMail } from "../src/lib/mail-templates";
 import {
   SYSTEM_TIMEZONES,
@@ -1079,6 +1080,54 @@ console.log("\ntimezone and clock");
   check("a port is refused", !isValidNtpHost("pool.ntp.org:123"));
   check("a shell metacharacter is refused", !isValidNtpHost("pool.ntp.org; ls"));
   check("empty is refused", !isValidNtpHost(""));
+}
+
+console.log("\npie geometry");
+{
+  const R = 64;
+  const C = 66;
+
+  /*
+   * Both ends of the range are degenerate and neither is visible in a screenshot
+   * review: at 100 % the arc's start and end points coincide, so an SVG arc between
+   * them draws nothing, and the widget would show an empty box for "everything
+   * closed". At 0 % there is no slice to draw at all.
+   */
+  const none = pieSlice(0, R, C);
+  check("an empty slice has no path", none.path === null && !none.full);
+
+  const all = pieSlice(1, R, C);
+  check(
+    "a full slice is flagged instead of being drawn as an arc",
+    all.path === null && all.full,
+  );
+  check("…and over 1 is clamped to full", pieSlice(1.2, R, C).full);
+  check("…and below 0 is clamped to empty", pieSlice(-0.3, R, C).path === null);
+
+  const half = pieSlice(0.5, R, C);
+  check("a half slice has a path", half.path !== null);
+  check(
+    "a half slice takes the short arc",
+    half.path?.includes(`A ${R} ${R} 0 0 1`) === true,
+    half.path ?? "",
+  );
+  check(
+    "a three-quarter slice takes the long arc",
+    pieSlice(0.75, R, C).path?.includes(`A ${R} ${R} 0 1 1`) === true,
+    pieSlice(0.75, R, C).path ?? "",
+  );
+  check(
+    "every slice starts at twelve o'clock",
+    half.path?.startsWith(`M ${C} ${C} L ${C}.000 ${C - R}.000`) === true,
+    half.path ?? "",
+  );
+
+  check("a share is whole percent", sharePercent(1, 3) === 33);
+  check("a full share is 100", sharePercent(4, 4) === 100);
+  check(
+    "no total means no percentage is claimed",
+    sharePercent(0, 0) === null,
+  );
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

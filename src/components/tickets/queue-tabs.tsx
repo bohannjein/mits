@@ -55,11 +55,16 @@ export function QueueTabs({
           const isActive = candidate === scope;
 
           /*
-           * Switching scope keeps the view where it exists. Coming from the
-           * inbox into "Mein Bereich" would otherwise land on a tab that is
-           * hidden there, so it falls back to "Offen".
+           * Switching scope always lands on that scope's first tab — Eingang in the
+           * pool, Offen in "Mein Bereich".
+           *
+           * Carrying the current view across looked tidy and read as nothing
+           * happening: the tab bar stayed on "Offen" and only the list changed, so
+           * the switch gave no feedback that it had worked. Starting at the front
+           * also matches what each scope is for — the pool is triaged from its
+           * inbox, one's own area from what is still open.
            */
-          const target = viewsForScope(candidate).includes(view) ? view : "open";
+          const target = viewsForScope(candidate)[0];
 
           return (
             <Link
