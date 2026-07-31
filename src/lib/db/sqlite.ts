@@ -126,6 +126,24 @@ function migrateAppTables(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_mits_comment_ticket
       ON mits_ticket_comment (ticket_id, created_at);
 
+    -- Contact details a reporter maintains themselves. One row per user, created
+    -- on first save. No foreign key to the user table, matching every other table
+    -- here: the auth tables may not exist yet the first time this runs.
+    -- (No backticks in this comment on purpose — the whole block is a template
+    --  literal, and one would end it.)
+    CREATE TABLE IF NOT EXISTS mits_user_profile (
+      user_id     TEXT PRIMARY KEY,
+      location_id TEXT,
+      phone       TEXT NOT NULL DEFAULT '',
+      street      TEXT NOT NULL DEFAULT '',
+      postal_code TEXT NOT NULL DEFAULT '',
+      city        TEXT NOT NULL DEFAULT '',
+      country     TEXT NOT NULL DEFAULT '',
+      website     TEXT NOT NULL DEFAULT '',
+      note        TEXT NOT NULL DEFAULT '',
+      updated_at  TEXT NOT NULL
+    );
+
     -- Last sign of life per user. One row per user, overwritten in place — this
     -- is a presence indicator, not an audit trail.
     CREATE TABLE IF NOT EXISTS mits_presence (

@@ -3,9 +3,11 @@
 import {
   BuildingIcon,
   CheckCircle2Icon,
+  GlobeIcon,
   Loader2Icon,
   MailIcon,
   MapPinIcon,
+  PhoneIcon,
   TriangleAlertIcon,
   UserCheckIcon,
 } from "lucide-react";
@@ -39,6 +41,7 @@ import {
   TicketStatus,
   type MITSLocation,
   type MITSTicket,
+  type MITSUserProfile,
 } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -61,6 +64,11 @@ export function TicketSidebar({
   currentUserId,
   location,
   fields,
+  /**
+   * The reporter's own contact details from their settings, or null when they have
+   * filled in none. Read by the page, not here — this is a client component.
+   */
+  reporter = null,
   children,
 }: {
   ticket: MITSTicket;
@@ -69,9 +77,24 @@ export function TicketSidebar({
   location: MITSLocation | null;
   /** Resolved form answers — label plus rendered value. */
   fields: { name: string; label: string; text: string }[];
+  reporter?: MITSUserProfile | null;
   /** The links card, rendered by the page so this stays a pure client component. */
   children?: React.ReactNode;
 }) {
+  /*
+   * Assembled here so the card can decide whether there is an address at all. A
+   * reporter who filled in only a city should see that city, not a line of stray
+   * commas around empty fields.
+   */
+  const postalAddress = [
+    reporter?.street,
+    [reporter?.postal_code, reporter?.city].filter(Boolean).join(" "),
+    reporter?.country,
+  ]
+    .map((line) => line?.trim())
+    .filter((line): line is string => Boolean(line))
+    .join("\n");
+
   const [statusResult, statusAction, changingStatus] = useActionState(
     setTicketStatusAction,
     null,
@@ -234,14 +257,62 @@ export function TicketSidebar({
             {location ? location.name : "Kein Standort angegeben"}
           </span>
           {/*
-           * No department: MITS has no such field on a user, and inventing one
-           * here would mean showing an empty row on every ticket forever. Add it
-           * to the user model first if it is needed.
+           * The reporter's own details, maintained in their settings. Only the rows
+           * they actually filled in: a card of "nicht erfasst" placeholders is noise
+           * on every ticket, and an absent phone number is not information.
            */}
-          <span className="flex items-center gap-2 text-muted-foreground">
-            <BuildingIcon className="size-3.5 shrink-0" strokeWidth={1.5} aria-hidden />
-            Abteilung nicht erfasst
-          </span>
+          {reporter?.phone && (
+            <span className="flex items-center gap-2">
+              <PhoneIcon
+                className="size-3.5 shrink-0 text-muted-foreground"
+                strokeWidth={1.5}
+                aria-hidden
+              />
+              <a
+                href={`tel:${reporter.phone}`}
+                className="underline-offset-4 hover:underline"
+              >
+                {reporter.phone}
+              </a>
+            </span>
+          )}
+
+          {postalAddress && (
+            <span className="flex items-start gap-2">
+              <BuildingIcon
+                className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+                strokeWidth={1.5}
+                aria-hidden
+              />
+              <span className="whitespace-pre-line">{postalAddress}</span>
+            </span>
+          )}
+
+          {reporter?.website && (
+            <span className="flex items-center gap-2 break-all">
+              <GlobeIcon
+                className="size-3.5 shrink-0 text-muted-foreground"
+                strokeWidth={1.5}
+                aria-hidden
+              />
+              {/* Stored only after `isWebsiteUrl` confirmed http(s) with a host, so
+                  linking it is safe — but it still leaves our origin, hence noopener. */}
+              <a
+                href={reporter.website}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="underline-offset-4 hover:underline"
+              >
+                {reporter.website.replace(/^https?:\/\//, "")}
+              </a>
+            </span>
+          )}
+
+          {reporter?.note && (
+            <span className="rounded-xl border border-border bg-background px-3 py-2 text-xs whitespace-pre-line text-muted-foreground">
+              {reporter.note}
+            </span>
+          )}
         </CardContent>
       </Card>
 

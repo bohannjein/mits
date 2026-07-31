@@ -310,6 +310,94 @@ export const CANNED_PLACEHOLDERS = [
 ] as const;
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Customer profile.
+
+   Contact details a reporter maintains themselves, so the technician working their
+   ticket does not have to ask where they sit.
+
+   Declared as a list rather than written into the form as JSX, for the same reason a
+   ticket type is a schema and not a component: the admin-side field configurator is
+   meant to switch these on and off and mark them required, and that is an override of
+   this list rather than a rewrite of the mask.
+
+   The account's name and address are *not* here — those live on the `user` row and
+   are the login identity. This is everything else.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const CUSTOMER_PROFILE_FIELDS = [
+  { key: "phone", label: "Telefon", widget: "tel", autoComplete: "tel", max: 40 },
+  { key: "street", label: "Straße und Hausnummer", widget: "text", autoComplete: "street-address", max: 160 },
+  { key: "postal_code", label: "PLZ", widget: "text", autoComplete: "postal-code", max: 16 },
+  { key: "city", label: "Stadt", widget: "text", autoComplete: "address-level2", max: 120 },
+  { key: "country", label: "Land", widget: "text", autoComplete: "country-name", max: 80 },
+  { key: "website", label: "Website", widget: "url", autoComplete: "url", max: 300 },
+  { key: "note", label: "Hinweis für die Technik", widget: "textarea", max: 500 },
+] as const;
+
+export type CustomerProfileField = (typeof CUSTOMER_PROFILE_FIELDS)[number];
+export type CustomerProfileKey = CustomerProfileField["key"];
+
+/**
+ * One reporter's profile.
+ *
+ * Every field optional and defaulted to the empty string: a profile row may be
+ * written the first time someone fills in a single field, and the rest has to parse
+ * rather than fail. `location_id` is kept separate from the free-text fields because
+ * it references `mits_location` and is offered as a picker.
+ */
+export const MITSUserProfileSchema = z.object({
+  location_id: z.string().nullable().default(null),
+  phone: z.string().max(40).default(""),
+  street: z.string().max(160).default(""),
+  postal_code: z.string().max(16).default(""),
+  city: z.string().max(120).default(""),
+  country: z.string().max(80).default(""),
+  website: z.string().max(300).default(""),
+  note: z.string().max(500).default(""),
+});
+export type MITSUserProfile = z.infer<typeof MITSUserProfileSchema>;
+
+/**
+ * Sentinel the location picker posts for "not specified".
+ *
+ * Radix Select has no legal empty value, and an empty string in the column would be a
+ * location id that matches nothing rather than the absence of one.
+ */
+export const NO_LOCATION = "__none";
+
+export const EMPTY_USER_PROFILE: MITSUserProfile = MITSUserProfileSchema.parse({});
+
+/**
+ * Whether this is a website address we are willing to store and render as a link.
+ *
+ * Stricter than `isSafeResourceHref`, which also accepts a site-relative path — that
+ * is right for an admin-authored portal tile and wrong here: a reporter's "website"
+ * pointing at `/admin` would put a link to our own pages in a field a technician
+ * clicks. A host is required, and only http and https.
+ */
+export function isWebsiteUrl(value: string): boolean {
+  const raw = value.trim();
+  if (!raw) return false;
+  try {
+    const url = new URL(raw);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.hostname.includes(".")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** `example.de` → `https://example.de`, so a reporter need not type the scheme. */
+export function normaliseWebsite(value: string): string {
+  const raw = value.trim();
+  if (!raw) return "";
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) return raw;
+  return `https://${raw}`;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
    Locations (branches / sites).
    ────────────────────────────────────────────────────────────────────────── */
 

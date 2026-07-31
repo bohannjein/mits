@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
-import { KeyRoundIcon, RefreshCwIcon, ShieldAlertIcon, UserIcon } from "lucide-react";
+import {
+  KeyRoundIcon,
+  MapPinIcon,
+  RefreshCwIcon,
+  ShieldAlertIcon,
+  UserIcon,
+} from "lucide-react";
 
 import { PasswordChangeForm } from "@/components/auth/password-change-form";
+import { ContactDetailsForm } from "@/components/auth/contact-details-form";
 import { ProfileForm } from "@/components/auth/profile-form";
 import { RefreshPreferenceForm } from "@/components/auth/refresh-preference-form";
 import { AppHeader } from "@/components/layout/app-header";
@@ -18,10 +25,12 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { ROLE_LABELS, canViewBoard, homeFor } from "@/lib/auth/roles";
 import { requireUserForPasswordChange } from "@/lib/auth/session";
+import { listActiveLocations } from "@/lib/locations";
 import {
   getSystemSettings,
   getUserRefreshMinutes,
 } from "@/lib/system-settings";
+import { getUserProfile } from "@/lib/user-profile";
 
 export const metadata: Metadata = {
   title: "Profil — MITS",
@@ -99,6 +108,28 @@ export default async function ProfilePage() {
               </CardHeader>
               <CardContent>
                 <ProfileForm name={user.name} email={user.email} />
+              </CardContent>
+            </Card>
+          )}
+
+          {!user.mustChangePassword && (
+            <Card className="mb-6 rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
+              <CardHeader>
+                <span className="grid size-11 place-items-center rounded-full bg-surface-elevated text-muted-foreground">
+                  <MapPinIcon className="size-5" strokeWidth={1.5} aria-hidden />
+                </span>
+                <CardTitle className="mt-4 text-lg font-medium">
+                  Standort und Kontakt
+                </CardTitle>
+                <CardDescription className="mt-1 leading-relaxed">
+                  Sichtbar für die Technik, die Ihr Ticket bearbeitet.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ContactDetailsForm
+                  profile={getUserProfile(user.id)}
+                  locations={listActiveLocations()}
+                />
               </CardContent>
             </Card>
           )}

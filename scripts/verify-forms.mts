@@ -51,6 +51,12 @@ import {
   presenceStateFor,
   PortalConfigSchema,
   PortalFaqSchema,
+  CUSTOMER_PROFILE_FIELDS,
+  EMPTY_USER_PROFILE,
+  MITSUserProfileSchema,
+  NO_LOCATION,
+  isWebsiteUrl,
+  normaliseWebsite,
   REFRESH_FOLLOW_GLOBAL,
   REFRESH_INTERVALS,
   REFRESH_LABELS,
@@ -1290,6 +1296,58 @@ console.log("\nrich-text sanitising");
     uploadIdsInHtml('<img src="/api/uploads/aaa"><img src="/api/uploads/aaa">').length === 1,
   );
   check("no images yields none", uploadIdsInHtml("<p>x</p>").length === 0);
+}
+
+console.log("\ncustomer profile");
+{
+  // A reporter's website ends up as a link a technician clicks, so the scheme check
+  // is the load-bearing part. Stricter than isSafeResourceHref on purpose: that one
+  // also accepts a site-relative path, which here would point at our own pages.
+  check("https with a domain is accepted", isWebsiteUrl("https://example.de"));
+  check("http is accepted", isWebsiteUrl("http://example.de/pfad"));
+  check("javascript: is refused", !isWebsiteUrl("javascript:alert(1)"));
+  check("data: is refused", !isWebsiteUrl("data:text/html,<script>alert(1)</script>"));
+  check("file: is refused", !isWebsiteUrl("file:///etc/passwd"));
+  check("a site-relative path is refused", !isWebsiteUrl("/admin"));
+  check("a protocol-relative url is refused", !isWebsiteUrl("//evil.invalid"));
+  check("a host without a dot is refused", !isWebsiteUrl("http://localhost"));
+  check("empty is refused", !isWebsiteUrl("   "));
+
+  // Typing the scheme is not something to demand of a reporter.
+  check("a bare domain gains https", normaliseWebsite("example.de") === "https://example.de");
+  check("an existing scheme is left alone", normaliseWebsite("http://example.de") === "http://example.de");
+  check("empty stays empty", normaliseWebsite("  ") === "");
+  check(
+    "normalising does not rescue a bad scheme",
+    !isWebsiteUrl(normaliseWebsite("javascript:alert(1)")),
+  );
+
+  // Every declared field must exist on the schema, or the form would render an input
+  // whose value is dropped on save without anything looking wrong.
+  const empty = EMPTY_USER_PROFILE as Record<string, unknown>;
+  check(
+    "every declared field exists in the schema",
+    CUSTOMER_PROFILE_FIELDS.every((field) => field.key in empty),
+    CUSTOMER_PROFILE_FIELDS.filter((field) => !(field.key in empty))
+      .map((field) => field.key)
+      .join(","),
+  );
+  check(
+    "the empty profile has no location",
+    EMPTY_USER_PROFILE.location_id === null,
+  );
+
+  // A row written before a later column existed has to parse, or the settings page
+  // and the ticket sidebar would both fail to render.
+  const legacy = MITSUserProfileSchema.safeParse({ city: "Hamburg" });
+  check(
+    "a partial row parses and defaults the rest",
+    legacy.success && legacy.data.city === "Hamburg" && legacy.data.website === "",
+  );
+  check(
+    "the location sentinel is not a usable id",
+    NO_LOCATION.startsWith("__"),
+  );
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

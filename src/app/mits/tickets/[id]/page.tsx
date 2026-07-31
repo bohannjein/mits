@@ -20,6 +20,7 @@ import { getSystemTimezone } from "@/lib/system-settings";
 import { listCommentsFor } from "@/lib/ticket-comments";
 import { listLinksFor } from "@/lib/ticket-links";
 import { getTicketFor } from "@/lib/tickets";
+import { getUserProfile } from "@/lib/user-profile";
 import { listUsers } from "@/lib/users";
 import {
   TICKET_PRIORITY_LABELS,
@@ -157,6 +158,9 @@ export default async function AgentTicketPage({
                   ticket.location_id ? getLocation(ticket.location_id) : null
                 }
                 fields={fields}
+                // The reporter's own details, so the technician does not have to ask
+                // where they sit. Read here because the sidebar is a client component.
+                reporter={getUserProfile(ticket.created_by)}
               >
                 {flags.feature_ticket_linking && (
                   <TicketLinks

@@ -7,9 +7,12 @@ import { canViewBoard } from "@/lib/auth/roles";
 import { auth } from "@/lib/auth/server";
 import { clearMustChangePassword } from "@/lib/auth/seed-admin";
 import { requireUser, requireUserForPasswordChange } from "@/lib/auth/session";
+import { getLocation } from "@/lib/locations";
 import { setUserRefreshMinutes } from "@/lib/system-settings";
+import { UserProfileError, setUserProfile } from "@/lib/user-profile";
 import { ProfileError, setUserName } from "@/lib/users";
 import {
+  NO_LOCATION,
   REFRESH_FOLLOW_GLOBAL,
   REFRESH_LABELS,
   isRefreshInterval,
@@ -134,6 +137,66 @@ export async function changeOwnName(
   revalidatePath("/", "layout");
 
   return { ok: true, message: `Name auf „${saved}“ geändert.` };
+}
+
+/* ── Own contact details ────────────────────────────────────────────────── */
+
+/**
+ * Save one's own location, address and website.
+ *
+ * `requireUser`, so an account still on a default password cannot use this as a way
+ * around the gate. The id comes from the session — the form has no user field, and one
+ * added to the body would be ignored.
+ *
+ * Open to every role. A technician has an address too, and the fields are the same
+ * ones; what differs is only who reads them.
+ */
+export async function changeOwnProfile(
+  _previous: ProfileResult | null,
+  formData: FormData,
+): Promise<ProfileResult> {
+  const user = await requireUser();
+
+  const text = (key: string) => String(formData.get(key) ?? "").trim();
+  const locationId = text("location_id");
+
+  let saved;
+  try {
+    saved = setUserProfile(
+      user.id,
+      {
+        // The picker posts the sentinel when nothing is chosen; an empty string in the
+        // column would be a location id that matches nothing rather than "none".
+        location_id:
+          locationId === "" || locationId === NO_LOCATION ? null : locationId,
+        phone: text("phone"),
+        street: text("street"),
+        postal_code: text("postal_code"),
+        city: text("city"),
+        country: text("country"),
+        website: text("website"),
+        note: text("note"),
+      },
+      (id) => getLocation(id) !== null,
+    );
+  } catch (error) {
+    if (error instanceof UserProfileError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+
+  // The ticket sidebar shows these to the technician working the ticket, so the
+  // agent views have to drop their cache as well as this page.
+  revalidatePath("/settings/profile");
+  revalidatePath("/mits/tickets/[id]", "page");
+
+  return {
+    ok: true,
+    message: saved.website
+      ? `Angaben gespeichert. Website: ${saved.website}`
+      : "Angaben gespeichert.",
+  };
 }
 
 /* ── Own refresh interval ───────────────────────────────────────────────── */
