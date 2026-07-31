@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { KeyRoundIcon, ShieldAlertIcon } from "lucide-react";
+import { KeyRoundIcon, ShieldAlertIcon, UserIcon } from "lucide-react";
 
 import { PasswordChangeForm } from "@/components/auth/password-change-form";
+import { ProfileForm } from "@/components/auth/profile-form";
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -46,7 +47,7 @@ export default async function ProfilePage() {
           <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
-                Profil
+                Einstellungen
               </h1>
               <p className="mt-2 text-muted-foreground">
                 {user.email} ·{" "}
@@ -76,6 +77,25 @@ export default async function ProfilePage() {
                 anderes tun: keine Tickets, kein Board, keine Administration.
               </AlertDescription>
             </Alert>
+          )}
+
+          {/* Not while the gate is closed: a gated session may change its password
+              and nothing else, so a name field there would only be refused by
+              `changeOwnName`. */}
+          {!user.mustChangePassword && (
+            <Card className="mb-6 rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
+              <CardHeader>
+                <span className="grid size-11 place-items-center rounded-full bg-surface-elevated text-muted-foreground">
+                  <UserIcon className="size-5" strokeWidth={1.5} aria-hidden />
+                </span>
+                <CardTitle className="mt-4 text-lg font-medium">
+                  Meine Daten
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ProfileForm name={user.name} email={user.email} />
+              </CardContent>
+            </Card>
           )}
 
           <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-2">

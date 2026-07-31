@@ -1,10 +1,12 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
 import { auth } from "@/lib/auth/server";
 import { clearMustChangePassword } from "@/lib/auth/seed-admin";
-import { requireUserForPasswordChange } from "@/lib/auth/session";
+import { requireUser, requireUserForPasswordChange } from "@/lib/auth/session";
+import { ProfileError, setUserName } from "@/lib/users";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Own-password change.
@@ -77,4 +79,52 @@ export async function changeOwnPassword(
   clearMustChangePassword(user.id);
 
   return { ok: true, message: "Passwort geändert." };
+}
+
+/* ── Own display name ───────────────────────────────────────────────────── */
+
+export interface ProfileResult {
+  ok: boolean;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Change one's own name.
+ *
+ * `requireUser`, not the gated variant: an account that still has to replace a
+ * default password has exactly one thing it may do, and renaming itself is not it.
+ * The id comes from the session — a `userId` in the form body is ignored, so this
+ * cannot be pointed at somebody else's account.
+ */
+export async function changeOwnName(
+  _previous: ProfileResult | null,
+  formData: FormData,
+): Promise<ProfileResult> {
+  const user = await requireUser();
+
+  const name = String(formData.get("name") ?? "");
+  if (name.trim() === "") {
+    return { ok: false, error: "Bitte einen Namen angeben." };
+  }
+  if (name.trim() === user.name) {
+    return { ok: false, error: "Der Name ist unverändert." };
+  }
+
+  let saved: string;
+  try {
+    saved = setUserName(user.id, name);
+  } catch (error) {
+    if (error instanceof ProfileError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  /*
+   * The name is rendered by the header on every page, so the whole layout has to
+   * be revalidated — a page still in the route cache would keep greeting the old
+   * name and make the save look like it failed.
+   */
+  revalidatePath("/", "layout");
+
+  return { ok: true, message: `Name auf „${saved}“ geändert.` };
 }

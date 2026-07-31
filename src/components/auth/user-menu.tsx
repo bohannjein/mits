@@ -4,6 +4,7 @@ import {
   ChevronDownIcon,
   HeadsetIcon,
   LogOutIcon,
+  SettingsIcon,
   ShieldIcon,
   TicketIcon,
 } from "lucide-react";
@@ -38,7 +39,8 @@ import type { SessionUser } from "@/lib/auth/session";
  * round-trip. The client is only needed to end the session.
  *
  * This menu is the only place in MITS that offers a cross-area link, which makes
- * it the one place a reporter could be handed a way out of `/customer`. Both
+ * it the one place a reporter could be handed a way out of `/customer`. "Meine
+ * Tickets" and "Einstellungen" are inside their own area and therefore ungated. Both
  * staff entries hang off `canViewBoard`/`canAdminister` — the same predicates the
  * server guard uses — so a `user` is offered nothing but their own tickets. Any
  * new entry here needs the same gate; an ungated one puts a dead-end link on the
@@ -110,6 +112,16 @@ export function UserMenu({ user }: { user: SessionUser }) {
             <Link href="/customer/tickets">
               <TicketIcon />
               Meine Tickets
+            </Link>
+          </DropdownMenuItem>
+
+          {/* For every role, not gated. Until now nothing linked here at all and
+              the page was reachable only through the forced password redirect —
+              so a reporter had no way to change their own password. */}
+          <DropdownMenuItem asChild>
+            <Link href="/settings/profile">
+              <SettingsIcon />
+              Einstellungen
             </Link>
           </DropdownMenuItem>
 

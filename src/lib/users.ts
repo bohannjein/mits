@@ -78,6 +78,31 @@ export function countAdmins(): number {
   return row?.count ?? 0;
 }
 
+/**
+ * Change one's own display name.
+ *
+ * Written straight to the `user` table rather than through Better Auth's update
+ * endpoint: the name is not a credential and not an identity, so there is nothing
+ * for the auth layer to re-verify. The address deliberately stays out of reach —
+ * it is the login identity, and this instance has no mail verification configured,
+ * so letting someone rewrite it would let them lock themselves out of an account
+ * they can no longer prove is theirs.
+ *
+ * The caller is responsible for having established *whose* name this is; the id
+ * always comes from a session, never from a form field.
+ */
+export function setUserName(userId: string, name: string): string {
+  const trimmed = name.trim().replace(/\s+/g, " ").slice(0, 120);
+  if (trimmed === "") {
+    throw new ProfileError("Der Name darf nicht leer sein.");
+  }
+
+  db.prepare("UPDATE user SET name = ? WHERE id = ?").run(trimmed, userId);
+  return trimmed;
+}
+
+export class ProfileError extends Error {}
+
 export class RoleChangeError extends Error {}
 
 /**
