@@ -310,6 +310,63 @@ export const CANNED_PLACEHOLDERS = [
 ] as const;
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Data retention and upload limits.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Upload sizes offered, in MB.
+ *
+ * A fixed set rather than a free number. The value bounds a single request body, and a
+ * mistyped 5000 would let one upload exhaust the container's memory before any check
+ * ran — a dropdown cannot be mistyped.
+ */
+export const UPLOAD_SIZE_CHOICES = [2, 5, 10, 25, 50, 100] as const;
+export type UploadSizeChoice = (typeof UPLOAD_SIZE_CHOICES)[number];
+
+/** Years a closed ticket is kept before the retention run may anonymise it. */
+export const RETENTION_YEAR_CHOICES = [1, 2, 3, 5, 7, 10] as const;
+
+export const DataSettingsSchema = z.object({
+  /** Maximum size of one attachment, in MB. */
+  maxUploadMb: z
+    .unknown()
+    .transform((value) => {
+      const parsed = Number(value);
+      return (UPLOAD_SIZE_CHOICES as readonly number[]).includes(parsed)
+        ? parsed
+        : 10;
+    })
+    .default(10),
+  /**
+   * How long a closed ticket keeps its reporter's identity.
+   *
+   * Coerced and clamped like the upload size: a stored value from an older build has to
+   * resolve to something usable, and a failed parse would discard the upload limit
+   * alongside it.
+   */
+  retentionYears: z
+    .unknown()
+    .transform((value) => {
+      const parsed = Number(value);
+      return (RETENTION_YEAR_CHOICES as readonly number[]).includes(parsed)
+        ? parsed
+        : 3;
+    })
+    .default(3),
+});
+export type DataSettings = z.infer<typeof DataSettingsSchema>;
+
+/** `1,4 GB`, `312 MB`, `18 KB` — for a statistics panel, not a report. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${Math.round(bytes / 1024 / 1024)} MB`;
+  }
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1).replace(".", ",")} GB`;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
    Audit trail.
 
    What happened to a ticket, in a table nothing ever updates. The actions are a

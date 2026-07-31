@@ -16,7 +16,9 @@ import { PRESENCE_LABELS, type PresenceState } from "@/types/mits";
    component whose whole job is to say how long ago something happened.
 
    Rows are one line and the list scrolls at a fixed height, so a long reporter list
-   cannot push the statistics out of the sidebar.
+   cannot push the statistics out of the sidebar. Offline accounts never arrive here at
+   all — `PresenceList` drops them, since a list of everyone who has ever signed in
+   answers no question a technician is asking.
    ────────────────────────────────────────────────────────────────────────── */
 
 /** Green / yellow / grey. A deliberate correction — do not revert to grey for idle. */
@@ -55,16 +57,22 @@ export function PresenceTabs({
       </TabsList>
 
       <TabsContent value="staff">
-        <PresenceRows rows={staff} empty="Keine Technik-Konten." />
+        <PresenceRows rows={staff} empty="Niemand aus der Technik ist gerade da." />
       </TabsContent>
       <TabsContent value="reporters">
-        <PresenceRows rows={reporters} empty="Keine Anwender-Konten." />
+        <PresenceRows rows={reporters} empty="Gerade kein Anwender angemeldet." />
       </TabsContent>
     </Tabs>
   );
 }
 
-/** The active count rides on the tab, which saves a line above the list. */
+/**
+ * The count rides on the tab, which saves a line above the list.
+ *
+ * A single number, not "active of total": the list only contains people who are here, so
+ * a total would be the same number twice. Idle rows are included — someone who stepped
+ * away for five minutes is still reachable, which is what this panel answers.
+ */
 function PresenceTrigger({
   value,
   label,
@@ -74,8 +82,6 @@ function PresenceTrigger({
   label: string;
   rows: PresenceRow[];
 }) {
-  const active = rows.filter((row) => row.state === "active").length;
-
   return (
     <TabsTrigger
       value={value}
@@ -86,7 +92,7 @@ function PresenceTrigger({
         variant="secondary"
         className="ml-1.5 h-auto rounded-full px-1.5 py-0 text-[10px] font-normal tabular-nums"
       >
-        {active}/{rows.length}
+        {rows.length}
       </Badge>
     </TabsTrigger>
   );

@@ -45,15 +45,30 @@ export function PresenceList({
   people: AgentPresence[];
   title?: string;
 }) {
+  /*
+   * Offline accounts are left out entirely.
+   *
+   * The list is a dispatch aid — "who can pick this up now" — and on an instance with a
+   * few hundred reporters, everyone who has ever signed in would push the useful rows off
+   * the screen. An account that has been silent for half an hour answers no question a
+   * technician is asking, and the full account list lives in the admin masks.
+   *
+   * The consequence, stated because it is a real one: somebody absent is
+   * indistinguishable here from somebody who has no account. That is the right trade for
+   * a sidebar and the wrong one for administration, which is why only this component
+   * filters and `listPresence` still returns everybody.
+   */
+  const present = people.filter((entry) => entry.state !== "offline");
+
   // Same contract as the other portal widgets: nothing at all means no block.
-  if (people.length === 0) return null;
+  if (present.length === 0) return null;
 
   return (
     <section aria-label={title} className="grid gap-2">
       <h2 className="label-industrial">{title}</h2>
       <PresenceTabs
-        staff={people.filter((entry) => canViewBoard(entry.role)).map(toRow)}
-        reporters={people.filter((entry) => !canViewBoard(entry.role)).map(toRow)}
+        staff={present.filter((entry) => canViewBoard(entry.role)).map(toRow)}
+        reporters={present.filter((entry) => !canViewBoard(entry.role)).map(toRow)}
       />
     </section>
   );

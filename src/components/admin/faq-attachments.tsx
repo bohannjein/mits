@@ -41,10 +41,16 @@ export function FaqAttachments({
   attachments,
   onChange,
   disabled = false,
+  /**
+   * The configured ceiling in MB, passed down rather than hardcoded: it is an admin
+   * setting now, and a hint that says 10 MB while the limit is 50 is worse than no hint.
+   */
+  maxUploadMb,
 }: {
   attachments: FaqAttachment[];
   onChange: (next: FaqAttachment[]) => void;
   disabled?: boolean;
+  maxUploadMb: number;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -127,7 +133,7 @@ export function FaqAttachments({
           {uploading ? "Wird hochgeladen …" : "Dateien hierher ziehen"}
         </p>
         <p className="text-xs text-muted-foreground">
-          Bilder, PDF und Dokumente · max. 10 MB je Datei
+          Bilder, PDF und Dokumente · max. {maxUploadMb} MB je Datei
         </p>
         <Button
           type="button"

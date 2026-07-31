@@ -6,6 +6,7 @@ import { BackLink } from "@/components/layout/back-link";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { requireRole } from "@/lib/auth/session";
+import { getDataSettings } from "@/lib/data-settings";
 import { getPortalFaqs } from "@/lib/portal";
 
 export const metadata: Metadata = {
@@ -51,7 +52,7 @@ export default async function AdminFaqPage() {
 
           <Separator className="my-8 bg-border" />
 
-          <FaqEditor faqs={faqs} />
+          <FaqEditor faqs={faqs} maxUploadMb={getDataSettings().maxUploadMb} />
         </div>
       </main>
     </>

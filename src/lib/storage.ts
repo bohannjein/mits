@@ -9,6 +9,7 @@ import { Readable } from "node:stream";
 import { canViewBoard } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/session";
 import { dataDir } from "@/lib/auth/secret";
+import { maxUploadBytes } from "@/lib/data-settings";
 import { db } from "@/lib/db/sqlite";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -19,8 +20,15 @@ import { db } from "@/lib/db/sqlite";
    gets an opaque id, and every read goes through an access check.
    ────────────────────────────────────────────────────────────────────────── */
 
-/** 10 MB per file. Raise deliberately — this also bounds a single request body. */
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+/**
+ * The ceiling in effect, read per request from the admin setting.
+ *
+ * A function rather than a constant, so a change in the mask applies to the next upload
+ * without a restart. It also bounds a single request body, which is why the setting
+ * offers a fixed list of sizes rather than a free number.
+ */
+export const uploadLimitBytes = (): number => maxUploadBytes();
+
 export const MAX_UPLOADS_PER_REQUEST = 5;
 
 /**
@@ -142,9 +150,10 @@ export async function storeUpload(
   scope: UploadScope = "ticket",
 ): Promise<StoredUpload> {
   if (file.size === 0) throw new UploadError("Die Datei ist leer.");
-  if (file.size > MAX_UPLOAD_BYTES) {
+  const limit = uploadLimitBytes();
+  if (file.size > limit) {
     throw new UploadError(
-      `„${displayName(file.name)}“ ist größer als ${Math.floor(MAX_UPLOAD_BYTES / 1024 / 1024)} MB.`,
+      `„${displayName(file.name)}“ ist größer als ${Math.floor(limit / 1024 / 1024)} MB.`,
     );
   }
 

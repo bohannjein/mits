@@ -4,6 +4,7 @@ import {
   BookOpenIcon,
   HeadsetIcon,
   ClockIcon,
+  DatabaseIcon,
   ShieldAlertIcon,
   UsersIcon,
   BrainIcon,
@@ -97,6 +98,12 @@ export default async function AdminPage() {
                 <Link href="/admin/portal">
                   <MegaphoneIcon />
                   Portal-Inhalte
+                </Link>
+              </Button>
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
+                <Link href="/admin/settings/data">
+                  <DatabaseIcon />
+                  Daten &amp; Aufbewahrung
                 </Link>
               </Button>
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">

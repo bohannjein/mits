@@ -63,6 +63,13 @@ import {
   presenceStateFor,
   PortalConfigSchema,
   PortalFaqSchema,
+  AuditAction,
+  AuditEntrySchema,
+  DataSettingsSchema,
+  RETENTION_YEAR_CHOICES,
+  UPLOAD_SIZE_CHOICES,
+  auditLabel,
+  formatBytes,
   CUSTOMER_PROFILE_FIELDS,
   EMPTY_USER_PROFILE,
   MITSUserProfileSchema,
@@ -1611,6 +1618,97 @@ console.log("\nreply trimming");
     "cutting at line 0 would leave nothing",
   );
   check("empty stays empty", cleanInboundReply("   \n  \n") === "");
+}
+
+console.log("\ndata settings");
+{
+  check("bytes stay bytes", formatBytes(840) === "840 B");
+  check("kilobytes round", formatBytes(320_000) === "313 KB");
+  check("megabytes round", formatBytes(50_000_000) === "48 MB");
+  check(
+    "gigabytes get a german decimal comma",
+    formatBytes(2_500_000_000) === "2,3 GB",
+    formatBytes(2_500_000_000),
+  );
+  check("zero is not empty", formatBytes(0) === "0 B");
+
+  // The upload limit bounds a request body, so a stored nonsense value must land on the
+  // default rather than on something a single upload could use to exhaust memory.
+  const bad = DataSettingsSchema.safeParse({
+    maxUploadMb: 5000,
+    retentionYears: 99,
+  });
+  check(
+    "an unoffered upload size is clamped to the default",
+    bad.success && bad.data.maxUploadMb === 10,
+    String(bad.success ? bad.data.maxUploadMb : "parse failed"),
+  );
+  check(
+    "an unoffered retention span is clamped too",
+    bad.success && bad.data.retentionYears === 3,
+    String(bad.success ? bad.data.retentionYears : "parse failed"),
+  );
+
+  const strings = DataSettingsSchema.safeParse({
+    maxUploadMb: "25",
+    retentionYears: "5",
+  });
+  check(
+    "form strings are accepted",
+    strings.success &&
+      strings.data.maxUploadMb === 25 &&
+      strings.data.retentionYears === 5,
+  );
+
+  // A row written before either field existed has to parse, or the whole page would
+  // fall back and silently discard what an admin had set.
+  const empty = DataSettingsSchema.safeParse({});
+  check(
+    "an empty row yields the defaults",
+    empty.success && empty.data.maxUploadMb === 10 && empty.data.retentionYears === 3,
+  );
+
+  check(
+    "every offered upload size has a sane bound",
+    UPLOAD_SIZE_CHOICES.every((size) => size >= 1 && size <= 100),
+  );
+  check(
+    "the default upload size is one of the choices",
+    (UPLOAD_SIZE_CHOICES as readonly number[]).includes(10),
+  );
+  check(
+    "the default retention span is one of the choices",
+    (RETENTION_YEAR_CHOICES as readonly number[]).includes(3),
+  );
+}
+
+console.log("\naudit entries");
+{
+  // A future version may write an action this build does not know. The log has to stay
+  // readable — one unlabelled row beats a history that refuses to render.
+  const unknown = AuditEntrySchema.safeParse({
+    id: "a",
+    ticket_id: "t",
+    actor_id: "u",
+    actor_email: "u@firma.invalid",
+    action: "something_new",
+    created_at: "2026-08-01T10:00:00.000Z",
+  });
+  check("an unknown action still parses", unknown.success);
+  check(
+    "…and falls back to its raw name",
+    auditLabel("something_new") === "something_new",
+  );
+  check("a known action is labelled", auditLabel("status_changed") === "Status geändert");
+  check(
+    "missing value fields default to empty",
+    unknown.success && unknown.data.old_value === "" && unknown.data.new_value === "",
+  );
+  check(
+    "every declared action has a label",
+    AuditAction.options.every((action) => auditLabel(action) !== action),
+    AuditAction.options.filter((action) => auditLabel(action) === action).join(","),
+  );
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

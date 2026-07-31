@@ -1,7 +1,7 @@
 import { requireApiUser } from "@/lib/auth/session";
 import {
   MAX_UPLOADS_PER_REQUEST,
-  MAX_UPLOAD_BYTES,
+  uploadLimitBytes,
   UploadError,
   storeUpload,
 } from "@/lib/storage";
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
   }
 
   const total = files.reduce((sum, file) => sum + file.size, 0);
-  if (total > MAX_UPLOAD_BYTES * MAX_UPLOADS_PER_REQUEST) {
+  if (total > uploadLimitBytes() * MAX_UPLOADS_PER_REQUEST) {
     return Response.json({ error: "Upload ist insgesamt zu groß." }, { status: 413 });
   }
 

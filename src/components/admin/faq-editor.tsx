@@ -37,7 +37,14 @@ import type { PortalFaq } from "@/types/mits";
    position on save, so moving a row is the only thing that changes the order.
    ────────────────────────────────────────────────────────────────────────── */
 
-export function FaqEditor({ faqs }: { faqs: PortalFaq[] }) {
+export function FaqEditor({
+  faqs,
+  maxUploadMb,
+}: {
+  faqs: PortalFaq[];
+  /** Admin-configured upload ceiling, shown in the drop zone's hint. */
+  maxUploadMb: number;
+}) {
   const [entries, setEntries] = useState<PortalFaq[]>(faqs);
   const [result, formAction, saving] = useActionState(savePortalFaqsAction, null);
 
@@ -178,6 +185,7 @@ export function FaqEditor({ faqs }: { faqs: PortalFaq[] }) {
                 <FaqAttachments
                   attachments={entry.attachments}
                   disabled={saving}
+                  maxUploadMb={maxUploadMb}
                   onChange={(attachments) => patch(entry.id, { attachments })}
                 />
                 <p className="text-xs text-muted-foreground">

@@ -29,6 +29,7 @@ import {
   setPortalFaqs,
   setPortalServices,
 } from "@/lib/portal";
+import { applyRetention, setDataSettings } from "@/lib/data-settings";
 import { getMailSettings, incidentRuleConfig, setMailSettings } from "@/lib/mail-settings";
 import { classifyDefenderAlert } from "@/lib/mail/defender";
 import { planSecurityIncident } from "@/lib/mail/incident-rule";
@@ -618,6 +619,58 @@ export async function saveUserRecordAction(
   revalidatePath("/", "layout");
 
   return { ok: true, message: `Angaben zu ${name || target.name} gespeichert.` };
+}
+
+/* ── Data: upload limit and retention ───────────────────────────────────── */
+
+export async function saveDataSettingsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const saved = setDataSettings({
+    maxUploadMb: formData.get("maxUploadMb"),
+    retentionYears: formData.get("retentionYears"),
+  } as never);
+
+  revalidatePath("/admin/settings/data");
+
+  return {
+    ok: true,
+    message: `Anhänge bis ${saved.maxUploadMb} MB, Aufbewahrung ${saved.retentionYears} Jahre.`,
+  };
+}
+
+/**
+ * Run the retention policy now.
+ *
+ * Explicitly triggered, never scheduled: MITS has no job runner, and a settings page
+ * that implied a nightly run would be claiming something untrue. It is also the only
+ * operation in the application that destroys data, so it happens when somebody presses
+ * a button and sees the count first.
+ */
+export async function applyRetentionAction(
+  _previous: ActionResult | null,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const { tickets, comments } = applyRetention();
+
+  if (tickets === 0) {
+    return {
+      ok: true,
+      message: "Nichts zu anonymisieren — kein Ticket ist älter als die Aufbewahrung.",
+    };
+  }
+
+  revalidatePath("/admin/settings/data");
+  revalidatePath("/mits");
+
+  return {
+    ok: true,
+    message: `${tickets} Ticket(s) anonymisiert, davon ${comments} Melder-Beitrag/Beiträge. Nicht umkehrbar.`,
+  };
 }
 
 /* ── Mail ingest and the Defender rule ──────────────────────────────────── */
