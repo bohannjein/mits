@@ -1,7 +1,7 @@
 "use client";
 
 import { InfoIcon, PaperclipIcon, XIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 
 import {
   FormControl,
@@ -47,6 +47,44 @@ export interface FieldProps {
   field: ResolvedField;
   disabled?: boolean;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Live choices for the picker widgets.
+
+   Sites and colleagues change without anyone editing a form, so baking them into
+   the schema would mean a stale dropdown after every new branch. They arrive
+   through context instead: the page that renders the form loads them server-side
+   and hands them down, and the schema stays pure JSON Schema — which it has to,
+   since it doubles as the extraction target for Ollama.
+
+   Deliberately name-only for users. A ticket form does not need to hand every
+   reporter a directory of addresses and roles, and `listUsers()` returns both.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export interface FormFieldOptions {
+  locations: { value: string; label: string }[];
+  users: { value: string; label: string }[];
+}
+
+const EMPTY_OPTIONS: FormFieldOptions = { locations: [], users: [] };
+
+const FormOptionsContext = createContext<FormFieldOptions>(EMPTY_OPTIONS);
+
+export function FormOptionsProvider({
+  options,
+  children,
+}: {
+  options: FormFieldOptions;
+  children: ReactNode;
+}) {
+  return (
+    <FormOptionsContext.Provider value={options}>
+      {children}
+    </FormOptionsContext.Provider>
+  );
+}
+
+export const useFormOptions = () => useContext(FormOptionsContext);
 
 /**
  * Shared chrome around every control, so a new widget cannot forget the label,
@@ -120,9 +158,11 @@ function TextField({ field, disabled }: FieldProps) {
       ? "email"
       : field.widget === "date"
         ? "date"
-        : field.widget === "number"
-          ? "number"
-          : "text";
+        : field.widget === "datetime"
+          ? "datetime-local"
+          : field.widget === "number"
+            ? "number"
+            : "text";
 
   return (
     <FormField
@@ -170,6 +210,12 @@ function TextareaField({ field, disabled }: FieldProps) {
 }
 
 function SelectField({ field, disabled }: FieldProps) {
+  // A cascading field starts with no choices at all, because its parent has not
+  // been answered yet. Disabling the trigger says that; an enabled dropdown that
+  // opens onto nothing reads as a defect.
+  const empty = (field.options?.length ?? 0) === 0;
+  const waitingOnParent = empty && field.hint.optionsFrom !== undefined;
+
   return (
     <FormField
       name={field.name}
@@ -178,17 +224,74 @@ function SelectField({ field, disabled }: FieldProps) {
           <Select
             value={(rhf.value as string | undefined) || undefined}
             onValueChange={rhf.onChange}
-            disabled={disabled}
+            disabled={disabled || empty}
           >
             <FormControl>
               <SelectTrigger className="h-10 w-full rounded-xl">
                 <SelectValue
-                  placeholder={field.hint.placeholder ?? "Bitte wählen"}
+                  placeholder={
+                    waitingOnParent
+                      ? "Erst das übergeordnete Feld wählen"
+                      : empty
+                        ? "Keine Auswahl vorhanden"
+                        : (field.hint.placeholder ?? "Bitte wählen")
+                  }
                 />
               </SelectTrigger>
             </FormControl>
             <SelectContent>
               {field.options?.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FieldShell>
+      )}
+    />
+  );
+}
+
+/**
+ * Site and colleague pickers.
+ *
+ * Same control as `SelectField`, different source: the options come from context
+ * rather than from the schema's enum. An empty list renders a disabled trigger
+ * that says so — an empty dropdown that still opens reads as a broken form, and
+ * "no sites configured" is an admin's problem to see, not a reporter's to guess.
+ */
+function DynamicSelectField({ field, disabled }: FieldProps) {
+  const options = useFormOptions();
+  const choices =
+    field.widget === "location" ? options.locations : options.users;
+  const empty = choices.length === 0;
+
+  return (
+    <FormField
+      name={field.name}
+      render={({ field: rhf }) => (
+        <FieldShell field={field}>
+          <Select
+            value={(rhf.value as string | undefined) || undefined}
+            onValueChange={rhf.onChange}
+            disabled={disabled || empty}
+          >
+            <FormControl>
+              <SelectTrigger className="h-10 w-full rounded-xl">
+                <SelectValue
+                  placeholder={
+                    empty
+                      ? field.widget === "location"
+                        ? "Keine Standorte hinterlegt"
+                        : "Keine Personen verfügbar"
+                      : (field.hint.placeholder ?? "Bitte wählen")
+                  }
+                />
+              </SelectTrigger>
+            </FormControl>
+            <SelectContent>
+              {choices.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>
@@ -393,6 +496,7 @@ export const FIELD_REGISTRY: Record<
   text: TextField,
   email: TextField,
   date: TextField,
+  datetime: TextField,
   number: TextField,
   textarea: TextareaField,
   select: SelectField,
@@ -401,6 +505,8 @@ export const FIELD_REGISTRY: Record<
   checkbox: CheckboxField,
   switch: SwitchField,
   file: FileField,
+  location: DynamicSelectField,
+  user: DynamicSelectField,
 };
 
 /** Render one resolved field, falling back to a text input for unknown widgets. */

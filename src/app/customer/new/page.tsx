@@ -12,6 +12,7 @@ import { getFormSchema, listCatalogSchemas } from "@/lib/form-schemas";
 import { listActiveLocations } from "@/lib/locations";
 import { QUICK_TICKET_SCHEMA } from "@/lib/mock-schemas";
 import { getActiveAnnouncements } from "@/lib/portal";
+import { listUsers } from "@/lib/users";
 import { TicketSource } from "@/types/mits";
 
 export const metadata: Metadata = {
@@ -39,6 +40,27 @@ export default async function NewTicketPage({
     getFormSchema(QUICK_TICKET_SCHEMA.id) ?? QUICK_TICKET_SCHEMA;
   const catalogSchemas = listCatalogSchemas();
   const announcements = getActiveAnnouncements();
+
+  /*
+   * Choices for the `location` and `user` field widgets. Loaded here rather than
+   * baked into the schemas, so a new branch or a new colleague shows up without
+   * anyone editing a form.
+   *
+   * Users are reduced to id and name on purpose. `listUsers()` also returns the
+   * address and the role, and a ticket form has no reason to hand every reporter a
+   * staff directory — a colleague picker needs a name and nothing else.
+   */
+  const activeLocations = listActiveLocations();
+  const fieldOptions = {
+    locations: activeLocations.map((location) => ({
+      value: location.id,
+      label: location.code ? `${location.name} (${location.code})` : location.name,
+    })),
+    users: listUsers().map((candidate) => ({
+      value: candidate.id,
+      label: candidate.name,
+    })),
+  };
 
   return (
     <>
@@ -75,7 +97,8 @@ export default async function NewTicketPage({
             quickTicketSchema={quickTicketSchema}
             catalogSchemas={catalogSchemas}
             initialMode={initialMode}
-            locations={listActiveLocations()}
+            locations={activeLocations}
+            fieldOptions={fieldOptions}
           />
         </div>
       </main>

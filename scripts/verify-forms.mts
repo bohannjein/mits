@@ -6,8 +6,13 @@
  * submits bad data. Run with `npm test`.
  */
 import {
+  cascadedValues,
+  conditionCycles,
+  danglingConditions,
   defaultValuesFor,
+  hiddenFieldNames,
   resolveFields,
+  resolveFieldsFor,
   schemaToZod,
 } from "../src/lib/forms/schema-to-zod";
 import {
@@ -20,6 +25,7 @@ import { ticketCreatedMail, ticketReplyMail } from "../src/lib/mail-templates";
 import {
   DEFAULT_PORTAL_FAQS,
   KEEP_SMTP_PASSWORD,
+  type MITSFormSchema,
   MITSTicketSchema,
   PORTAL_WIDGET_ORDER,
   PRESENCE_IDLE_AFTER_SECONDS,
@@ -576,6 +582,377 @@ console.log("mail templates");
       reply.html.includes("&lt;b&gt;fett&lt;/b&gt;"),
   );
   check("reply subject carries the number", reply.subject.includes("TICK-1042"));
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Conditional fields and cascading choices.
+
+   None of these has a visible failure mode. A condition that resolves the wrong
+   way produces a form that renders fine and either demands a field nobody can see
+   or accepts an answer to a question it never asked.
+   ────────────────────────────────────────────────────────────────────────── */
+
+const CONDITIONAL_SCHEMA: MITSFormSchema = {
+  id: "conditional-test",
+  title: "Bedingungen",
+  category: "Test",
+  version: 1,
+  schema: {
+    type: "object",
+    // `serial` is required *and* conditional: the combination is the one that
+    // makes a form unsubmittable when the server does not re-derive visibility.
+    required: ["device_kind", "device_model", "serial"],
+    properties: {
+      device_kind: {
+        type: "string",
+        title: "Gerätetyp",
+        enum: ["laptop", "monitor"],
+      },
+      device_model: {
+        type: "string",
+        title: "Modell",
+        enum: ["xps-13", "t14", "u2723"],
+      },
+      serial: { type: "string", title: "Seriennummer", maxLength: 40 },
+      warranty: { type: "boolean", title: "Garantiefall" },
+      warranty_note: { type: "string", title: "Hinweis", maxLength: 200 },
+      warranty_ref: { type: "string", title: "RMA-Nummer", maxLength: 40 },
+    },
+  },
+  uiHints: {
+    device_model: {
+      optionsFrom: {
+        field: "device_kind",
+        map: { laptop: ["xps-13", "t14"], monitor: ["u2723"] },
+      },
+    },
+    serial: { visibleWhen: { field: "device_kind", equals: ["laptop"] } },
+    warranty_note: { visibleWhen: { field: "warranty", equals: ["true"] } },
+    // Depends on a field that is itself conditional — the fixpoint case.
+    warranty_ref: { visibleWhen: { field: "warranty_note", equals: ["rma"] } },
+  },
+};
+
+console.log("\nconditional visibility");
+{
+  const hidden = (values: Record<string, unknown>) =>
+    hiddenFieldNames(CONDITIONAL_SCHEMA, values);
+
+  check(
+    "unanswered controller hides the dependent field",
+    hidden({}).has("serial"),
+  );
+  check(
+    "matching answer shows it",
+    !hidden({ device_kind: "laptop" }).has("serial"),
+  );
+  check(
+    "non-matching answer hides it again",
+    hidden({ device_kind: "monitor" }).has("serial"),
+  );
+  check(
+    "booleans compare as \"true\"",
+    !hidden({ warranty: true }).has("warranty_note") &&
+      hidden({ warranty: false }).has("warranty_note"),
+  );
+  check(
+    "empty string does not satisfy a condition",
+    hidden({ device_kind: "" }).has("serial"),
+  );
+
+  // The one that matters: warranty_note's own answer matches, but the question was
+  // never asked, so nothing may depend on it.
+  check(
+    "a hidden controller does not count as a match",
+    hidden({ warranty: false, warranty_note: "rma" }).has("warranty_ref"),
+  );
+  check(
+    "…and it does once the chain is visible",
+    !hidden({ warranty: true, warranty_note: "rma" }).has("warranty_ref"),
+  );
+
+  const cyclic: MITSFormSchema = {
+    ...CONDITIONAL_SCHEMA,
+    id: "cyclic-test",
+    schema: {
+      type: "object",
+      properties: {
+        a: { type: "string", title: "A" },
+        b: { type: "string", title: "B" },
+      },
+    },
+    uiHints: {
+      a: { visibleWhen: { field: "b", equals: ["x"] } },
+      b: { visibleWhen: { field: "a", equals: ["x"] } },
+    },
+  };
+  /*
+   * A cycle terminates instead of spinning. Which way it settles depends on the
+   * answers: with every condition met the ring is a stable visible state, with any
+   * one unmet the whole ring disappears. That ambiguity is exactly why
+   * `conditionCycles` refuses the schema at save time — see below.
+   */
+  const satisfied = hiddenFieldNames(cyclic, { a: "x", b: "x" });
+  check(
+    "a satisfied cycle terminates and stays visible",
+    !satisfied.has("a") && !satisfied.has("b"),
+  );
+  const broken = hiddenFieldNames(cyclic, { a: "x", b: "" });
+  check(
+    "…and an ungrounded one hides the whole chain",
+    broken.has("a") && broken.has("b"),
+  );
+  check(
+    "the cycle is reported so it can be refused",
+    conditionCycles(cyclic).length === 1,
+    conditionCycles(cyclic).join(" | "),
+  );
+  check(
+    "a sound schema reports no cycle",
+    conditionCycles(CONDITIONAL_SCHEMA).length === 0,
+    conditionCycles(CONDITIONAL_SCHEMA).join(" | "),
+  );
+  check(
+    "a field whose condition points at itself is a cycle",
+    conditionCycles({
+      ...cyclic,
+      id: "self-cycle-test",
+      uiHints: { a: { visibleWhen: { field: "a", equals: ["x"] } } },
+    }).length === 1,
+  );
+
+  check(
+    "a sound schema reports no dangling conditions",
+    danglingConditions(CONDITIONAL_SCHEMA).length === 0,
+  );
+  check(
+    "a condition on a missing field is reported",
+    danglingConditions({
+      ...cyclic,
+      id: "dangling-test",
+      uiHints: { a: { visibleWhen: { field: "gone", equals: ["x"] } } },
+    }).join("") === "a → gone",
+  );
+  check(
+    "a cascade on a missing field is reported too",
+    danglingConditions({
+      ...cyclic,
+      id: "dangling-cascade-test",
+      uiHints: { a: { optionsFrom: { field: "gone", map: {} } } },
+    }).length === 1,
+  );
+
+  const empty: MITSFormSchema = {
+    ...cyclic,
+    id: "empty-condition-test",
+    uiHints: { a: { visibleWhen: { field: "b", equals: [] } } },
+  };
+  check(
+    "a condition with no values never shows",
+    hiddenFieldNames(empty, { b: "anything" }).has("a"),
+  );
+
+  const multi: MITSFormSchema = {
+    ...cyclic,
+    id: "multi-controller-test",
+    schema: {
+      type: "object",
+      properties: {
+        tags: { type: "array", title: "Tags", items: { type: "string" } },
+        detail: { type: "string", title: "Detail" },
+      },
+    },
+    uiHints: { detail: { visibleWhen: { field: "tags", equals: ["vpn"] } } },
+  };
+  check(
+    "an array controller matches on any selected entry",
+    !hiddenFieldNames(multi, { tags: ["wlan", "vpn"] }).has("detail") &&
+      hiddenFieldNames(multi, { tags: ["wlan"] }).has("detail"),
+  );
+}
+
+console.log("\ncascading options");
+{
+  const modelHint = CONDITIONAL_SCHEMA.uiHints!.device_model;
+
+  check(
+    "no parent answer yields no choices",
+    cascadedValues(modelHint, {})?.length === 0,
+  );
+  check(
+    "parent narrows the choices",
+    cascadedValues(modelHint, { device_kind: "laptop" })?.join(",") ===
+      "xps-13,t14",
+  );
+  check(
+    "an unmapped parent value yields none",
+    cascadedValues(modelHint, { device_kind: "tablet" })?.length === 0,
+  );
+  check(
+    "a field without a cascade is left alone",
+    cascadedValues({}, { device_kind: "laptop" }) === undefined,
+  );
+
+  const narrowed = resolveFieldsFor(CONDITIONAL_SCHEMA, {
+    device_kind: "monitor",
+  });
+  const model = narrowed.find((field) => field.name === "device_model");
+  check(
+    "resolveFieldsFor rewrites the options",
+    model?.options?.map((option) => option.value).join(",") === "u2723",
+  );
+  check(
+    "…and drops the fields the conditions hid",
+    !narrowed.some((field) => field.name === "serial"),
+  );
+
+  const all = resolveFields(CONDITIONAL_SCHEMA);
+  check(
+    "without answers every field applies and keeps its declared enum",
+    all.length === 6 &&
+      all
+        .find((field) => field.name === "device_model")
+        ?.options?.length === 3,
+  );
+}
+
+console.log("\nconditional validation");
+{
+  // With answers: serial is behind a condition that does not hold, so it is
+  // neither demanded nor accepted.
+  const monitor = { device_kind: "monitor", device_model: "u2723" };
+
+  check(
+    "a hidden required field is not demanded",
+    schemaToZod(CONDITIONAL_SCHEMA, { values: monitor }).safeParse(monitor)
+      .success,
+  );
+  check(
+    "an answer to a hidden field is rejected",
+    !schemaToZod(CONDITIONAL_SCHEMA, {
+      values: { ...monitor, serial: "SN-1" },
+    }).safeParse({ ...monitor, serial: "SN-1" }).success,
+  );
+  check(
+    "a visible required field is still demanded",
+    !schemaToZod(CONDITIONAL_SCHEMA, {
+      values: { device_kind: "laptop", device_model: "t14" },
+    }).safeParse({ device_kind: "laptop", device_model: "t14" }).success,
+  );
+  check(
+    "…and passes once it is answered",
+    schemaToZod(CONDITIONAL_SCHEMA, {
+      values: { device_kind: "laptop", device_model: "t14", serial: "SN-1" },
+    }).safeParse({ device_kind: "laptop", device_model: "t14", serial: "SN-1" })
+      .success,
+  );
+
+  // The cascade is enforced, not just displayed: t14 is a laptop model and must
+  // not survive on a monitor.
+  check(
+    "a child value the parent does not permit is rejected",
+    !schemaToZod(CONDITIONAL_SCHEMA, {
+      values: { device_kind: "monitor", device_model: "t14" },
+    }).safeParse({ device_kind: "monitor", device_model: "t14" }).success,
+  );
+
+  // Without `values` nothing has been ruled out — this is the shape the admin-side
+  // schema check and the label lookups compile.
+  check(
+    "without values the conditional field is required again",
+    !schemaToZod(CONDITIONAL_SCHEMA).safeParse(monitor).success,
+  );
+
+  /*
+   * What <SchemaForm>'s resolver does, without React in the way.
+   *
+   * The form holds an entry for every declared field — `defaultValuesFor` seeds
+   * them all — so the answers it validates always contain the hidden ones too. The
+   * compiled shape omits those, and `strictObject` rejects unrecognised keys, so
+   * the values have to be reduced to the applicable fields *before* they reach zod.
+   * Skip that and a form is unsubmittable the moment any field is conditional —
+   * which nothing reveals until somebody presses the button.
+   */
+  const asTheFormHoldsIt: Record<string, unknown> = {
+    device_kind: "monitor",
+    device_model: "u2723",
+    serial: "",
+    warranty: false,
+    warranty_note: "",
+    warranty_ref: "",
+  };
+  const applicable = resolveFieldsFor(CONDITIONAL_SCHEMA, asTheFormHoldsIt);
+  const stripped = Object.fromEntries(
+    applicable.map((field) => [field.name, asTheFormHoldsIt[field.name]]),
+  );
+
+  check(
+    "stripping the hidden answers first is what makes the form submittable",
+    schemaToZod(CONDITIONAL_SCHEMA, { values: asTheFormHoldsIt }).safeParse(
+      stripped,
+    ).success,
+  );
+  check(
+    "…and handing zod the untouched form state fails",
+    !schemaToZod(CONDITIONAL_SCHEMA, { values: asTheFormHoldsIt }).safeParse(
+      asTheFormHoldsIt,
+    ).success,
+  );
+  check(
+    "the stripped payload keeps only what was asked",
+    Object.keys(stripped).sort().join(",") ===
+      "device_kind,device_model,warranty",
+  );
+}
+
+console.log("\nnew widgets");
+{
+  const byName = Object.fromEntries(
+    resolveFields({
+      id: "widget-test",
+      title: "Widgets",
+      category: "Test",
+      version: 1,
+      schema: {
+        type: "object",
+        properties: {
+          when: { type: "string", title: "Zeitpunkt", format: "date-time" },
+          day: { type: "string", title: "Tag", format: "date" },
+          site: { type: "string", title: "Standort" },
+          person: { type: "string", title: "Person" },
+        },
+      },
+      uiHints: { site: { widget: "location" }, person: { widget: "user" } },
+    }).map((field) => [field.name, field]),
+  );
+
+  check("date-time -> datetime", byName.when.widget === "datetime");
+  check("date stays date", byName.day.widget === "date");
+  check("location hint wins", byName.site.widget === "location");
+  check("user hint wins", byName.person.widget === "user");
+
+  // "Every widget has a renderer" is not checked here: FIELD_REGISTRY is typed
+  // `Record<MITSFieldWidget, …>`, so `npm run typecheck` already fails on a widget
+  // without one — a stronger guarantee than a runtime count, and the registry is a
+  // "use client" module this offline script cannot import anyway.
+
+  check(
+    "location and user compile to a plain string, not an enum",
+    schemaToZod({
+      id: "picker-test",
+      title: "Picker",
+      category: "Test",
+      version: 1,
+      schema: {
+        type: "object",
+        required: ["site"],
+        properties: { site: { type: "string", title: "Standort" } },
+      },
+      uiHints: { site: { widget: "location" } },
+      // An id read live from mits_location must keep validating after the site is
+      // renamed — an enum frozen at authoring time would invalidate stored payloads.
+    }).safeParse({ site: "loc-anything-at-all" }).success,
+  );
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

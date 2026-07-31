@@ -92,9 +92,18 @@ export function createTicket(
     throw new TicketValidationError("Unbekanntes Formular-Schema.");
   }
 
-  const parsed = schemaToZod(schema, { fileValue: "metadata" }).safeParse(
-    draft.payload,
-  );
+  /*
+   * `values` is the received payload, not a client claim about it. Conditional
+   * fields are re-derived here from the same answers the browser used, so a field
+   * the conditions ruled out is neither required nor accepted — and a client that
+   * asserts "that one was hidden" is never consulted. Without this a required field
+   * behind a condition would be demanded on every submission and the form would be
+   * impossible to send.
+   */
+  const parsed = schemaToZod(schema, {
+    fileValue: "metadata",
+    values: draft.payload,
+  }).safeParse(draft.payload);
   if (!parsed.success) {
     throw new TicketValidationError(
       "Payload passt nicht zum Schema.",

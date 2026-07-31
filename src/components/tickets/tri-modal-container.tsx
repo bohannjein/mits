@@ -31,6 +31,10 @@ import {
   type MITSTicketDraft,
   type TicketSource,
 } from "@/types/mits";
+import {
+  FormOptionsProvider,
+  type FormFieldOptions,
+} from "@/lib/forms/registry";
 
 const TicketResponseSchema = z.object({ ticket: MITSTicketSchema });
 
@@ -90,11 +94,18 @@ export function TriModalContainer({
   initialMode,
   /** Selectable sites. Empty hides the picker entirely. */
   locations = [],
+  /**
+   * Live choices for the `location` and `user` field widgets, loaded server-side.
+   * Separate from `locations` above, which drives the ticket's own site column —
+   * these fill schema fields and are labels, not foreign keys.
+   */
+  fieldOptions = { locations: [], users: [] },
 }: {
   quickTicketSchema: MITSFormSchema;
   catalogSchemas: MITSFormSchema[];
   initialMode?: TicketSource;
   locations?: MITSLocation[];
+  fieldOptions?: FormFieldOptions;
 }) {
   const router = useRouter();
   // Both tabs' AI proposal and the wizard resolve ids against the same list.
@@ -260,7 +271,10 @@ export function TriModalContainer({
         onChange={setLocationId}
       />
 
-      <>
+      {/* One provider for all three tabs. The catalogue and the AI proposal render
+          their own <SchemaForm> further down the tree and pick the choices up from
+          here, so no intake path can end up with an empty picker by omission. */}
+      <FormOptionsProvider options={fieldOptions}>
           <TabsContent value="legacy">
             <TabPanel>
               <SchemaForm
@@ -305,7 +319,7 @@ export function TriModalContainer({
               )}
             </TabPanel>
           </TabsContent>
-      </>
+      </FormOptionsProvider>
     </Tabs>
   );
 }

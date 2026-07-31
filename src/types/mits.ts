@@ -523,12 +523,53 @@ export type MITSFieldWidget =
   | "number"
   | "email"
   | "date"
+  | "datetime"
   | "select"
   | "radio"
   | "multiselect"
   | "checkbox"
   | "switch"
-  | "file";
+  | "file"
+  /** Site picker, filled from `mits_location` at render time. */
+  | "location"
+  /** Colleague picker, filled from the user list at render time. */
+  | "user";
+
+/**
+ * Show this field only while another one holds one of these values.
+ *
+ * **Not an access-control boundary.** A hidden field is dropped from the compiled
+ * schema and its answer is stripped before submission, but nothing here stops a
+ * hand-written request from carrying the property. `createTicket` re-derives
+ * visibility from the payload it actually received and validates with
+ * `strictObject` — that is where the boundary is.
+ *
+ * Values are compared as strings, so a condition on a checkbox reads
+ * `equals: ["true"]`. An array-valued controller (multiselect) matches when any
+ * of its entries is listed.
+ */
+export interface MITSFieldCondition {
+  /** Property name of the controlling field. */
+  field: string;
+  /** Any one of these shows the field. Empty means the field never shows. */
+  equals: string[];
+}
+
+/**
+ * Narrow this field's choices by another field's answer — a cascading dropdown.
+ *
+ * The pairs live in the schema rather than being looked up at render time, so they
+ * are known offline: the compiled zod enum can reject a child value that does not
+ * belong to the chosen parent, on the server exactly as in the browser. The
+ * child's own `enum` keeps the union of every value in the map, which is what
+ * keeps `schema` valid JSON Schema and gives Ollama the full choice set.
+ */
+export interface MITSFieldCascade {
+  /** Property name of the controlling field. */
+  field: string;
+  /** Parent value → the child values it permits. An absent key means no choices. */
+  map: Record<string, string[]>;
+}
 
 export interface MITSFieldUIHint {
   widget?: MITSFieldWidget;
@@ -550,7 +591,12 @@ export interface MITSFieldUIHint {
   group?: string;
   /** 1-based wizard step. Everything without a step lands on step 1. */
   step?: number;
+  /** Always hidden, regardless of any answer. Removed from the form entirely. */
   hidden?: boolean;
+  /** Conditional visibility — see `MITSFieldCondition`. */
+  visibleWhen?: MITSFieldCondition;
+  /** Cascading choices — see `MITSFieldCascade`. */
+  optionsFrom?: MITSFieldCascade;
 }
 
 export interface MITSFormSchema {

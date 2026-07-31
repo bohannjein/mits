@@ -2,16 +2,17 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2Icon } from "lucide-react";
-import { useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useEffect, useMemo, useState } from "react";
+import { useForm, useWatch } from "react-hook-form";
 
 import { Form } from "@/components/forms/form";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { renderField } from "@/lib/forms/registry";
 import {
+  cascadedValues,
   defaultValuesFor,
-  resolveFields,
+  resolveFieldsFor,
   schemaToZod,
   stepCount,
 } from "@/lib/forms/schema-to-zod";
@@ -50,17 +51,88 @@ export function SchemaForm({
   secondaryAction,
   locationId = null,
 }: SchemaFormProps) {
-  // Recompiled only when the schema identity changes — compiling on every render
-  // would hand react-hook-form a new resolver each time and reset validation.
-  const zodSchema = useMemo(() => schemaToZod(schema), [schema]);
-  const fields = useMemo(() => resolveFields(schema), [schema]);
   const steps = useMemo(() => stepCount(schema), [schema]);
 
+  /*
+   * Which fields other fields depend on. Empty for a schema without conditions,
+   * and that is what switches the subscription below off entirely — an ordinary
+   * form must not pay a re-render per keystroke for a feature it does not use.
+   */
+  const controllers = useMemo(() => {
+    const keys = new Set<string>();
+    for (const hint of Object.values(schema.uiHints ?? {})) {
+      if (hint.visibleWhen) keys.add(hint.visibleWhen.field);
+      if (hint.optionsFrom) keys.add(hint.optionsFrom.field);
+    }
+    return [...keys];
+  }, [schema]);
+
   const form = useForm({
-    resolver: zodResolver(zodSchema),
+    /*
+     * Compiled per validation run against the current answers, because the shape
+     * itself depends on them.
+     *
+     * The values are reduced to the visible fields *before* being handed to zod.
+     * The form always holds an entry for every declared field — `defaultValuesFor`
+     * seeds them all — while the compiled schema omits the ones the conditions
+     * ruled out. Passing the full set to a `strictObject` would fail on those keys
+     * as unrecognised, and the form could never be submitted at all once any field
+     * was conditional.
+     *
+     * What the resolver returns is what `handleSubmit` receives, so this is also
+     * the single place the hidden answers are dropped.
+     */
+    resolver: (values, context, options) => {
+      const answers = values as Record<string, unknown>;
+      const applicable = resolveFieldsFor(schema, answers);
+      return zodResolver(schemaToZod(schema, { values: answers }))(
+        visibleOnly(answers, applicable),
+        context,
+        options,
+      );
+    },
     defaultValues: { ...defaultValuesFor(schema), ...initialPayload },
     mode: "onBlur",
   });
+
+  // Only the controlling fields are watched, and only when there are any.
+  const watched = useWatch({
+    control: form.control,
+    disabled: controllers.length === 0,
+  });
+
+  const conditionValues = useMemo(() => {
+    if (controllers.length === 0) return undefined;
+    const values = (watched ?? {}) as Record<string, unknown>;
+    const picked: Record<string, unknown> = {};
+    for (const key of controllers) picked[key] = values[key];
+    return picked;
+  }, [controllers, watched]);
+
+  const fields = useMemo(
+    () => resolveFieldsFor(schema, conditionValues),
+    [schema, conditionValues],
+  );
+
+  /*
+   * Drop a cascading field's answer once its parent no longer permits it.
+   *
+   * Without this the form holds a value the narrowed dropdown does not offer: the
+   * control shows blank, validation fails on a field whose choices never included
+   * the offending value, and the reporter has no way to correct what they cannot
+   * see.
+   */
+  useEffect(() => {
+    if (!conditionValues) return;
+    for (const field of fields) {
+      const allowed = cascadedValues(field.hint, conditionValues);
+      if (!allowed) continue;
+      const current = form.getValues(field.name);
+      if (typeof current === "string" && current !== "" && !allowed.includes(current)) {
+        form.setValue(field.name, "", { shouldValidate: false });
+      }
+    }
+  }, [fields, conditionValues, form]);
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -70,6 +142,8 @@ export function SchemaForm({
       await onSubmit({
         source,
         form_schema_id: schema.id,
+        // Already reduced to the applicable fields by the resolver, which is what
+        // produced these values.
         payload: values as Record<string, unknown>,
         priority: derivePriority(values),
         location_id: locationId,
@@ -120,6 +194,18 @@ export function SchemaForm({
   );
 }
 
+/** Reduce the form values to the fields still on screen. */
+function visibleOnly(
+  values: Record<string, unknown>,
+  fields: ReturnType<typeof resolveFieldsFor>,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (field.name in values) payload[field.name] = values[field.name];
+  }
+  return payload;
+}
+
 /**
  * A schema may carry its own priority field; otherwise the draft defaults to
  * normal and triage (Phase 3) decides.
@@ -134,7 +220,7 @@ function derivePriority(values: Record<string, unknown>): MITSTicketDraft["prior
     : "medium";
 }
 
-function groupFields(fields: ReturnType<typeof resolveFields>) {
+function groupFields(fields: ReturnType<typeof resolveFieldsFor>) {
   const groups: { group?: string; entries: typeof fields }[] = [];
   for (const field of fields) {
     const group = field.hint.group;

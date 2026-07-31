@@ -98,7 +98,10 @@ export function resolveWidget(
   if (type === "string") {
     if (enumValues(schema)) return "select";
     if (schema.format === "email") return "email";
-    if (schema.format === "date" || schema.format === "date-time") return "date";
+    // date-time carries a time; rendering it in a date-only input would drop half
+    // the value the schema asked for.
+    if (schema.format === "date-time") return "datetime";
+    if (schema.format === "date") return "date";
     // Long free text gets a textarea rather than a single-line input.
     if ((schema.maxLength ?? 0) > 180) return "textarea";
     return "text";
@@ -107,9 +110,173 @@ export function resolveWidget(
   return "text";
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Conditional fields.
+
+   Both halves are derived from the answers, never from a flag the client sends.
+   That is the whole reason this lives here rather than in the form component: the
+   browser hides a field and the server, given the same payload, reaches the same
+   conclusion independently. A client claiming "that one was hidden" is not
+   consulted.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Whether a controller's answer satisfies a condition.
+ *
+ * Compared as strings so one condition shape covers text, enums and booleans — a
+ * checkbox condition reads `equals: ["true"]`. An array-valued controller matches
+ * when any selected entry is listed.
+ */
+function valueMatches(value: unknown, allowed: string[]): boolean {
+  if (allowed.length === 0) return false;
+  if (Array.isArray(value)) {
+    return value.some((entry) => allowed.includes(String(entry)));
+  }
+  if (value === undefined || value === null || value === "") return false;
+  return allowed.includes(String(value));
+}
+
+/**
+ * Which fields the given answers hide.
+ *
+ * Iterated to a fixpoint rather than resolved in one pass: a condition may point
+ * at a field that is itself conditional, and a controller that is hidden must not
+ * count as a match — otherwise a field could stay visible because of an answer to
+ * a question that was never asked. Each pass only ever adds to the set, so the
+ * field count bounds the loop; the iteration is also what makes the result
+ * independent of property order, which a single pass is not.
+ *
+ * This is the *least* fixpoint: everything starts visible and is only ruled out
+ * when an answer says so. A cycle whose conditions all happen to hold is therefore
+ * stable with every member visible — consistent, but never what anyone meant, so
+ * `conditionCycles` refuses such a schema at save time instead. Break the cycle at
+ * any point and this converges on hiding the whole chain.
+ */
+export function hiddenFieldNames(
+  form: MITSFormSchema,
+  values: Record<string, unknown>,
+): Set<string> {
+  const hints = form.uiHints ?? {};
+  const names = Object.keys(form.schema.properties ?? {});
+  const hidden = new Set<string>();
+
+  for (let pass = 0; pass <= names.length; pass += 1) {
+    let changed = false;
+
+    for (const name of names) {
+      if (hidden.has(name)) continue;
+      const condition = hints[name]?.visibleWhen;
+      if (!condition) continue;
+
+      const satisfied =
+        !hidden.has(condition.field) &&
+        valueMatches(values[condition.field], condition.equals);
+
+      if (!satisfied) {
+        hidden.add(name);
+        changed = true;
+      }
+    }
+
+    if (!changed) break;
+  }
+
+  return hidden;
+}
+
+/**
+ * Conditions and cascades whose controlling field does not exist.
+ *
+ * Reported as `"field → missing"` per offender. Worth refusing a save over: a
+ * dangling reference hides its field for good, and a required field that can never
+ * appear makes the whole form unsubmittable with nothing visible to explain it.
+ */
+export function danglingConditions(form: MITSFormSchema): string[] {
+  const known = new Set(Object.keys(form.schema.properties ?? {}));
+  const problems: string[] = [];
+
+  for (const [name, hint] of Object.entries(form.uiHints ?? {})) {
+    // A hint for a property that was removed is harmless — nothing renders it —
+    // so only the reference itself is checked.
+    for (const reference of [hint.visibleWhen?.field, hint.optionsFrom?.field]) {
+      if (reference !== undefined && !known.has(reference)) {
+        problems.push(`${name} → ${reference}`);
+      }
+    }
+  }
+
+  return problems;
+}
+
+/**
+ * Fields whose visibility conditions form a cycle, as `"a → b → a"` chains.
+ *
+ * A cycle is always an authoring mistake, and it has no sensible runtime answer:
+ * with every condition satisfied the whole ring stays visible, with any one unmet
+ * the whole ring disappears — so the same form behaves in two entirely different
+ * ways depending on values nobody can reach in the first place. Refused at save
+ * time rather than rendered.
+ *
+ * Only `visibleWhen` is walked. A cascade cycle cannot lock anyone out: a field
+ * with no permitted choices is visibly empty, which is its own explanation.
+ */
+export function conditionCycles(form: MITSFormSchema): string[] {
+  const hints = form.uiHints ?? {};
+  const controllerOf = (name: string) => hints[name]?.visibleWhen?.field;
+
+  const cycles: string[] = [];
+  const settled = new Set<string>();
+
+  for (const start of Object.keys(form.schema.properties ?? {})) {
+    if (settled.has(start)) continue;
+
+    // Each field has at most one controller, so the walk is a simple chain — it
+    // ends at a field without a condition or re-enters somewhere already seen.
+    const path: string[] = [];
+    const onPath = new Map<string, number>();
+
+    let current: string | undefined = start;
+    while (current !== undefined && !settled.has(current)) {
+      const seenAt = onPath.get(current);
+      if (seenAt !== undefined) {
+        cycles.push([...path.slice(seenAt), current].join(" → "));
+        break;
+      }
+      onPath.set(current, path.length);
+      path.push(current);
+      current = controllerOf(current);
+    }
+
+    for (const name of path) settled.add(name);
+  }
+
+  return cycles;
+}
+
+/**
+ * The choices a cascading field currently offers, or undefined when it does not
+ * cascade. An unanswered or unmapped parent yields an empty list — an empty
+ * dropdown is the honest rendering of "pick the other one first".
+ */
+export function cascadedValues(
+  hint: MITSFieldUIHint,
+  values: Record<string, unknown>,
+): string[] | undefined {
+  const cascade = hint.optionsFrom;
+  if (!cascade) return undefined;
+
+  const parent = values[cascade.field];
+  if (parent === undefined || parent === null || parent === "") return [];
+  return cascade.map[String(parent)] ?? [];
+}
+
 /**
  * Flatten a MITSFormSchema into the ordered field list the renderer walks.
  * Order is `uiHints.order` when given, otherwise JSON Schema property order.
+ *
+ * No answers in play, so every conditional field counts as visible and cascading
+ * fields keep their declared enum. That is what label lookups and the admin-side
+ * schema check want; the form and `createTicket` use `resolveFieldsFor` instead.
  */
 export function resolveFields(form: MITSFormSchema): ResolvedField[] {
   const properties = form.schema.properties ?? {};
@@ -138,6 +305,39 @@ export function resolveFields(form: MITSFormSchema): ResolvedField[] {
     .filter((field) => !field.hint.hidden)
     .sort((a, b) => a.order - b.order)
     .map(({ order: _order, ...field }) => field);
+}
+
+/**
+ * The fields that apply to a specific set of answers.
+ *
+ * Conditionally hidden fields are dropped and cascading fields get the choices
+ * their parent currently permits. Without `values` this is exactly
+ * `resolveFields` — no answers means nothing has been ruled out yet.
+ */
+export function resolveFieldsFor(
+  form: MITSFormSchema,
+  values?: Record<string, unknown>,
+): ResolvedField[] {
+  const fields = resolveFields(form);
+  if (!values) return fields;
+
+  const hidden = hiddenFieldNames(form, values);
+
+  return fields
+    .filter((field) => !hidden.has(field.name))
+    .map((field) => {
+      const allowed = cascadedValues(field.hint, values);
+      if (!allowed) return field;
+
+      const labels = field.hint.optionLabels ?? {};
+      return {
+        ...field,
+        options: allowed.map((value) => ({
+          value,
+          label: labels[value] ?? value,
+        })),
+      };
+    });
 }
 
 /** Text-ish fields default to "" in the form, so an untouched optional field must accept "". */
@@ -177,6 +377,17 @@ export type FileValueMode = "file" | "metadata";
 
 export interface CompileOptions {
   fileValue?: FileValueMode;
+  /**
+   * The answers being validated. Given these, conditionally hidden fields are
+   * left out of the compiled shape and cascading fields are narrowed to the
+   * choices their parent permits.
+   *
+   * Passing the payload here is what lets the server enforce conditions without
+   * believing the client: it recomputes visibility from the same data. Omit it and
+   * every field applies, which is the right default for a schema check that has no
+   * answers to go on.
+   */
+  values?: Record<string, unknown>;
 }
 
 function zodForField(
@@ -257,7 +468,22 @@ function zodForField(
       return required ? mail : optionalText(mail);
     }
 
+    /*
+     * Pickers whose choices are read live from `mits_location` and the user list,
+     * so there is no enum to validate against — a stored id would otherwise stop
+     * validating the moment a site is renamed or a colleague leaves, taking every
+     * existing ticket's payload down with it. These are descriptive answers, not
+     * foreign keys; the ticket's own `location_id` column is the validated one.
+     */
+    case "location":
+    case "user": {
+      return required
+        ? z.string().min(1, "Pflichtfeld.")
+        : optionalText(z.string());
+    }
+
     case "date":
+    case "datetime":
     case "text":
     case "textarea":
     default: {
@@ -276,12 +502,14 @@ function zodForField(
  */
 export function schemaToZod(form: MITSFormSchema, options: CompileOptions = {}) {
   const shape: Record<string, z.ZodType> = {};
-  for (const field of resolveFields(form)) {
+  for (const field of resolveFieldsFor(form, options.values)) {
     shape[field.name] = zodForField(field, options);
   }
   // strict(): a payload carrying properties the schema never declared is
   // rejected rather than stored. Matters on the server, where the body is
-  // attacker-controlled.
+  // attacker-controlled. With `values` in play this also rejects an answer to a
+  // field the conditions ruled out — the form strips those before submitting, so
+  // one arriving means the payload did not come from the form.
   return z.strictObject(shape);
 }
 
