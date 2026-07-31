@@ -3,6 +3,7 @@ import Link from "next/link";
 import { UserMenu } from "@/components/auth/user-menu";
 import { MITSLogo } from "@/components/branding/mits-logo";
 import { PresenceHeartbeat } from "@/components/dashboard/presence-heartbeat";
+import { RefreshControl } from "@/components/layout/refresh-control";
 import { TicketSearch } from "@/components/tickets/ticket-search";
 import { TicketSearchDialog } from "@/components/tickets/ticket-search-dialog";
 import { Button } from "@/components/ui/button";
@@ -80,7 +81,12 @@ export async function AppHeader() {
         )}
 
         {user ? (
-          <UserMenu user={user} />
+          <div className="flex items-center gap-1">
+            {/* Not for an account still behind the password gate: every page
+                redirects to the profile form, so refreshing it changes nothing. */}
+            {!user.mustChangePassword && <RefreshControl />}
+            <UserMenu user={user} />
+          </div>
         ) : (
           <div className="flex items-center gap-2">
             <Button

@@ -8,6 +8,7 @@ import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useAutoRefresh } from "@/components/providers/auto-refresh";
 import { useTimezone } from "@/components/providers/timezone-provider";
 import {
   MITSTicketSchema,
@@ -65,13 +66,24 @@ export function OpenTicketsPanel({
   title?: string;
 }) {
   const timezone = useTimezone();
+  const { minutes } = useAutoRefresh();
+
   const { data, isFetching, refetch } = useQuery({
     queryKey: ["tickets", "own"],
     queryFn: fetchOwnTickets,
     initialData: initialTickets,
-    // Live enough for a helpdesk without hammering SQLite: a poll while the tab
-    // is open, plus an immediate refetch when the user comes back to it.
-    refetchInterval: 30_000,
+    /*
+     * Follows the header's refresh setting instead of keeping a schedule of its own.
+     *
+     * This used to poll every 30 seconds, which was already the most frequent
+     * request in the app and would now run *alongside* the page refresh — two
+     * schedules asking SQLite for the same rows. One setting governs both, and "Aus"
+     * means off here too rather than silently continuing to poll.
+     *
+     * `refetchIntervalInBackground` stays at its default of false, so a hidden tab
+     * does not poll, matching the page refresher.
+     */
+    refetchInterval: minutes === 0 ? false : minutes * 60_000,
     refetchOnWindowFocus: true,
   });
 
