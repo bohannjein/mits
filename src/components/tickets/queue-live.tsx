@@ -1,8 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
 
+import { useCoalescedRefresh } from "@/hooks/use-coalesced-refresh";
 import { useRealtimeSignal, useRealtimeStatus } from "@/hooks/use-realtime";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -29,6 +29,16 @@ import { useRealtimeSignal, useRealtimeStatus } from "@/hooks/use-realtime";
    ────────────────────────────────────────────────────────────────────────── */
 
 /**
+ * How long a burst of signals is collapsed into one refresh.
+ *
+ * A second and a half: fast enough that a new ticket appears while somebody is
+ * still reading the sentence that mentioned it, slow enough that a busy desk
+ * costs one queue render per window rather than one per message. This is the
+ * number that decides whether a hundred people chatting is a load problem.
+ */
+const COALESCE_MS = 1500;
+
+/**
  * Fallback interval. Only runs while the stream is down.
  *
  * Fifteen seconds against a request that is usually thirty-odd bytes of headers
@@ -38,12 +48,13 @@ import { useRealtimeSignal, useRealtimeStatus } from "@/hooks/use-realtime";
 const FALLBACK_MS = 15_000;
 
 export function QueueLive() {
-  const router = useRouter();
   const live = useRealtimeStatus() === "live";
+  const refresh = useCoalescedRefresh(COALESCE_MS);
 
-  const onQueue = useCallback(() => {
-    router.refresh();
-  }, [router]);
+  // Coalesced, not immediate: every comment anybody writes publishes a `queue`
+  // signal to every connected agent, and answering each one with a full
+  // re-render is a stampede rather than an update.
+  const onQueue = useCallback(() => refresh(), [refresh]);
 
   useRealtimeSignal("queue", onQueue);
 
@@ -77,7 +88,7 @@ export function QueueLive() {
 
         // The first answer only establishes the baseline. Refreshing on it would
         // mean one pointless re-render every time the connection drops.
-        if (seen.current !== null && seen.current !== next) router.refresh();
+        if (seen.current !== null && seen.current !== next) refresh();
         seen.current = next;
       } catch {
         // Offline, or the server restarting. The next tick is the retry.
@@ -91,7 +102,7 @@ export function QueueLive() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [live, router]);
+  }, [live, refresh]);
 
   return null;
 }

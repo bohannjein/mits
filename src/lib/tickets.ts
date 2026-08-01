@@ -6,6 +6,7 @@ import type { SessionUser } from "@/lib/auth/session";
 import { recordAudit } from "@/lib/audit";
 import { canViewBoard, toRole } from "@/lib/auth/roles";
 import { db, nextTicketNumber } from "@/lib/db/sqlite";
+import { invalidateAnalytics } from "@/lib/services/analytics-cache";
 import { publish } from "@/lib/services/realtime";
 import { getFormSchema } from "@/lib/form-schemas";
 import { resolveFields, schemaToZod } from "@/lib/forms/schema-to-zod";
@@ -252,6 +253,22 @@ export function createTicket(
     }
     throw error;
   }
+
+  /*
+   * A new ticket announces itself. It did not, which was a hole rather than a
+   * decision: the queue only learned about it on the next fallback poll, so the
+   * one event the desk most wants to see immediately was the slowest to arrive.
+   *
+   * `notify` as well as `queue`: "Neues Ticket im Pool" is a notification channel,
+   * and without the signal its watcher waited out its own interval. Both carry no
+   * content — `listNotifications` still decides who is told anything.
+   *
+   * After the transaction, like every other publish: a signal sent from inside one
+   * would reach a browser that then refetches a ticket a rollback removed.
+   */
+  publish({ type: "queue", audience: "staff", actorId: user.id });
+  publish({ type: "notify", audience: "staff", actorId: user.id });
+  invalidateAnalytics();
 
   return rowToTicket(ticket);
 }
@@ -901,6 +918,22 @@ interface FingerprintRow {
 function announce(ticketId: string, actorId: string): void {
   publish({ type: "ticket", ticketId, audience: "all", actorId });
   publish({ type: "queue", audience: "staff", actorId });
+
+  /*
+   * The statistics are cached for thirty seconds, and a status change is exactly
+   * the write somebody then goes to look at.
+   *
+   * "I closed a ticket and it is not in the statistics" was that half minute.
+   * The figure was correct and the cache was doing its job; the trouble is that
+   * the one moment a person checks the number is straight after changing it, so
+   * the only staleness they ever see is the staleness that looks like a bug.
+   *
+   * Cleared here rather than on every write: a comment moves the first-response
+   * figure too, but nobody closes a ticket and then checks the median response
+   * time. Status changes and new tickets are what the panel is watched for, and
+   * they are rare enough that clearing on them does not defeat the cache.
+   */
+  invalidateAnalytics();
 }
 
 /** A display name for the log — an opaque id in a history nobody can read is noise. */

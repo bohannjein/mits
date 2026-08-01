@@ -1,9 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useCoalescedRefresh } from "@/hooks/use-coalesced-refresh";
 import { useRealtimeSignal, useRealtimeStatus, useRealtimeTicket } from "@/hooks/use-realtime";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -40,6 +40,15 @@ const IDLE_MS = 12_000;
 /** How long after the last change the conversation still counts as warm. */
 const WARM_MS = 120_000;
 
+/**
+ * Burst window for the conversation.
+ *
+ * Shorter than the queue's: this is a chat, and half a second is below the
+ * threshold at which a reply feels delayed. It still collapses the case that
+ * matters — somebody sending three lines in a row is one render, not three.
+ */
+const COALESCE_MS = 500;
+
 export function TicketLive({
   ticketId,
   /** The fingerprint as of this render, so the first poll has something to differ from. */
@@ -48,8 +57,6 @@ export function TicketLive({
   ticketId: string;
   fingerprint: string;
 }) {
-  const router = useRouter();
-
   // Tells the provider to reconnect the stream scoped to this ticket. The server
   // authorises the id once, at connect; see the stream route.
   useRealtimeTicket(ticketId);
@@ -80,10 +87,12 @@ export function TicketLive({
    * the same code path the poll uses, which is why there is no second way for a
    * message to reach the screen and no second place for it to go wrong.
    */
+  const refresh = useCoalescedRefresh(COALESCE_MS);
+
   const onTicket = useCallback(() => {
     setLastChange(Date.now());
-    router.refresh();
-  }, [router]);
+    refresh();
+  }, [refresh]);
 
   useRealtimeSignal("ticket", onTicket);
 
@@ -120,8 +129,8 @@ export function TicketLive({
     if (data === seen.current) return;
     seen.current = data;
     setLastChange(Date.now());
-    router.refresh();
-  }, [data, router]);
+    refresh();
+  }, [data, refresh]);
 
   /*
    * A refresh re-renders the server component and hands down a new prop. Adopting

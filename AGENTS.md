@@ -1018,6 +1018,67 @@ genannten Hex-Werte sind die Light-Werte und stehen genau dort. Auf Dark sind si
 angehoben und leicht entsättigt: dasselbe Indigo, das auf Weiß souverän wirkt,
 ist auf Beinahe-Schwarz ein Loch.
 
+## Was hundert gleichzeitige Chatter kostet
+
+Vier Stellen, an denen die Echtzeit teurer war als nötig. Alle vier folgen
+derselben Regel, die auch WhatsApp, Signal und Threema befolgen: **ein Ereignis
+ist keine Aufforderung, alles neu zu laden.**
+
+**Ein Burst ist eine Aktualisierung** (`hooks/use-coalesced-refresh.ts`). Jeder
+Kommentar veröffentlicht ein `queue`-Signal an jeden verbundenen Agenten, und
+jeder beantwortete es mit einem vollen `router.refresh()` — das sind auf der
+Queue sieben Abfragen gegen einen synchronen SQLite-Treiber, der dabei die
+Event-Loop für alle anderen blockiert. Zehn Nachrichten pro Sekunde waren zehn
+komplette Renders **pro offenem Tab**. Jetzt: 1,5 s Fenster auf der Queue, 0,5 s
+im Ticket, und nie mehr als eine Aktualisierung gleichzeitig unterwegs. Unter
+Dauerlast degradiert der Client auf „so schnell, wie der Server antwortet",
+statt Arbeit aufzustauen, zu der der Server noch nicht gekommen ist.
+
+**Ein verborgener Tab gibt seine Verbindung zurück.** Das ist die Stelle, die
+darüber entscheidet, ob MITS es übersteht, offen gelassen zu werden: über
+HTTP/1.1 erlaubt ein Browser sechs Verbindungen pro Origin, und ein Event-Stream
+ist eine Verbindung, die nie zurückkommt. Vier Tabs auf der Queue, und für die
+Seitenaufrufe selbst bleibt nichts. Das Fehlerbild ist keine Meldung, sondern
+eine Navigation, die hängt — nicht von einem langsamen Server zu unterscheiden.
+Ein verborgener Tab hat niemandem etwas zu zeigen, also hält er auch nichts.
+
+**Die Session wird einmal pro Anfrage aufgelöst** (`cache()` um
+`getSessionUser`). Seit der Realtime-Provider im Root-Layout sitzt, taten es
+Layout und Seite je einmal: zwei Better-Auth-Aufrufe, zwei Profil-Reads. Bei
+einem synchronen Treiber blockiert jeder davon alle anderen.
+
+**Die Aufräumlöschung des Event-Puffers läuft auf einem Timer**, nicht bei jedem
+`publish`. Vorher war es ein zweiter Schreibvorgang pro Ereignis, also sechs pro
+Kommentar statt drei.
+
+**Neue Tickets melden sich jetzt überhaupt.** `createTicket` veröffentlichte
+nichts — ein eingehendes Ticket erreichte die Queue erst über den Ersatz-Poll.
+Das war eine Lücke, keine Entscheidung.
+
+**Der Mailweg bleibt unverändert und funktioniert weiter.** Eine Antwort per
+Mail geht durch `ingest` → `addComment`, und `addComment` veröffentlicht — sie
+erscheint also live im Agenten-Chat wie jede andere Nachricht. Ausgehend
+benachrichtigt `addCommentAction` weiter den Melder. Der Kunde chattet per Mail,
+der Agent sieht einen Chat; daran ändert die Echtzeitschicht nichts, sie macht
+den Weg nur schneller sichtbar.
+
+### Warum eine geschlossene Meldung nicht in der Statistik stand
+
+Nicht die Abfrage — die zählt `status_changed` mit `new_value IN ('closed',
+'resolved')`, und beide Schließ-Wege gehen durch `setTicketStatus`, das den
+Eintrag schreibt. Es war der **30-Sekunden-Cache**, den der Analytics-Schutz
+mitgebracht hat.
+
+Die Zahl war korrekt und der Cache tat seine Arbeit. Das Problem ist der
+Zeitpunkt: der einzige Moment, in dem jemand eine Kennzahl nachsieht, ist direkt
+nachdem er sie verändert hat — die einzige Veralterung, die je auffällt, ist
+also genau die, die wie ein Fehler aussieht. `setTicketStatus`, `assignTicket`
+und `createTicket` leeren den Cache jetzt.
+
+Bei einem Kommentar bewusst nicht: das verschiebt zwar die Erstreaktionszeit,
+aber niemand schließt ein Ticket und prüft danach den Median der Antwortzeiten.
+Auf jeden Schreibvorgang zu leeren hieße, den Cache abzuschaffen.
+
 ## Ticket ausdocken: Pop-out und angepinntes Fenster
 
 Zwei Wege aus dem Hauptfenster, **einer zur Zeit**. Zwei losgelöste Kopien

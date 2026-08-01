@@ -1,6 +1,7 @@
 import "server-only";
 
 import { headers } from "next/headers";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 
 import { deniedPathFor, hasAtLeast, toRole, type MITSRole } from "@/lib/auth/roles";
@@ -53,11 +54,30 @@ function toSessionUser(user: {
 }
 
 /** Current user from the request headers, or null. Never throws on a bad cookie. */
-export async function getSessionUser(): Promise<SessionUser | null> {
-  await ensureAuthSchema();
-  const session = await auth.api.getSession({ headers: await headers() });
-  return session?.user ? toSessionUser(session.user) : null;
-}
+/**
+ * The signed-in user, resolved **once per request**.
+ *
+ * `cache()` is React's per-request memo, and it is load-bearing rather than an
+ * optimisation. Every guarded page calls this, and since the realtime provider
+ * moved into the root layout, so does the layout wrapping it — so a single page
+ * view was doing the session lookup twice: two Better Auth calls, two reads of
+ * `mits_user`, two `mustChangePassword` queries.
+ *
+ * better-sqlite3 is synchronous, which means each of those blocks the event loop
+ * for everybody. Doubling the per-request cost of the one function every page
+ * calls is the kind of thing that is invisible with three users and decides
+ * whether a hundred of them get an answer.
+ *
+ * Safe to memoise: it derives from the request's own headers, so two calls in one
+ * request can only ever produce the same answer.
+ */
+export const getSessionUser = cache(
+  async (): Promise<SessionUser | null> => {
+    await ensureAuthSchema();
+    const session = await auth.api.getSession({ headers: await headers() });
+    return session?.user ? toSessionUser(session.user) : null;
+  },
+);
 
 /** Same, but for route handlers that already hold the Request. */
 export async function getSessionUserFor(

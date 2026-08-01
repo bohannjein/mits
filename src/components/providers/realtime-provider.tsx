@@ -178,16 +178,41 @@ export function RealtimeProvider({
       };
     };
 
-    connect();
+    // Nothing at all while the tab is in the background, including the first
+    // connection: a page restored into a hidden tab should not claim a slot.
+    if (!document.hidden) connect();
 
     /*
-     * Coming back to a sleeping laptop, retry now rather than at the end of a
-     * thirty-second window. `visibilitychange` is the signal that somebody is
-     * looking again, and being disconnected while being looked at is the only
-     * case where the wait is expensive.
+     * A hidden tab gives its connection back.
+     *
+     * This is the one that decides whether MITS survives being left open. Over
+     * HTTP/1.1 a browser allows six connections per origin, and an event stream is
+     * a connection that never returns — four tabs on the queue and there is
+     * nothing left for the page loads themselves. The symptom is not an error
+     * message, it is navigation that hangs, which is indistinguishable from a slow
+     * server and impossible to attribute.
+     *
+     * A hidden tab has nothing to show anybody, so it holds nothing. Coming back
+     * reconnects at once and the next render is current. This also removes the
+     * per-connection cost on the server for every tab nobody is looking at, which
+     * is most of them on a desk that has been running since Monday.
+     *
+     * (Behind HTTP/2 the limit does not apply. Deployments differ and this is
+     * cheap either way.)
      */
+    const disconnect = () => {
+      clearTimeout(retry);
+      source?.close();
+      source = null;
+      setStatus("polling");
+    };
+
     const onVisible = () => {
-      if (document.hidden || source) return;
+      if (document.hidden) {
+        disconnect();
+        return;
+      }
+      if (source) return;
       clearTimeout(retry);
       attempt = 0;
       connect();

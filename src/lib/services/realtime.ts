@@ -87,6 +87,8 @@ const globalRef = globalThis as typeof globalThis & {
     pump: ReturnType<typeof setInterval> | null;
     lastEventId: number;
     ownEventIds: Set<number>;
+    /** Epoch millis of the last retention sweep. */
+    lastSweep: number;
   };
 };
 
@@ -95,6 +97,7 @@ const state = (globalRef.__mitsRealtime ??= {
   pump: null,
   lastEventId: 0,
   ownEventIds: new Set<number>(),
+  lastSweep: 0,
 });
 
 /** How often a process checks for events written by another process. */
@@ -162,9 +165,25 @@ export function publish(event: RealtimeEvent): void {
     }
     if (id > state.lastEventId) state.lastEventId = id;
 
-    db.prepare("DELETE FROM mits_realtime_event WHERE created_at < ?").run(
-      new Date(Date.now() - RETENTION_MS).toISOString(),
-    );
+    /*
+     * Retention runs on a timer, not on every publish.
+     *
+     * It used to be one `DELETE` per event, which meant a busy desk paid a second
+     * write for every message — and better-sqlite3 is synchronous, so each of
+     * those blocks the event loop for every other request in the process. Three
+     * events per comment (ticket, notify, queue) made it six writes where one was
+     * needed.
+     *
+     * Once a minute is plenty for a table whose whole purpose is to hold sixty
+     * seconds of delivery buffer.
+     */
+    const now = Date.now();
+    if (now - state.lastSweep > RETENTION_MS) {
+      state.lastSweep = now;
+      db.prepare("DELETE FROM mits_realtime_event WHERE created_at < ?").run(
+        new Date(now - RETENTION_MS).toISOString(),
+      );
+    }
   } catch {
     // Fall through: local subscribers still get it, and the fallback poll covers
     // the rest. A failed announcement is not a failed write.
