@@ -298,8 +298,8 @@ ist deshalb in einem Theme lesbar und im anderen ausgewaschen.
 | Token | Wofür |
 |---|---|
 | `--primary-hover` | gefüllte Primärflächen, in **beiden** Themes dunkler |
-| `--bubble-customer*` | Kunden-Bubble, neutrale Fläche |
-| `--bubble-agent*` | Agenten-Bubble, blauer Akzent, plus `-accent` für das Rollen-Label |
+| `--bubble-own*` | eigene Nachricht, neutrales Grau |
+| `--bubble-other*` | Nachricht der Gegenseite, Blau, plus `-accent` für das Rollen-Label |
 | `--bubble-internal*` | interne Notiz, Amber, gestrichelter Rand |
 
 Bubble-Flächen sind **deckend**, nicht als Alpha-Tint definiert. Ein
@@ -472,13 +472,35 @@ als echten ersten Beitrag ab, in bereinigtem HTML, damit die Formatierung
 `fieldsBesidesOpening` — sonst steht dasselbe Anliegen zweimal auf der Seite, einmal
 als Nachricht und einmal als beschriftetes Feld daneben.
 
-**Die Bubble-Seiten hängen am Sprecher, nicht am Betrachter.** Melder links, Team
-rechts, in beiden Ansichten. Die naheliegende Spiegelung („eigene Nachrichten
-rechts", wie ein Handy-Messenger) war gebaut und ist wieder raus: derselbe Verlauf
-hätte zwei Layouts, ein Screenshot vom Melder und einer vom Agenten liegen nicht
+**Position ist absolut, Farbe ist relativ.** Zwei Achsen, die verschiedene Fragen
+beantworten — und sie stimmen absichtlich nicht überein.
+
+`side` hängt am **Sprecher**: Melder links, Team rechts, in beiden Ansichten.
+Die naheliegende Spiegelung („eigene Nachrichten rechts", wie ein
+Handy-Messenger) war gebaut und ist wieder raus: derselbe Verlauf hätte zwei
+Layouts, ein Screenshot vom Melder und einer vom Agenten liegen nicht
 übereinander, und „die Nachricht links" in einer Übergabe wäre keine Ortsangabe
-mehr. `ChatBubble` nimmt `side` trotzdem als Prop — die geteilte Komponente soll
-keine Perspektive einbetoniert haben.
+mehr.
+
+`tone` hängt am **Betrachter**: `toneFor(comment, viewerId)` gibt Grau für
+eigene Nachrichten, Blau für die der Gegenseite. Auf dem Schirm des Agenten sind
+seine Antworten grau und die des Melders blau, auf dem Schirm des Melders
+umgekehrt. Vorher war auch die Farbe am Sprecher festgemacht; geändert auf
+Wunsch, weil das Erste, wonach jemand in einem Verlauf sucht, die eigene Hälfte
+ist. Die Position sagt *wer*, die Farbe sagt *ob du das warst*.
+
+- **Verglichen wird `author_id`, nicht `author_is_agent`.** Zwei Agenten auf
+  einem Ticket sehen einander sonst beide als „das Team" und beide grau.
+- **Amber ist die Ausnahme und bleibt absolut.** Eine interne Notiz markiert
+  *Sichtbarkeit*, keinen Sprecher; sie in der eigenen Farbe zu zeigen nähme ihr
+  das einzige Signal, das „geht nicht an den Melder" sagt.
+- **Das Rollen-Label kam aus `TONES` raus** (`roleLabel`). Die Farbe beantwortet
+  jetzt „war ich das", der Chip weiterhin „wer war es" — zusammengelegt hätte
+  die eigene Antwort eines Agenten auf seinem eigenen Schirm „Kunde" geheißen,
+  weil das die graue ist.
+
+`ChatBubble` nimmt beide Achsen als Prop — die geteilte Komponente soll keine
+Perspektive einbetoniert haben.
 
 ## Kunden-Eingang: Chat statt Formular
 
@@ -751,10 +773,29 @@ schneller als eine. Eine korrekte Seite und ein kaputter Chat.
   Ticket spricht.
 - **`router.refresh()`, kein Reload.** Eine halb getippte Antwort überlebt die
   Nachricht, die währenddessen ankommt. Nirgends sonst zählt das mehr.
-- **8 s sind nicht `AutoRefresh`.** Letzteres ist ein Seitenintervall in Minuten
+- **Zwei Raten: 2,5 s warm, 12 s ruhig.** Ein fester Wert war an beiden Enden
+  falsch — zu langsam, während zwei Leute sich schreiben, und eine sinnlose
+  Anfrage im Takt für die vierzig Tickets, die jemand vorletzte Woche in Tabs
+  offen gelassen hat. Warm heißt: der Fingerabdruck hat sich in den letzten zwei
+  Minuten bewegt. Eine selbst gesendete Antwort schaltet ebenfalls auf warm —
+  wer gerade geschrieben hat, bekommt am ehesten gleich eine Antwort.
+- **`lastChange` ist State, kein Ref.** Das Intervall muss sich beim Wechsel neu
+  scharf stellen; mit einem Ref bliebe die Rate stehen, die beim Anlegen der
+  Query galt, und der Poll kröche mit zwölf Sekunden durch genau den
+  Wortwechsel, für den er schneller werden sollte. Ein Timer schaltet zurück,
+  sonst bliebe `warm` hängen, bis irgendetwas anderes die Komponente neu rendert
+  — und ihre ganze Aufgabe ist, nichts zu rendern.
+- **Das ist nicht `AutoRefresh`.** Letzteres ist ein Seitenintervall in Minuten
   pro Konto; das hier ist die Konversation. Konfigurierbar zu machen hieße,
   jemanden einzuladen, fünf Minuten einzustellen und den Chat für kaputt zu
   halten.
+- **Automatisch ans Ende gescrollt wird nur, wer schon unten steht** (100 px
+  Toleranz). Unbedingt zu scrollen war harmlos, solange sich die Liste nur bei
+  einer Navigation änderte; in einem lebenden Verlauf reißt es jemanden aus der
+  Nachricht, zu der er hochgescrollt hat, sobald die Gegenseite etwas sagt. Der
+  erste Render ist die Ausnahme. Der Scrollcontainer wird bei Bedarf gesucht und
+  nicht beim Mounten gemerkt: unterhalb von `lg` begrenzt `TicketFrame` nichts,
+  dann scrollt das Dokument.
 
 ### Zwei Fehler, die wie „geht nicht“ aussahen
 

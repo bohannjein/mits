@@ -188,6 +188,7 @@ export default async function CustomerTicketPage({
                   ...(opening ? [opening] : []),
                   ...listCommentsFor(id, user),
                 ]}
+                viewerId={user.id}
                 emptyText="Noch keine Antwort. Wir melden uns hier."
               />
             }

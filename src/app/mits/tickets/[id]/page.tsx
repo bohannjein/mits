@@ -252,6 +252,7 @@ export default async function AgentTicketPage({
                 // earliest thing by definition, and sorting a synthetic entry into
                 // a list by a date it shares with the ticket row invites a tie.
                 comments={[...(opening ? [opening] : []), ...comments]}
+                viewerId={user.id}
                 emptyText="Noch keine Beiträge. Die erste Antwort geht an den Melder."
               />
             }

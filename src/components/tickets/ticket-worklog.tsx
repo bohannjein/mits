@@ -139,7 +139,7 @@ export function TicketWorklog({
             className={cn(
               "h-10 shrink-0 rounded-xl px-3 text-xs tabular-nums",
               startedAt !== null &&
-                "bg-bubble-agent text-foreground hover:bg-bubble-agent hover:text-foreground",
+                "bg-bubble-other text-foreground hover:bg-bubble-other hover:text-foreground",
             )}
           >
             {startedAt === null ? (

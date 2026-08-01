@@ -103,23 +103,31 @@
   --color-gemini-3: var(--gemini-3);
 
   /* ── Conversation bubbles ────────────────────────────────────────────────
-     Three speakers, three surfaces: the reporter on the left, the agent on the
-     right, an internal note set apart. Tokens rather than a Tailwind palette
-     pair (`bg-blue-50 dark:bg-blue-950/40`) for two reasons — rule 2, and
-     because a `/40` alpha in the dark theme reads differently over `--card`
-     than over `--background`, so the same bubble changes shade depending on
-     which column it sits in.
+     Three surfaces, and the first two are **relative to whoever is reading**:
+     `own` is the neutral grey for messages you wrote, `other` the blue for the
+     side you are talking to, `internal` an amber aside. So the same reply is
+     grey to its author and blue to its recipient — which is what every
+     messenger does, and what makes a thread scannable without reading names.
+
+     `internal` is the exception and stays absolute: it marks *visibility*, not
+     a speaker, and an internal note has to look like one to every agent who
+     opens the ticket.
+
+     Tokens rather than a Tailwind palette pair (`bg-blue-50 dark:bg-blue-950/40`)
+     for two reasons — rule 2, and because a `/40` alpha in the dark theme reads
+     differently over `--card` than over `--background`, so the same bubble
+     changes shade depending on which column it sits in.
 
      Text on all three is plain `--foreground`. One foreground for every bubble
      is deliberate: a per-bubble text colour is a second thing to keep in step
      with three backgrounds across two themes, and the first one that drifts is
      a message nobody can read. The `-accent` tokens are for the small role
      label only, and each is contrast-checked against its own surface. */
-  --color-bubble-customer: var(--bubble-customer);
-  --color-bubble-customer-border: var(--bubble-customer-border);
-  --color-bubble-agent: var(--bubble-agent);
-  --color-bubble-agent-border: var(--bubble-agent-border);
-  --color-bubble-agent-accent: var(--bubble-agent-accent);
+  --color-bubble-own: var(--bubble-own);
+  --color-bubble-own-border: var(--bubble-own-border);
+  --color-bubble-other: var(--bubble-other);
+  --color-bubble-other-border: var(--bubble-other-border);
+  --color-bubble-other-accent: var(--bubble-other-accent);
   --color-bubble-internal: var(--bubble-internal);
   --color-bubble-internal-border: var(--bubble-internal-border);
   --color-bubble-internal-accent: var(--bubble-internal-accent);
@@ -221,11 +229,11 @@
   --input: oklch(0 0 0 / 14%);
   --ring: oklch(0.45 0.2 264);
   /* Conversation bubbles — see the @theme block for why these are tokens. */
-  --bubble-customer: oklch(0.965 0.003 250);
-  --bubble-customer-border: oklch(0.885 0.005 250);
-  --bubble-agent: oklch(0.964 0.024 256);
-  --bubble-agent-border: oklch(0.845 0.065 258);
-  --bubble-agent-accent: oklch(0.44 0.19 264);
+  --bubble-own: oklch(0.965 0.003 250);
+  --bubble-own-border: oklch(0.885 0.005 250);
+  --bubble-other: oklch(0.964 0.024 256);
+  --bubble-other-border: oklch(0.845 0.065 258);
+  --bubble-other-accent: oklch(0.44 0.19 264);
   --bubble-internal: oklch(0.972 0.038 92);
   --bubble-internal-border: oklch(0.855 0.11 88);
   --bubble-internal-accent: oklch(0.45 0.105 72);
@@ -317,11 +325,11 @@
    * on `--card` in the ticket column and on `--background` in a dialog — two
    * shades for one speaker.
    */
-  --bubble-customer: oklch(0.235 0.003 285);
-  --bubble-customer-border: oklch(1 0 0 / 11%);
-  --bubble-agent: oklch(0.268 0.036 262);
-  --bubble-agent-border: oklch(0.66 0.12 260 / 38%);
-  --bubble-agent-accent: oklch(0.81 0.078 259);
+  --bubble-own: oklch(0.235 0.003 285);
+  --bubble-own-border: oklch(1 0 0 / 11%);
+  --bubble-other: oklch(0.268 0.036 262);
+  --bubble-other-border: oklch(0.66 0.12 260 / 38%);
+  --bubble-other-accent: oklch(0.81 0.078 259);
   --bubble-internal: oklch(0.272 0.034 86);
   --bubble-internal-border: oklch(0.72 0.12 86 / 40%);
   --bubble-internal-accent: oklch(0.85 0.14 88);
