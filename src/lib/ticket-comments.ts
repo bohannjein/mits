@@ -274,12 +274,23 @@ export function addComment(
   try {
     db.transaction(() => {
       db.prepare(
+        /*
+         * Every column the bound object carries, `edited_at` included.
+         *
+         * better-sqlite3 refuses a named-parameter object with keys the statement
+         * does not use — "Too many parameter values were provided" — rather than
+         * ignoring them. Adding `edited_at: null` to the row above without adding
+         * it here therefore turned every single send into a 500. It is the kind of
+         * mismatch a type checker cannot see: both halves are individually valid,
+         * and the contract between them is a string.
+         */
         `INSERT INTO mits_ticket_comment
            (id, ticket_id, author_id, author_email, author_name,
-            author_is_agent, visibility, body, body_format, created_at)
+            author_is_agent, visibility, body, body_format, created_at, edited_at)
          VALUES
            (@id, @ticket_id, @author_id, @author_email, @author_name,
-            @author_is_agent, @visibility, @body, @body_format, @created_at)`,
+            @author_is_agent, @visibility, @body, @body_format, @created_at,
+            @edited_at)`,
       ).run(row);
 
       linkUploadsToTicket(embedded, ticketId, user);

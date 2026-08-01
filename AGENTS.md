@@ -1110,6 +1110,14 @@ sendet damit **ohne** Action: React hat nichts auszuführen, der Browser macht
 seinen Default-Submit, das Feld wird zurückgesetzt. Jetzt wird der Antwort-Knopf
 als Submitter benannt.
 
+**Ein gebundenes Objekt darf keine Schlüssel haben, die das Statement nicht
+nennt.** better-sqlite3 lehnt das ab — „Too many parameter values were provided" —
+statt sie zu ignorieren. `edited_at: null` an die Kommentarzeile zu schreiben,
+ohne die Spalte in das `INSERT` aufzunehmen, hat damit **jedes Absenden** zu einem
+500 gemacht. Der Typechecker sieht das nicht: beide Hälften sind für sich gültig,
+und der Vertrag zwischen ihnen ist ein String. Wer hier ein Feld ergänzt, ergänzt
+zwei Stellen.
+
 **Der Status änderte sich nicht überall.** Dreizehn Aufrufstellen revalidierten
 von Hand, alle die beiden Detailansichten und die Queue — **keine**
 `/customer/tickets`. Ein Agent schloss ein Ticket, und die Liste des Melders
