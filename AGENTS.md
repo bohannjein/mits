@@ -1619,9 +1619,43 @@ git push origin main   # https://github.com/bohannjein/mits
 ```bash
 npm run typecheck    # Typen
 npm run build        # Prod-Build
-npm test             # Schema-Compiler (offline)
+npm test             # beide Suiten
+npm run test:forms   # reine Funktionen, offline
+npm run test:db      # jeder Schreibpfad gegen eine Wegwerf-Datenbank
 npm run dev          # http://localhost:3000
 ```
+
+**`test:db` deckt ab, was ein Typechecker nicht kann:** den Vertrag zwischen
+einem SQL-Statement und dem Objekt, das daran gebunden wird. Der ist auf der
+einen Seite ein String und auf der anderen ein Typ, und nichts prüft, dass sie
+zusammenpassen — better-sqlite3 zuckt bei einer Abweichung nicht mit den
+Schultern, es wirft.
+
+Das ist nicht theoretisch. Zwei Fehler, die alle drei anderen Befehle grün
+passiert haben:
+
+- `edited_at` an die Kommentarzeile geschrieben, ohne die Spalte ins `INSERT` zu
+  nehmen → **jedes Absenden** war ein 500.
+- Im `LIKE` der Ticketsuche hatte JavaScript zwei Backslashes gefressen, bevor
+  SQLite sie sah: `ESCAPE ''` kam als `ESCAPE ''` an, und der Wildcard-Ersatz
+  schrieb das literale `${c}` statt eines Escapes → **jede Freitextsuche** war
+  ein 500, aus der Kopfzeile jeder Seite.
+
+Die Suite ruft jeden Schreibpfad einmal mit realistischer Eingabe auf. Keine
+Verhaltensprüfungen — dafür ist `test:forms` da. Diese hier stellt die eine
+Frage, die ein Typechecker nicht stellen kann: läuft es überhaupt.
+
+- **Läuft gegen ein temporäres `MITS_DATA_DIR`** und fasst die echte `mits.db`
+  nie an. Deshalb ist jeder Import dynamisch: die Variable muss stehen, bevor das
+  Datenbankmodul geladen wird.
+- **Braucht `--conditions=react-server`.** Ohne das löst `server-only` auf seinen
+  Client-Einstieg auf und wirft beim ersten Import.
+- **Fixtures entstehen durch `Schema.parse({…})`**, nicht als handgeschriebene
+  Literale. Sonst veraltet die Datei, sobald ein Schema ein Feld bekommt, und die
+  Meldung wäre ein Compile-Fehler im Test statt eines Befunds am Produkt.
+- **Die `user`-Tabelle legt Better Auths echter Migrator an**, nicht ein
+  `CREATE TABLE` von Hand: die Spalten, gegen die der Ticket-Code joint, sind dann
+  die, die auch in Produktion stehen.
 
 **Test-Artefakte niemals ins Projektverzeichnis schreiben.** Tailwind v4 scannt das
 Verzeichnis nach Klassen-Kandidaten. Ein gespeicherter HTML-Dump — oder ein Dev-Log, das

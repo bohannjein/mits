@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/verify-forms.mts"
+    "test": "npm run test:forms && npm run test:db",
+    "test:forms": "tsx scripts/verify-forms.mts",
+    "test:db": "tsx --conditions=react-server scripts/verify-db.mts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.5.7",

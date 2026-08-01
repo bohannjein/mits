@@ -476,11 +476,30 @@ function ticketWhere(
 
   const q = filter.q?.trim();
   if (q) {
-    // LIKE with escaped wildcards: a query containing % or _ should match those
-    // characters, not turn into a pattern.
-    const pattern = `%${q.replace(/[\%_]/g, (c) => `\${c}`)}%`;
+    /*
+     * LIKE with escaped wildcards: a query containing % or _ should match those
+     * characters rather than turning into a pattern.
+     *
+     * Both halves of this were wrong, and both in the same way — a backslash that
+     * JavaScript ate before SQLite ever saw it:
+     *
+     *   - The replacement was a template literal `` `\${c}` ``, where `\$`
+     *     escapes the dollar. That is not an interpolation at all; every `%` was
+     *     replaced by the four literal characters `${c}`.
+     *   - `ESCAPE '\'` inside a double-quoted string is `ESCAPE ''` by the time
+     *     it reaches SQLite, which answers "ESCAPE expression must be a single
+     *     character" and throws.
+     *
+     * So **every free-text search was a 500**, from the header dialog on any page
+     * and from the reporter's own list. Nothing caught it: the query is a string,
+     * and neither typecheck nor build executes one.
+     *
+     * The backslash itself is escaped first, or a query containing one would
+     * produce a dangling escape at the end of the pattern.
+     */
+    const pattern = `%${q.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
     clauses.push(
-      "(mits_ticket.title LIKE ? ESCAPE '\' OR mits_ticket.created_by_email LIKE ? ESCAPE '\')",
+      "(mits_ticket.title LIKE ? ESCAPE '\\' OR mits_ticket.created_by_email LIKE ? ESCAPE '\\')",
     );
     whereParams.push(pattern, pattern);
   }
