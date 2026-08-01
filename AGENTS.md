@@ -149,6 +149,11 @@ src/
       queue-shortcuts.tsx       j | k | Enter | c über der Tabelle
       composer-handle.tsx       Context: Kuerzel erreicht die Antwortzeile
       ci-icon.tsx               ein Icon je Objektart
+      detached-ticket-provider.tsx  welches Ticket ausgedockt ist, tabuebergreifend
+      floating-ticket.tsx       angepinntes Panel, iframe auf die Popout-Route
+      ticket-cutout.tsx         Platzhalter statt Verlauf und Antwortzeile
+      detach-buttons.tsx        Anpinnen | eigenes Fenster, plus p
+      popout-announcer.tsx      meldet dem Oeffner das Schliessen
       ticket-resources.tsx      Dateien und Links des Tickets
       withdraw-ticket.tsx       Melder zieht sein eigenes Ticket zurück
       ticket-messages.tsx       nur die Bubble-Liste, beide Ansichten
@@ -680,6 +685,7 @@ Maschinenaufruf bekommt also JSON statt eines Redirects auf die Anmeldung.
 /customer/…             Anwender: Portal, Ticket-Erstellung, eigene Tickets, schlanke Detailansicht
 /mits/                  Agenten: Live-Queue mit Tabs, Präsenz + Statistik als Spalte
 /mits/tickets/[id]      Agenten-Detailansicht mit Workflow-Panel
+/mits/tickets/[id]/popout  nur der Verlauf: eigenes Fenster und iframe-Inhalt
 /mits/cmdb/…            Bestand, Lizenzen, Objekt-Detailansicht (Agenten)
 /mits/analytics         Statistiken (Agenten), Anwender gesperrt
 /admin/…                Administration
@@ -1011,6 +1017,80 @@ Werte — recharts nimmt `var(--chart-1)` direkt als `fill`. Die im Auftrag
 genannten Hex-Werte sind die Light-Werte und stehen genau dort. Auf Dark sind sie
 angehoben und leicht entsättigt: dasselbe Indigo, das auf Weiß souverän wirkt,
 ist auf Beinahe-Schwarz ein Loch.
+
+## Ticket ausdocken: Pop-out und angepinntes Fenster
+
+Zwei Wege aus dem Hauptfenster, **einer zur Zeit**. Zwei losgelöste Kopien
+derselben Konversation heißen zwei Antwortzeilen, und die zweite ist immer die,
+in die jemand tippt, obwohl sie ein paar Sekunden hinterherhängt. Erneutes
+Ausdocken ersetzt, es addiert nicht.
+
+| Weg | Was | Auslöser |
+|---|---|---|
+| `popout` | echtes Browserfenster, `window.open` | Knopf im Ticketkopf |
+| `floating` | angepinntes Panel unten rechts | Knopf oder `p` |
+
+**Das Panel ist ein `<iframe>` auf `/mits/tickets/[id]/popout`.** Das ist die
+Entscheidung, die Begründung braucht, weil eine Komponente, die den Verlauf
+direkt rendert, idiomatischer aussähe.
+
+Der Verlauf wird serverseitig gerendert, und jede Regel darüber, wer was lesen
+darf, liegt auf dieser Seite — `listCommentsFor` filtert interne Notizen in SQL,
+`getTicketFor` antwortet bei fremdem Ticket mit `null`. Ihn im Client noch einmal
+zu rendern hieße, einen zweiten Pfad zu haben, der Kommentare holt, und damit
+eine zweite Stelle, die entscheidet, was herausgeht. Das ist der Fehler, den
+dieses Projekt an jeder Stelle vermeidet, und ein iframe weniger ist ihn nicht
+wert. Gleiche Origin, gleiches Session-Cookie, gleiche Guards, gleicher Stream.
+
+**Die Pop-out-Route ist eine Route und wird wie eine bewacht.**
+`requireRole("agent")` läuft dort ebenfalls. Erreichbar nur über einen Knopf auf
+einer bewachten Seite zu sein, ist kein Schutz — es ist trotzdem eine URL, und
+die Next-Docs sind eindeutig darüber, dass Proxy-Abdeckung lautlos verschwinden
+kann.
+
+Was dort **nicht** steht: Sidebar, Kopfleiste, Zurück-Link, überhaupt jede
+Navigation. Ein 384 Pixel breites Panel mit einem Status-Dropdown darin ist ein
+Bedienelement, dessen Beschriftung niemand lesen kann; und ein Pop-out, aus dem
+man wegnavigieren kann, ist ein zweites Anwendungsfenster ohne Weg zurück. Der
+Composer ist dort `plain` — die Formatierungsleiste bricht in dieser Breite auf
+drei Zeilen um und frisst das Feld, zu dem sie gehört.
+
+**Das Ausgeschnitten-Bild ersetzt Verlauf *und* Antwortzeile.** Den Composer
+stehen zu lassen wäre genau die zweite Eingabe, die das Ganze verhindern soll.
+Der Rest der Seite bleibt bedienbar, und die Karte sagt das auch.
+
+**Der Zustand wird über einen `BroadcastChannel` geteilt**, nicht nur im eigenen
+Tab. Ein zweiter Tab auf demselben Ticket zeichnet den Ausschnitt mit — sonst
+zeigte er einen lebendigen Verlauf, den niemand liest, und eine dort getippte
+Antwort ginge in ein Fenster, auf das der Mensch nicht schaut. Der Kanal trägt
+eine Ticket-Id und einen Modus, sonst nichts.
+
+**Ein Fenster, das über seine eigene Titelleiste geschlossen wird, meldet dem
+Öffner nichts.** Deshalb zwei Wege: `PopoutAnnouncer` sendet auf `pagehide`
+(nicht `beforeunload` — das wird gedrosselt, ohne Geste ignoriert und auf
+Mobilbrowsern oft gar nicht ausgelöst), und der Provider pollt zusätzlich
+`window.closed` im Sekundentakt. Zusammen verschwindet der Ausschnitt entweder
+sofort oder innerhalb einer Sekunde — nie gar nicht.
+
+**Das Panel darf sich nicht selbst enthalten.** Der Provider sitzt im Root, also
+hat auch das Pop-out-Dokument einen, und der Kanal teilt ihm brav mit, dass ein
+Ticket ausgedockt ist. Sein `FloatingTicket` öffnete dann ein iframe auf die
+Pop-out-Route, deren Dokument dasselbe täte. Zwei Bedingungen halten das an, weil
+die beiden losgelösten Ansichten verschieden sind: das Panel ist ein Frame
+(`self !== top`), das Pop-out ein Top-Level-Fenster auf dem `/popout`-Pfad.
+
+**`p` pinnt an, es öffnet kein Fenster.** `window.open` aus einem Tastendruck
+blockiert jeder Popup-Blocker, der nichts anderes gelernt hat — Browser vertrauen
+dafür nur einem Klick. Eine Taste, die auf der Hälfte der Installationen still
+nichts tut, wäre schlechter als keine.
+
+**Die Antwortzeile ist doppelt gesichert.** Ab `lg` ist sie ein `shrink-0`-
+Geschwister des Scrollcontainers und kann sich schon deshalb nicht bewegen.
+Darunter gibt es keine begrenzte Spalte, gegen die sich das halten ließe, und die
+Zeile säße am Ende eines langen Verlaufs — dort und nur dort ist `sticky
+bottom-0` das richtige Werkzeug: es hängt am Viewport, nicht an einem
+Scrollcontainer, es gibt also keinen Sticky-Kontext, über den etwas uneinig sein
+könnte. Deckend (`bg-background`) und `z-10`, weil Bubbles darunter durchlaufen.
 
 ## Tastatur zuerst
 

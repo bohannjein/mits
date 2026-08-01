@@ -3,6 +3,8 @@
 import { PanelRightCloseIcon, PanelRightIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
+import { useDetachedTicket } from "@/components/tickets/detached-ticket-provider";
+import { TicketCutout } from "@/components/tickets/ticket-cutout";
 import { Button } from "@/components/ui/button";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -52,15 +54,34 @@ export function TicketFrame({
   /** Omitted on the reporter's view, which has no metadata column at all. */
   sidebar,
   sidebarLabel = "Details",
+  detachableId,
 }: {
   header: ReactNode;
   messages: ReactNode;
   composer: ReactNode;
   sidebar?: ReactNode;
   sidebarLabel?: string;
+  /**
+   * When set, the conversation is replaced by the cutout card while this ticket
+   * is open in a pop-out or a pinned panel.
+   *
+   * Optional: the pop-out route renders the same frame and must never cut its own
+   * chat out of itself.
+   */
+  detachableId?: string;
 }) {
   const [open, setOpen] = useState(true);
   const showSidebar = sidebar !== undefined;
+
+  /*
+   * The messages *and* the reply box go together.
+   *
+   * Leaving the composer while the thread is elsewhere would be the second input
+   * on one conversation that the whole cutout exists to prevent — and it would be
+   * the one whose view is a few seconds behind.
+   */
+  const { detached } = useDetachedTicket();
+  const cutout = detachableId !== undefined && detached?.ticketId === detachableId;
 
   return (
     <div className="flex w-full flex-1 flex-col gap-6 lg:min-h-0 lg:flex-row">
@@ -128,15 +149,39 @@ export function TicketFrame({
           reply box. `pr-2` keeps the scrollbar off the bubbles' right edge instead
           of overlapping their border.
         */}
-        <div className="scrollbar-thin py-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-2">
-          {messages}
-        </div>
+        {cutout ? (
+          <div className="py-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+            <TicketCutout />
+          </div>
+        ) : (
+          <>
+            <div className="scrollbar-thin py-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-2">
+              {messages}
+            </div>
 
-        {/* Never moves. It is a sibling of the scroll container, not a child of
-            it — the old arrangement held it down with `sticky bottom-0` from
-            inside, which is one disagreement about the sticky context away from
-            scrolling off with the thread. */}
-        <div className="shrink-0 border-t border-border pt-3">{composer}</div>
+            {/*
+              Never moves, and by two different mechanisms.
+
+              From `lg` up it is a `shrink-0` sibling of the scroll container — not
+              a child of it. The old arrangement held it down with `sticky bottom-0`
+              from *inside* the scroller, which is one disagreement about the sticky
+              context away from scrolling off with the thread. A sibling in a flex
+              column cannot move, whatever the browser thinks about stickiness.
+
+              Below `lg` there is no bounded column and the page scrolls normally,
+              so the sibling trick has nothing to hold it against — and on a phone
+              the reply box would sit at the far end of a long thread. There, and
+              only there, `sticky bottom-0` is the correct tool: it pins to the
+              viewport rather than to a scroll container, so there is no context to
+              disagree about. `bg-background` because a sticky element over
+              scrolling text has to be opaque, and `z-10` to sit above the bubbles
+              passing under it.
+            */}
+            <div className="sticky bottom-0 z-10 shrink-0 border-t border-border bg-background pt-3 lg:static">
+              {composer}
+            </div>
+          </>
+        )}
       </div>
 
       {/*

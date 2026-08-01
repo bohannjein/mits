@@ -141,6 +141,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["R"], description: "In die Antwortzeile springen" },
       { keys: ["M"], description: "Mir zuweisen" },
       { keys: ["I"], description: "Interne Notiz umschalten" },
+      { keys: ["P"], description: "Als Fenster anpinnen" },
       { keys: ["Strg", "Enter"], description: "Antwort absenden" },
       { keys: ["Umschalt", "Enter"], description: "Antwort absenden" },
     ],

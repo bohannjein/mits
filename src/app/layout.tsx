@@ -5,6 +5,8 @@ import { ThemeProvider } from "@/components/branding/theme-provider";
 import { ToastProvider } from "@/components/feedback/toast";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { RealtimeProvider } from "@/components/providers/realtime-provider";
+import { DetachedTicketProvider } from "@/components/tickets/detached-ticket-provider";
+import { FloatingTicket } from "@/components/tickets/floating-ticket";
 import { TimezoneProvider } from "@/components/providers/timezone-provider";
 import { getSessionUser } from "@/lib/auth/session";
 import { getNotificationSettings } from "@/lib/notification-settings";
@@ -117,7 +119,15 @@ export default async function RootLayout({
             <QueryProvider>
               <RealtimeProvider enabled={streaming}>
                 <ToastProvider settings={getNotificationSettings()}>
-                  {children}
+                  {/*
+                    At the root, so a pinned ticket survives navigation — that is
+                    the whole point of pinning it. The panel renders nothing until
+                    something is detached.
+                  */}
+                  <DetachedTicketProvider>
+                    {children}
+                    <FloatingTicket />
+                  </DetachedTicketProvider>
                 </ToastProvider>
               </RealtimeProvider>
             </QueryProvider>

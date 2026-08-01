@@ -7,6 +7,7 @@ import { BackLink } from "@/components/layout/back-link";
 import { TicketComposer } from "@/components/tickets/ticket-composer";
 import { TicketFrame } from "@/components/tickets/ticket-frame";
 import { ComposerHandleProvider } from "@/components/tickets/composer-handle";
+import { DetachButtons } from "@/components/tickets/detach-buttons";
 import { TicketLive } from "@/components/tickets/ticket-live";
 import { TicketShortcuts } from "@/components/tickets/ticket-shortcuts";
 import { TicketMessages } from "@/components/tickets/ticket-messages";
@@ -226,6 +227,9 @@ export default async function AgentTicketPage({
           />
           <TicketFrame
             sidebarLabel="Details"
+            // Draws the cutout in place of the conversation while this ticket is
+            // open in a pop-out or a pinned panel.
+            detachableId={ticket.id}
             header={
               <>
                 <BackLink href="/mits" label="Zurück zur Queue" />
@@ -233,9 +237,15 @@ export default async function AgentTicketPage({
                   <span className="font-mono text-sm text-muted-foreground">
                     {formatTicketNumber(ticket.ticket_number)}
                   </span>
-                  <h1 className="text-xl font-medium tracking-tight sm:text-2xl">
+                  <h1 className="min-w-0 flex-1 text-xl font-medium tracking-tight sm:text-2xl">
                     {ticket.title}
                   </h1>
+                  {/* Beside the title rather than in a toolbar: detaching is about
+                      this conversation, and the title is what names it. */}
+                  <DetachButtons
+                    ticketId={ticket.id}
+                    label={formatTicketNumber(ticket.ticket_number)}
+                  />
                 </div>
                 <p className="mt-1.5 text-xs text-muted-foreground">
                   {ticket.created_by_email} ·{" "}
