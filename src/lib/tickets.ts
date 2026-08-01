@@ -681,6 +681,30 @@ export function markTicketRead(ticketId: string, userId: string): void {
   ).run(userId, ticketId, new Date().toISOString());
 }
 
+/**
+ * When this user last saw this ticket — or `null` if they never have.
+ *
+ * The bookmark before it is moved, which is what draws the "new since your last
+ * visit" line in the conversation. **Has to be read before `markTicketRead`**,
+ * and the detail pages do exactly that: the two calls are one line apart and in
+ * that order, because the second one overwrites the answer to the first.
+ *
+ * That ordering is the whole reason this is a separate function rather than
+ * something `markTicketRead` returns. A single call that both reports and
+ * advances reads as harmless at the call site, and the day somebody moves it
+ * below the render the marker quietly stops appearing — with nothing on screen
+ * to say so.
+ */
+export function getTicketSeenAt(ticketId: string, userId: string): string | null {
+  const row = db
+    .prepare(
+      "SELECT seen_at FROM mits_ticket_read WHERE user_id = ? AND ticket_id = ?",
+    )
+    .get(userId, ticketId) as { seen_at: string } | undefined;
+
+  return row?.seen_at ?? null;
+}
+
 /** Look up by the human-readable number, for the search bar's direct jump. */
 export function getTicketByNumberFor(
   ticketNumber: number,

@@ -24,6 +24,14 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  DEFAULT_NOTIFICATION_SETTINGS,
+  type NotificationSettings,
+  type ToastPosition,
+  type ToastTone,
+} from "@/types/mits";
+
+export type { ToastTone };
 
 /* ──────────────────────────────────────────────────────────────────────────
    Slide-in notifications, top right.
@@ -46,10 +54,13 @@ import { cn } from "@/lib/utils";
    that vanishes after five seconds cannot be the record of anything.
    ────────────────────────────────────────────────────────────────────────── */
 
-export type ToastTone = "info" | "success" | "warning";
-
 /** What kind of event produced it — decides the icon, nothing else. */
-export type ToastKind = "reply" | "ticket" | "assigned" | "system";
+export type ToastKind =
+  | "reply"
+  | "ticket"
+  | "assigned"
+  | "digest"
+  | "system";
 
 export interface ToastInput {
   title: string;
@@ -65,6 +76,16 @@ export interface ToastInput {
    * second message that does not exist.
    */
   key?: string;
+  /**
+   * Seconds before it disappears. Omitted follows the instance setting; `0` means
+   * it stays until dismissed.
+   *
+   * Per toast rather than only per channel because the two callers want different
+   * things from it: a notification takes its value from the admin's channel
+   * config, while a confirmation raised by a macro or a status change is a fixed
+   * short one. Neither should have to know about the other's rule.
+   */
+  seconds?: number;
 }
 
 interface ToastRecord extends ToastInput {
@@ -75,6 +96,9 @@ const ICONS: Record<ToastKind, typeof BellIcon> = {
   reply: MessageSquareIcon,
   ticket: TicketIcon,
   assigned: UserIcon,
+  // The one that stands for several things at once, so a bell rather than any
+  // one of the three icons it replaced.
+  digest: BellIcon,
   system: CheckCircle2Icon,
 };
 
@@ -86,8 +110,16 @@ const TONES: Record<ToastTone, string> = {
   warning: "bg-warning",
 };
 
-/** Auto-dismiss window. Long enough to read a preview, short enough to not nag. */
-const DISMISS_MS = 5000;
+/** Where each corner puts the stack, and which way new toasts grow. */
+const POSITIONS: Record<ToastPosition, string> = {
+  // `flex-col-reverse` on the bottom two: a new toast has to appear nearest the
+  // corner it is anchored to, or the whole stack jumps up the screen each time
+  // one arrives and the one being read moves out from under the cursor.
+  "top-right": "top-4 right-4 flex-col",
+  "top-left": "top-4 left-4 flex-col",
+  "bottom-right": "right-4 bottom-4 flex-col-reverse",
+  "bottom-left": "bottom-4 left-4 flex-col-reverse",
+};
 
 /**
  * Site-relative paths only.
@@ -121,7 +153,19 @@ export function useToast(): ToastApi {
   return api ?? fallback;
 }
 
-export function ToastProvider({ children }: { children: ReactNode }) {
+export function ToastProvider({
+  children,
+  /**
+   * Resolved on the server and handed down, so the first toast of a session is
+   * already in the right corner. Defaulted rather than required: the provider
+   * sits in the root layout and the auth screens render before there is anything
+   * to configure.
+   */
+  settings = DEFAULT_NOTIFICATION_SETTINGS,
+}: {
+  children: ReactNode;
+  settings?: NotificationSettings;
+}) {
   const [toasts, setToasts] = useState<ToastRecord[]>([]);
   const counter = useRef(0);
 
@@ -139,18 +183,23 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       const withoutDuplicate = input.key
         ? current.filter((entry) => entry.key !== input.key)
         : current;
-      // Cap the stack. Six notifications cover the screen and the ones underneath
-      // are unreadable anyway; the oldest go.
-      return [...withoutDuplicate, { ...input, id }].slice(-4);
+      // Cap the stack at what the admin allows. Past about four the lower cards
+      // are covered anyway, and the oldest are the ones already read.
+      return [...withoutDuplicate, { ...input, id }].slice(-settings.maxVisible);
     });
-  }, []);
+  }, [settings.maxVisible]);
 
   const api = useMemo<ToastApi>(() => ({ toast, dismiss }), [toast, dismiss]);
 
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <ToastViewport toasts={toasts} onDismiss={dismiss} />
+      <ToastViewport
+        toasts={toasts}
+        onDismiss={dismiss}
+        position={settings.position}
+        defaultSeconds={settings.seconds}
+      />
     </ToastContext.Provider>
   );
 }
@@ -158,9 +207,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 function ToastViewport({
   toasts,
   onDismiss,
+  position,
+  defaultSeconds,
 }: {
   toasts: ToastRecord[];
   onDismiss: (id: string) => void;
+  position: ToastPosition;
+  defaultSeconds: number;
 }) {
   const [paused, setPaused] = useState(false);
 
@@ -168,7 +221,10 @@ function ToastViewport({
     <div
       // `pointer-events-none` on the container and `auto` on each card: the empty
       // space beside a toast must not swallow clicks on the page behind it.
-      className="pointer-events-none fixed top-4 right-4 z-50 flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2"
+      className={cn(
+        "pointer-events-none fixed z-50 flex w-[min(22rem,calc(100vw-2rem))] gap-2",
+        POSITIONS[position],
+      )}
       onPointerEnter={() => setPaused(true)}
       onPointerLeave={() => setPaused(false)}
       // Announced, not interrupting: an agent typing a reply should not have their
@@ -182,6 +238,7 @@ function ToastViewport({
             key={entry.id}
             toast={entry}
             paused={paused}
+            defaultSeconds={defaultSeconds}
             onDismiss={() => onDismiss(entry.id)}
           />
         ))}
@@ -193,10 +250,12 @@ function ToastViewport({
 function ToastCard({
   toast,
   paused,
+  defaultSeconds,
   onDismiss,
 }: {
   toast: ToastRecord;
   paused: boolean;
+  defaultSeconds: number;
   onDismiss: () => void;
 }) {
   const reduceMotion = useReducedMotion();
@@ -210,11 +269,16 @@ function ToastCard({
    * and giving them the full window again when they move away is the forgiving
    * direction. The alternative needs a stored remainder and a second clock.
    */
+  const seconds = toast.seconds ?? defaultSeconds;
+
   useEffect(() => {
     if (paused) return;
-    const timer = window.setTimeout(onDismiss, DISMISS_MS);
+    // Zero is "stays until dismissed" — the channel setting an admin turns on for
+    // the one notification that must not scroll past unread.
+    if (seconds <= 0) return;
+    const timer = window.setTimeout(onDismiss, seconds * 1000);
     return () => window.clearTimeout(timer);
-  }, [paused, onDismiss]);
+  }, [paused, seconds, onDismiss]);
 
   const linkable = toast.href !== undefined && SAFE_HREF.test(toast.href);
 
@@ -228,8 +292,11 @@ function ToastCard({
       />
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium">{toast.title}</span>
+        {/* `whitespace-pre-line`: a digest puts one event per line, and the
+            separator has to survive as a line break rather than collapsing into
+            a space. Ordinary one-line descriptions are unaffected. */}
         {toast.description && (
-          <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">
+          <span className="mt-0.5 line-clamp-4 block text-xs whitespace-pre-line text-muted-foreground">
             {toast.description}
           </span>
         )}

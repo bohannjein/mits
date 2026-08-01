@@ -1,3 +1,5 @@
+import { NotificationSettingsSchema, channelConfig } from "../src/types/mits";
+import { deterministicDigest } from "../src/lib/notification-digest";
 /**
  * Checks the JSON-Schema → zod compiler against the example schemas.
  *
@@ -3176,6 +3178,108 @@ console.log("ticket paging");
     "every entry is a real page",
     pagesToShow(7, 15).every((entry) => entry === null || (entry >= 1 && entry <= 15)),
   );
+}
+
+/* --------------------------------------------------------------------------
+   Notification settings and the digest.
+
+   Both are quiet when wrong, which is why they are here. A settings row that
+   fails to parse falls back to the defaults and un-mutes a channel an admin
+   silenced - and a notification system that is louder than configured looks
+   like a different bug entirely. The digest is the text somebody reads when the
+   model is off or unreachable, so it has to be correct on its own.
+   -------------------------------------------------------------------------- */
+console.log("notification settings");
+{
+  const defaults = NotificationSettingsSchema.parse({});
+  check("an empty row yields every default", defaults.position === "top-right");
+  check("...including the digest threshold", defaults.digestThreshold === 5);
+  check("a handed-over ticket stays on screen", defaults.assigned_sticky === true);
+
+  // The point of the flat shape: a partial row degrades field by field instead
+  // of being discarded whole.
+  const partial = NotificationSettingsSchema.parse({ seconds: 12 });
+  check("a partial row keeps what it sets", partial.seconds === 12);
+  check("...and defaults the rest", partial.maxVisible === 4);
+
+  // Numbers arrive from a form as strings and have to be coerced, then clamped.
+  // An unclamped poll interval is a request per second per open tab.
+  const coerced = NotificationSettingsSchema.safeParse({ seconds: "9" });
+  check("a form string coerces", coerced.success && coerced.data.seconds === 9);
+  check(
+    "a dwell time below the floor is refused",
+    !NotificationSettingsSchema.safeParse({ seconds: 1 }).success,
+  );
+  check(
+    "a poll interval below the floor is refused",
+    !NotificationSettingsSchema.safeParse({ pollSeconds: 1 }).success,
+  );
+  // Zero is the documented "off" for the digest and must survive the minimum.
+  check(
+    "a zero threshold switches the digest off",
+    NotificationSettingsSchema.parse({ digestThreshold: 0 }).digestThreshold === 0,
+  );
+
+  check(
+    "channelConfig reads the three keys",
+    channelConfig(defaults, "assigned").tone === "success" &&
+      channelConfig(defaults, "reply").sticky === false,
+  );
+}
+
+console.log("notification digest");
+{
+  const events = [
+    { kind: "reply" as const, title: "Anna hat geantwortet", description: "Drucker klemmt — schon probiert?" },
+    { kind: "reply" as const, title: "Bea hat geantwortet", description: "VPN bricht ab — seit heute" },
+    { kind: "ticket" as const, title: "Neues Ticket im Pool", description: "0000000000000042 · Monitor dunkel" },
+    { kind: "assigned" as const, title: "Ticket dir zugewiesen", description: "0000000000000043 · Laptop langsam" },
+  ];
+
+  const digest = deterministicDigest(events);
+  check("the count is the number of events", digest.count === 4);
+  check(
+    "each kind is counted and pluralised",
+    digest.headline.includes("2 neue Antworten") &&
+      digest.headline.includes("1 neues Ticket im Pool") &&
+      digest.headline.includes("1 Ticket dir zugewiesen"),
+    digest.headline,
+  );
+  check(
+    "the last part is joined with und",
+    digest.headline.includes("und 1 Ticket dir zugewiesen"),
+    digest.headline,
+  );
+  check("at most three examples", digest.summary.split("\n").length <= 3);
+  // The separator must not be a character the descriptions themselves use: a
+  // pool notification already contains a middle dot between number and title,
+  // which is why joining with one produced five apparent entries from three.
+  check(
+    "the separator cannot collide with the content",
+    digest.summary.split("\n").every((line) => line.trim() !== ""),
+    digest.summary,
+  );
+  check(
+    "an example is the ticket half, not the preview",
+    digest.summary.startsWith("Drucker klemmt"),
+    digest.summary,
+  );
+
+  // Order must not depend on the order events arrive in, or two polls a second
+  // apart read as two different things having happened.
+  const shuffled = deterministicDigest([events[3], events[2], events[1], events[0]]);
+  check(
+    "the wording is stable across input order",
+    shuffled.headline === digest.headline,
+    shuffled.headline + " :: " + digest.headline,
+  );
+
+  const single = deterministicDigest([events[0]]);
+  check("one event stays singular", single.headline.includes("1 neue Antwort"), single.headline);
+  check("...and is not pluralised", !single.headline.includes("Antworten"), single.headline);
+
+  const none = deterministicDigest([]);
+  check("no events produce no parts", none.count === 0 && none.summary === "");
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

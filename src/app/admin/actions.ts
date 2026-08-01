@@ -22,6 +22,7 @@ import {
 import { listCannedResponses, setCannedResponses } from "@/lib/canned-responses";
 import { setMacros } from "@/lib/macros";
 import { setAnalyticsSettings } from "@/lib/analytics/settings";
+import { setNotificationSettings } from "@/lib/notification-settings";
 import { verifyS3 } from "@/lib/services/s3";
 import { getS3Settings, setS3Settings } from "@/lib/services/storage";
 import { LocationError, getLocation, replaceLocations } from "@/lib/locations";
@@ -74,6 +75,8 @@ import {
   AIProvider,
   ANALYTICS_WIDGETS,
   AnalyticsSettingsSchema,
+  NOTIFICATION_CHANNELS,
+  NotificationSettingsSchema,
   AI_FEATURES,
   AI_FEATURE_META,
   CannedResponseSchema,
@@ -733,6 +736,59 @@ export async function saveAnalyticsSettingsAction(
   };
 }
 
+/* ── Notifications ──────────────────────────────────────────────────────── */
+
+export async function saveNotificationSettingsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  /*
+   * One form, submitted whole — the same rule the mail and analytics masks
+   * document. An unchecked switch is not posted at all, so a mask split across
+   * two forms would have each save read the other section's switches as off.
+   */
+  const channels = Object.fromEntries(
+    NOTIFICATION_CHANNELS.flatMap((channel) => [
+      [`${channel}_enabled`, formData.get(`${channel}_enabled`) === "on"],
+      [`${channel}_tone`, formData.get(`${channel}_tone`)],
+      [`${channel}_sticky`, formData.get(`${channel}_sticky`) === "on"],
+    ]),
+  );
+
+  const saved = setNotificationSettings(
+    NotificationSettingsSchema.parse({
+      ...channels,
+      position: formData.get("position"),
+      seconds: formData.get("seconds"),
+      maxVisible: formData.get("maxVisible"),
+      pollSeconds: formData.get("pollSeconds"),
+      digestThreshold: formData.get("digestThreshold"),
+    }),
+  );
+
+  /*
+   * Every page, because the header renders the watcher and the root layout the
+   * stack. A narrower revalidation would leave whichever page the admin was on
+   * with the old poll interval until the next full navigation — and "I saved it
+   * and nothing changed" is the report that follows.
+   */
+  revalidatePath("/", "layout");
+
+  const muted = NOTIFICATION_CHANNELS.filter(
+    (channel) => !saved[`${channel}_enabled`],
+  ).length;
+
+  return {
+    ok: true,
+    message:
+      muted === 0
+        ? "Gespeichert. Alle Kanäle sind aktiv."
+        : `Gespeichert. ${muted} von ${NOTIFICATION_CHANNELS.length} Kanälen stumm.`,
+  };
+}
+
 /* ── AI settings ────────────────────────────────────────────────────────── */
 
 /**
@@ -790,15 +846,25 @@ export async function saveAISettingsAction(
       ),
       textModel: String(formData.get("textModel") ?? ""),
       visionModel: String(formData.get("visionModel") ?? ""),
-      clustering: formData.get("clustering") === "on",
-      summary: formData.get("summary") === "on",
-      routing: formData.get("routing") === "on",
-      deflection: formData.get("deflection") === "on",
+      /*
+       * Built from the feature list rather than one line per switch, which is
+       * what the analytics action already does and for the reason that just
+       * proved itself: adding a fifth feature broke this call, and the version
+       * that compiles is the one where a forgotten line silently reads as `false`
+       * — a new assistance feature that can never be switched on, on every
+       * instance, with nothing on screen to explain it.
+       */
+      ...(Object.fromEntries(
+        AI_FEATURES.map((feature) => [feature, formData.get(feature) === "on"]),
+      ) as Record<(typeof AI_FEATURES)[number], boolean>),
       clusterWindowMinutes: Number(formData.get("clusterWindowMinutes") ?? 60),
       clusterMinTickets: Number(formData.get("clusterMinTickets") ?? 3),
     });
 
     revalidatePath("/admin/settings/ai");
+    // The notification mask states which of the two digest texts a reader gets,
+    // and that answer is one of these toggles.
+    revalidatePath("/admin/settings/notifications");
     // Every agent page reads the toggles: the queue for the banner, the ticket
     // page for the summary button.
     revalidatePath("/mits", "layout");

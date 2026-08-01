@@ -1561,6 +1561,131 @@ export type FeatureFlagKey = keyof FeatureFlags;
 
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = FeatureFlagsSchema.parse({});
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Notification channels.
+
+   Modelled on the notification settings a phone has, because that is the mental
+   model people already carry: a small number of named channels, each with its
+   own switch and its own urgency, plus a few properties of the presentation
+   itself. It is not a free-form editor — the channels are the three things MITS
+   can tell somebody about, and inventing a fourth means writing the query that
+   finds it.
+
+   **`feature_toast_notifications` stays the master switch.** These settings shape
+   what is shown, they do not decide *whether*. Two places that can silence
+   notifications is one place too many to look when they are missing.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const NOTIFICATION_CHANNELS = ["reply", "ticket", "assigned"] as const;
+export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
+
+export const NOTIFICATION_CHANNEL_META: Record<
+  NotificationChannel,
+  { label: string; description: string; staffOnly: boolean }
+> = {
+  reply: {
+    label: "Neue Antwort",
+    description:
+      "Jemand hat auf ein Ticket geantwortet, das du sehen darfst. Die eigene Antwort löst nie eine Meldung aus.",
+    staffOnly: false,
+  },
+  ticket: {
+    label: "Neues Ticket im Pool",
+    description:
+      "Ein Ticket ist eingegangen, das noch niemandem zugewiesen ist. Nur für Agenten.",
+    staffOnly: true,
+  },
+  assigned: {
+    label: "Dir zugewiesen",
+    description:
+      "Jemand anderes hat dir ein Ticket übergeben. Nur für Agenten.",
+    staffOnly: true,
+  },
+};
+
+/** Where the stack sits. The four corners, nothing in between. */
+export const TOAST_POSITIONS = [
+  "top-right",
+  "top-left",
+  "bottom-right",
+  "bottom-left",
+] as const;
+export type ToastPosition = (typeof TOAST_POSITIONS)[number];
+
+export const TOAST_POSITION_LABELS: Record<ToastPosition, string> = {
+  "top-right": "Oben rechts",
+  "top-left": "Oben links",
+  "bottom-right": "Unten rechts",
+  "bottom-left": "Unten links",
+};
+
+export const ToastTone = z.enum(["info", "success", "warning"]);
+export type ToastTone = z.infer<typeof ToastTone>;
+
+export const TOAST_TONE_LABELS: Record<ToastTone, string> = {
+  info: "Neutral",
+  success: "Positiv",
+  warning: "Auffällig",
+};
+
+/**
+ * Flat, not nested per channel.
+ *
+ * `z.object({...}).default({})` would be tidier to read and is exactly the shape
+ * that bit this codebase twice already with `z.record` — see the two Zod-4 traps
+ * documented for `PortalConfigSchema`. A flat record of defaulted primitives has
+ * the property that matters here: parsing `{}` yields a complete, usable object,
+ * so a row written by an older build or edited by hand degrades to the defaults
+ * one field at a time instead of being discarded whole.
+ */
+export const NotificationSettingsSchema = z.object({
+  position: z.enum(TOAST_POSITIONS).default("top-right"),
+  /** How long a toast stays. Seconds, because that is what the admin types. */
+  seconds: z.coerce.number().int().min(2).max(60).default(5),
+  /** Cap on the visible stack. Beyond about four the lower ones are unreadable. */
+  maxVisible: z.coerce.number().int().min(1).max(8).default(4),
+  /** How often the browser asks. Lower means fresher and more requests. */
+  pollSeconds: z.coerce.number().int().min(5).max(300).default(20),
+
+  /**
+   * From this many at once, one digest replaces the individual toasts.
+   *
+   * The point where a stack stops informing and starts burying: four toasts are
+   * four things that happened, twelve are a wall somebody dismisses without
+   * reading. `0` switches the digest off and lets the stack cap handle it.
+   */
+  digestThreshold: z.coerce.number().int().min(0).max(50).default(5),
+
+  reply_enabled: z.boolean().default(true),
+  reply_tone: ToastTone.default("info"),
+  reply_sticky: z.boolean().default(false),
+
+  ticket_enabled: z.boolean().default(true),
+  ticket_tone: ToastTone.default("info"),
+  ticket_sticky: z.boolean().default(false),
+
+  assigned_enabled: z.boolean().default(true),
+  assigned_tone: ToastTone.default("success"),
+  /** On by default: a ticket handed to you is the one that must not scroll past. */
+  assigned_sticky: z.boolean().default(true),
+});
+export type NotificationSettings = z.infer<typeof NotificationSettingsSchema>;
+
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings =
+  NotificationSettingsSchema.parse({});
+
+/** The three per-channel keys, so the form and the client read them the same way. */
+export function channelConfig(
+  settings: NotificationSettings,
+  channel: NotificationChannel,
+): { enabled: boolean; tone: ToastTone; sticky: boolean } {
+  return {
+    enabled: settings[`${channel}_enabled`],
+    tone: settings[`${channel}_tone`],
+    sticky: settings[`${channel}_sticky`],
+  };
+}
+
 /**
  * Flags that are declared but gate nothing yet.
  *
@@ -2072,6 +2197,7 @@ export const AI_FEATURES = [
   "summary",
   "routing",
   "deflection",
+  "digest",
 ] as const;
 export type AIFeature = (typeof AI_FEATURES)[number];
 
@@ -2104,6 +2230,12 @@ export const AI_FEATURE_META: Record<
       "Zeigt Anwendern während der Eingabe passende FAQ-Einträge. Durchsucht nur die eigene FAQ und braucht kein Modell.",
     needsModel: false,
   },
+  digest: {
+    label: "Sammelmeldung zusammenfassen",
+    description:
+      "Formuliert einen Satz darüber, was während der Abwesenheit passiert ist, sobald mehrere Benachrichtigungen auf einmal ankommen. Ohne Modell wird stattdessen gezählt — die Sammelmeldung selbst braucht keins.",
+    needsModel: true,
+  },
 };
 
 /** Fields that fall back to an environment variable when left empty. */
@@ -2135,6 +2267,7 @@ export const AISettingsSchema = z.object({
   summary: z.boolean().default(false),
   routing: z.boolean().default(false),
   deflection: z.boolean().default(false),
+  digest: z.boolean().default(false),
 
   /**
    * How far back the clustering looks, and how many reports make an outage.

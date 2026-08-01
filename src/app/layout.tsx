@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/branding/theme-provider";
 import { ToastProvider } from "@/components/feedback/toast";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { TimezoneProvider } from "@/components/providers/timezone-provider";
+import { getNotificationSettings } from "@/lib/notification-settings";
 import { getSystemTimezone } from "@/lib/system-settings";
 
 import "./globals.css";
@@ -45,11 +46,24 @@ export default async function RootLayout({
   const timezone = getSystemTimezone();
 
   return (
-    // `className="dark"` matches the ThemeProvider default so the first paint is
-    // already dark; suppressHydrationWarning covers next-themes rewriting it.
+    /*
+     * No `dark` class in the markup any more.
+     *
+     * It used to be here to match a hard-coded dark default, so the first paint
+     * agreed with what the theme script was about to set. Now the default is the
+     * operating system's setting, which the server cannot know — and a static
+     * `dark` would be a guess that is wrong on every light-mode machine, showing
+     * them a dark flash on each cold load. `next-themes` resolves the class from a
+     * blocking script instead, which is what `suppressHydrationWarning` covers.
+     *
+     * `color-scheme` follows along so the browser's own furniture — scrollbars,
+     * form controls, the canvas behind the page — matches before any CSS of ours
+     * has been applied.
+     */
     <html
       lang="de"
-      className={`dark ${robotoSans.variable} ${robotoMono.variable} h-full antialiased`}
+      className={`${robotoSans.variable} ${robotoMono.variable} h-full antialiased`}
+      style={{ colorScheme: "light dark" }}
       suppressHydrationWarning
     >
       {/*
@@ -79,8 +93,13 @@ export default async function RootLayout({
               raised by a Server Action has somewhere to land whichever page the
               agent is on.
             */}
+            {/* The stack's corner, size and dwell time come from the admin
+                settings, resolved here so the very first toast of a session is
+                already where it belongs rather than moving after hydration. */}
             <QueryProvider>
-              <ToastProvider>{children}</ToastProvider>
+              <ToastProvider settings={getNotificationSettings()}>
+                {children}
+              </ToastProvider>
             </QueryProvider>
           </TimezoneProvider>
         </ThemeProvider>

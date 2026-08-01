@@ -195,6 +195,9 @@ src/
     worklogs.ts             erfasste Zeit, Summe immer als SUM() gelesen
     macros.ts               Makro-Store + Runner über die normalen Mutatoren
     notifications.ts        Feed für die Einblendungen, Sichtbarkeit je Abfrage neu
+    notification-settings.ts Kanäle, Darstellung, Schwelle (mits_setting)
+    notification-digest.ts  zählt und formuliert (rein, kein server-only!)
+    services/ai/digest.ts   schreibt die Sammelmeldung um, fällt immer zurück
     services/storage.ts     Backend-Weiche Platte | S3, pro Datei gemerkt
     services/s3.ts          PUT/GET/DELETE, fail closed
     services/s3-sign.ts     SigV4, rein und gegen AWS-Vektoren geprüft
@@ -276,16 +279,28 @@ ein Portal, das nie konfiguriert wurde.
 
 ## Design-System
 
-**Google Web Design Language** (Material 3 / Gemini), **Dark ist Standard, Light
-gleichwertig** (`ThemeProvider`: `defaultTheme="dark"`, `enableSystem`).
+**Google Web Design Language** (Material 3 / Gemini), **beide Themes
+gleichwertig** (`ThemeProvider`: `defaultTheme="system"`, `enableSystem`).
 
-`defaultTheme` und `enableSystem` widersprechen sich nicht: der Default gilt für ein
-Konto ohne gespeicherte Wahl — dark, passend zum `class="dark"`, das der Server ins
-`<html>` schreibt, also ohne Flash beim ersten Besuch. `enableSystem` fügt nur
-*„System“* als wählbare Option hinzu. Umgeschaltet wird über `ThemeToggle` im Header
-und unter „Erscheinungsbild“ in `/settings/profile`; gespeichert wird in
-`localStorage`, nicht in `mits_setting` — das ist eine Eigenschaft dieses Browsers,
-nicht der Person.
+**Voreingestellt ist das Betriebssystem.** Wer den Schalter nie angefasst hat,
+bekommt, was sein Gerät sagt — ein Laptop im Hellmodus öffnet MITS hell. Vorher
+stand hier `dark`; das ist der Look des Produkts, war aber eine Entscheidung, die
+der Browser bereits getroffen hatte und die MITS überschrieb. `enableSystem` ist,
+was den Wert wirksam macht: es hängt den `prefers-color-scheme`-Listener ein, die
+Seite folgt also auch einem Rechner, der abends umschaltet. Eine ausdrückliche
+Wahl (Hell / Dunkel) schreibt nach `localStorage` und pinnt — das System wird dann
+nicht mehr gefragt, bis jemand wieder *System* wählt.
+
+**`<html>` trägt kein hartes `dark` mehr.** Eine statische Klasse im Markup ist
+eine Vermutung, und sie war für jeden Rechner im Hellmodus falsch — dunkler Blitz
+bei jedem Kaltstart. `next-themes` löst die Klasse aus einem blockierenden Skript
+vor dem ersten Paint auf, dafür ist `suppressHydrationWarning` da. `color-scheme:
+light dark` steht daneben, damit Scrollbalken und Formularelemente des Browsers
+passen, bevor irgendein CSS von uns greift.
+
+Umgeschaltet wird über `ThemeToggle` im Header und unter „Erscheinungsbild“ in
+`/settings/profile`; gespeichert wird in `localStorage`, nicht in `mits_setting`
+— das ist eine Eigenschaft dieses Browsers, nicht der Person.
 
 **Die Hover-Regel.** Jede interaktive Fläche ändert beim Hover ihren *Hintergrund*
 und lässt den Vordergrund auf vollem Kontrast. Kein `hover:text-muted-foreground`
@@ -656,9 +671,11 @@ Maschinenaufruf bekommt also JSON statt eines Redirects auf die Anmeldung.
 /admin/macros           Makros
 /admin/settings/storage Dateispeicher (Platte oder S3)
 /admin/settings/analytics Widget-Schalter und Default-Intervall
+/admin/settings/notifications Kanäle, Darstellung, Sammelmeldung
 /admin/mail             Postfach-Abruf + Defender-Regel
 /api/notifications      Feed für die Einblendungen, `?since=` (jede Rolle)
-/api/tickets/[id]/activity  Fingerabdruck für den Live-Verlauf, alle 8 s
+/api/tickets/[id]/activity  Fingerabdruck für den Live-Verlauf, 2,5 s / 12 s
+/api/notifications/digest   Sammelmeldung ab der eingestellten Schwelle
 /api/analytics          Kennzahlen als JSON oder `?format=csv` (Agenten)
 /api/mail/poll          Postfach abrufen, Service-Token **oder** Admin-Sitzung
 /api/v1/cmdb/…          REST-Schnittstelle, Token **oder** Agenten-Sitzung
@@ -789,7 +806,27 @@ schneller als eine. Eine korrekte Seite und ein kaputter Chat.
   pro Konto; das hier ist die Konversation. Konfigurierbar zu machen hieße,
   jemanden einzuladen, fünf Minuten einzustellen und den Chat für kaputt zu
   halten.
-- **Automatisch ans Ende gescrollt wird nur, wer schon unten steht** (100 px
+- **Zwei Leserichtungen.** Die Agentenansicht ist ein Chat und liest älteste
+  zuerst, das Neueste unten neben der Antwortzeile. Die Melderansicht ist eine
+  Statusabfrage — jemand öffnet sein eigenes Ticket, um zu erfahren, ob geantwortet
+  wurde, und dafür einen langen Verlauf durchzuscrollen ist die falsche Antwort auf
+  die einzige Frage, mit der er gekommen ist. Dort steht das Neueste oben
+  (`order="newest-first"`). Ein Prop und keine zweite Komponente: alles andere an
+  der Liste ist gleich, zwei Kopien wären zwei Orte für den nächsten Scroll-Fehler.
+- **Neu wird doppelt markiert: Ring und Trennlinie.** Der Ring an der Bubble sagt
+  *welche* Nachrichten neu sind, die Linie *wo man anfangen soll zu lesen*. Einzeln
+  ist beides schlechter — Ringe ohne Linie lassen jemanden den ersten suchen, eine
+  Linie ohne Ringe verliert die Markierung, sobald sie wegscrollt. Ein Ring und
+  keine eigene Fläche, weil die Fläche schon trägt, wer geschrieben hat.
+- **`getTicketSeenAt` wird vor `markTicketRead` gelesen.** Die zweite Zeile
+  überschreibt die Antwort der ersten; deshalb sind es zwei Funktionen und nicht
+  ein Rückgabewert. Ein Aufruf, der zugleich meldet und weiterstellt, liest sich an
+  der Aufrufstelle harmlos, und an dem Tag, an dem jemand ihn unter das Rendern
+  schiebt, verschwindet die Markierung still.
+- **Die eigenen Nachrichten sind nie neu.** Sie wurden per Definition nach dem
+  letzten Besuch geschrieben; sie zu markieren hänge ein „neu“ an das, was der
+  Leser gerade selbst getippt hat.
+- **Automatisch an den Rand gescrollt wird nur, wer schon dort steht** (100 px
   Toleranz). Unbedingt zu scrollen war harmlos, solange sich die Liste nur bei
   einer Navigation änderte; in einem lebenden Verlauf reißt es jemanden aus der
   Nachricht, zu der er hochgescrollt hat, sobald die Gegenseite etwas sagt. Der
@@ -958,6 +995,64 @@ genannten Hex-Werte sind die Light-Werte und stehen genau dort. Auf Dark sind si
 angehoben und leicht entsättigt: dasselbe Indigo, das auf Weiß souverän wirkt,
 ist auf Beinahe-Schwarz ein Loch.
 
+## Benachrichtigungen: Kanäle wie auf dem Telefon
+
+`/admin/settings/notifications`, instanzweit. Vier Darstellungswerte (Ecke,
+Anzeigedauer, Stapelhöhe, Abfrageintervall), drei Kanäle mit je Schalter,
+Farbakzent und „bleibt stehen", plus die Schwelle für die Sammelmeldung.
+
+**`feature_toast_notifications` bleibt der Hauptschalter.** Diese Seite formt,
+was gezeigt wird, sie entscheidet nicht *ob*. Zwei Stellen, an denen
+Benachrichtigungen verschwinden können, sind eine zu viel zum Nachsehen — die
+Maske sagt es deshalb ausdrücklich, wenn das Modul aus ist.
+
+**Instanzweit und nicht pro Konto.** Ein Admin, der einen Servicedesk einrichtet,
+entscheidet, wie laut der Raum ist; vierzig Leute, die die Einstellung einzeln
+entdecken, sind vierzig Gelegenheiten, den Kanal abzuschalten, der eine
+Ticketübergabe meldet. Was pro Person bleibt, ist das Theme — eine Eigenschaft
+des Browsers, an dem jemand sitzt.
+
+**`NotificationSettingsSchema` ist flach** (`reply_enabled`, `reply_tone`, …)
+statt pro Kanal verschachtelt. Genau die Verschachtelung hat in diesem Projekt
+zweimal zugeschlagen (`z.record`, siehe `PortalConfigSchema`); flache
+Defaultwerte haben die Eigenschaft, auf die es ankommt: `parse({})` liefert ein
+vollständiges Objekt, eine Teilzeile fällt Feld für Feld auf den Default zurück
+statt ganz verworfen zu werden. Ein verworfener Parse würde einen stummgeschalteten
+Kanal wieder laut machen — und ein System, das lauter ist als eingestellt, sieht
+nach einem ganz anderen Fehler aus.
+
+**Kanalfilterung passiert im Client, Sichtbarkeit im Server.** Der Watcher
+entscheidet, was *eingeblendet* wird; welche Zeilen eine Sitzung überhaupt kennen
+darf, entscheidet weiterhin allein `listNotifications`. Der Cursor rückt auch bei
+einem stummen Kanal vor — sonst kämen dessen Ereignisse bei jeder Abfrage erneut,
+solange sie im Rückblickfenster liegen.
+
+### Sammelmeldung
+
+Ab `digestThreshold` Ereignissen in einer Abfrage (Default 5) ersetzt **eine**
+Meldung den Stapel: „Während deiner Abwesenheit: …". Sie bleibt stehen, bis sie
+weggeklickt wird — sie hat einen Stapel ersetzt, fünf Sekunden für zwölf
+Ereignisse wären derselbe Fehler noch einmal.
+
+- **Gerechnet wird immer, das Modell schreibt nur um.** `deterministicDigest`
+  (`lib/notification-digest.ts`, kein `server-only`, in `npm test` abgedeckt)
+  liefert die vollständige Antwort; `services/ai/digest.ts` versucht eine bessere
+  Formulierung und gibt bei **jedem** Fehlerpfad das Gezählte zurück — Feature
+  aus, Anbieter nicht erreichbar, Antwort unpassend, Timeout. Es gibt keinen
+  Zweig, in dem das Einschalten weniger liefert als vorher.
+- **Die Ereignisse werden serverseitig neu abgeleitet**, nie aus dem Request
+  übernommen. Text vom Browser zusammenfassen zu lassen wäre eine
+  Prompt-Injection-Fläche und ein Weg, sich über fremde Tickets berichten zu
+  lassen.
+- **Eigener Endpunkt.** `GET /api/notifications` läuft alle zwanzig Sekunden und
+  muss ein billiger indizierter Read bleiben; die Sammelmeldung darf auf ein
+  Modell warten und läuft nur bei der seltenen Abfrage, die einen Rückstau findet.
+- **Beispiele werden mit Zeilenumbruch verbunden, nicht mit `·`.** Die
+  Pool-Benachrichtigung enthält selbst einen zwischen Nummer und Titel — drei
+  Beispiele lasen sich als fünf. In `npm test` festgehalten.
+- **Die Zahl kommt nie vom Modell.** Eine Überschrift, die „drei Antworten" über
+  vier Ereignisse schreibt, kostet das ganze Feature seine Glaubwürdigkeit.
+
 ## KI-Assistenz: opt-in, sonst gar nicht
 
 Vier Zusatzfunktionen, alle einzeln schaltbar unter `/admin/settings/ai`. Die Regel
@@ -972,6 +1067,7 @@ eingeschaltet hat.
 | `summary` | aus | ja |
 | `routing` | aus | ja |
 | `deflection` | aus | nein |
+| `digest` | aus | nein (formuliert nur um) |
 
 **Der Hauptschalter ist an, die vier Funktionen sind aus.** Kein Widerspruch: der
 Hauptschalter deckt auch die KI-Triage ab, die es vor dieser Seite schon gab, und

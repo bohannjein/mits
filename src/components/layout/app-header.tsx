@@ -13,6 +13,7 @@ import { canViewBoard, homeFor } from "@/lib/auth/roles";
 import { getSessionUser } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
 import { listLocations } from "@/lib/locations";
+import { getNotificationSettings } from "@/lib/notification-settings";
 import { resolveRefreshMinutes } from "@/lib/system-settings";
 
 /**
@@ -67,7 +68,12 @@ export async function AppHeader() {
      */
     <header className="shrink-0 border-b border-border bg-card">
       {trackPresence && <PresenceHeartbeat />}
-      {watchNotifications && <NotificationWatcher />}
+      {/* The channel switches and the poll interval come from the admin settings;
+          the watcher applies them client-side to decide what is shown, never to
+          decide what it is allowed to know — see the note in notifications.ts. */}
+      {watchNotifications && (
+        <NotificationWatcher settings={getNotificationSettings()} />
+      )}
       {/*
         `max-w-7xl`, matching the widest page shell below it. At `max-w-6xl` the
         header was 128 px narrower than the queue, the analytics panel and both

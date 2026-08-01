@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   BarChart3Icon,
+  BellIcon,
   BookOpenIcon,
   BuildingIcon,
   HeadsetIcon,
@@ -115,6 +116,12 @@ export default async function AdminPage() {
                 <Link href="/admin/settings/analytics">
                   <BarChart3Icon strokeWidth={1.5} />
                   Statistiken
+                </Link>
+              </Button>
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
+                <Link href="/admin/settings/notifications">
+                  <BellIcon strokeWidth={1.5} />
+                  Benachrichtigungen
                 </Link>
               </Button>
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">

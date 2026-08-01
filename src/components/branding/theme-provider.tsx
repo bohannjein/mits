@@ -6,19 +6,22 @@ import type { ComponentProps } from "react";
 /**
  * MITS theme host.
  *
- * `defaultTheme="dark"` and `enableSystem` are not in conflict, which is the
- * whole reason both are set. The default is what an account with no stored
- * choice gets — dark, because that is the product's look and because the
- * server renders `class="dark"` on <html>, so agreeing with it means no flash
- * on a first visit. `enableSystem` only adds *"System"* as something a person
- * can pick; it does not make the OS the default. Turning it off, as this file
- * did before, meant an account that wanted its laptop's setting had no way to
- * ask for it.
+ * **`defaultTheme="system"`.** Somebody who has never touched the switch gets
+ * whatever their operating system is set to — a laptop in light mode opens MITS
+ * in light mode. It used to default to `dark`, which is the product's own look
+ * but is a decision the browser had already made and MITS was overriding.
  *
- * `next-themes` writes the class on <html> from a blocking script in <head>, so
- * a stored light preference is applied before the first paint rather than after
- * hydration. That script is also why `suppressHydrationWarning` is on the
- * element in `layout.tsx`.
+ * `enableSystem` is what makes that value mean anything: it registers the
+ * `prefers-color-scheme` listener, so the page also follows a machine that
+ * switches at sunset. Picking Hell or Dunkel explicitly writes to
+ * `localStorage` and pins it — the OS then stops being consulted until somebody
+ * chooses *System* again.
+ *
+ * `next-themes` resolves all of this from a blocking script before the first
+ * paint rather than after hydration, which is why `<html>` carries
+ * `suppressHydrationWarning` and no longer carries a hard-coded `dark`: a
+ * static class in the markup is a guess, and it was the wrong one for every
+ * light-mode machine.
  */
 export function ThemeProvider({
   children,
@@ -27,7 +30,7 @@ export function ThemeProvider({
   return (
     <NextThemesProvider
       attribute="class"
-      defaultTheme="dark"
+      defaultTheme="system"
       enableSystem
       disableTransitionOnChange
       {...props}

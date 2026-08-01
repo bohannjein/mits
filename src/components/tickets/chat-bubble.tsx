@@ -96,10 +96,13 @@ export function ChatBubble({
   comment,
   tone,
   side,
+  /** Arrived since this reader last opened the ticket. */
+  isNew = false,
 }: {
   comment: TicketComment;
   tone: BubbleTone;
   side: "left" | "right";
+  isNew?: boolean;
 }) {
   const style = TONES[tone];
   const label = roleLabel(comment);
@@ -116,6 +119,16 @@ export function ChatBubble({
         // participant with its own column.
         tone === "internal" && "max-w-[80%] sm:ml-10",
         style.bubble,
+        /*
+         * A ring rather than a different surface for an unread message.
+         *
+         * The surface already carries who wrote it, and overloading it with "and
+         * it is new" would need three more tokens and would stop working the
+         * moment the message is read. A ring sits outside the box, is legible on
+         * all three surfaces in both themes, and disappears cleanly on the next
+         * visit without anything underneath it having changed.
+         */
+        isNew && "ring-2 ring-primary/45",
       )}
     >
       <header className="flex flex-wrap items-center gap-2">

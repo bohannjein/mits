@@ -39,7 +39,11 @@ import {
 } from "@/lib/services/ai/tags";
 import { SUMMARY_MIN_MESSAGES } from "@/lib/services/ai/summary";
 import { listLinksFor } from "@/lib/ticket-links";
-import { getTicketFor, markTicketRead } from "@/lib/tickets";
+import {
+  getTicketFor,
+  getTicketSeenAt,
+  markTicketRead,
+} from "@/lib/tickets";
 import { getUserProfile } from "@/lib/user-profile";
 import { findUser, listUsers } from "@/lib/users";
 import { listWorklogs } from "@/lib/worklogs";
@@ -92,6 +96,9 @@ export default async function AgentTicketPage({
    * `notFound()` would let anybody stamp a row for a ticket they cannot see, which
    * turns this table into a way to prove an id exists.
    */
+  // Read **before** the bookmark moves — `markTicketRead` overwrites the answer.
+  // The two lines are adjacent and in this order on purpose; see `getTicketSeenAt`.
+  const seenAt = getTicketSeenAt(id, user.id);
   markTicketRead(id, user.id);
 
   const schema = ticket.form_schema_id
@@ -253,6 +260,7 @@ export default async function AgentTicketPage({
                 // a list by a date it shares with the ticket row invites a tie.
                 comments={[...(opening ? [opening] : []), ...comments]}
                 viewerId={user.id}
+                seenAt={seenAt}
                 emptyText="Noch keine Beiträge. Die erste Antwort geht an den Melder."
               />
             }

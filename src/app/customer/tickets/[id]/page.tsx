@@ -28,7 +28,11 @@ import {
   openingFieldName,
   openingMessageFor,
 } from "@/lib/ticket-opening";
-import { getTicketFor, markTicketRead } from "@/lib/tickets";
+import {
+  getTicketFor,
+  getTicketSeenAt,
+  markTicketRead,
+} from "@/lib/tickets";
 import { findUser } from "@/lib/users";
 import { TICKET_STATUS_LABELS, formatTicketNumber } from "@/types/mits";
 
@@ -69,6 +73,8 @@ export default async function CustomerTicketPage({
 
   // After the visibility check, for the same reason as in the agent view: a stamp
   // written before it would let anybody record a read on a ticket they cannot open.
+  // Read before the bookmark moves — same ordering as the agent page.
+  const seenAt = getTicketSeenAt(id, user.id);
   markTicketRead(id, user.id);
 
   const schema = ticket.form_schema_id
@@ -189,6 +195,11 @@ export default async function CustomerTicketPage({
                   ...listCommentsFor(id, user),
                 ]}
                 viewerId={user.id}
+                seenAt={seenAt}
+                // Newest on top. Somebody opening their own ticket is checking
+                // whether anybody answered, and scrolling a long thread to find
+                // out is the wrong answer to the only question they came with.
+                order="newest-first"
                 emptyText="Noch keine Antwort. Wir melden uns hier."
               />
             }
