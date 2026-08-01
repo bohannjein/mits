@@ -45,6 +45,9 @@ export const dynamic = "force-dynamic";
  */
 const KEEPALIVE_MS = 25_000;
 
+/** Nothing else may reach the `event:` line. See `deliver`. */
+const ALLOWED_TYPES: RealtimeEvent["type"][] = ["ticket", "notify", "queue"];
+
 export async function GET(request: Request) {
   const auth = await requireApiUser(request);
   if ("response" in auth) return auth.response;
@@ -58,6 +61,13 @@ export async function GET(request: Request) {
     requested && getTicketFor(requested, user) ? requested : null;
 
   const encoder = new TextEncoder();
+
+  /*
+   * Held outside the stream object so `cancel` can reach the teardown that
+   * `start` built. Assigned synchronously inside `start`, which always runs
+   * before `cancel` can.
+   */
+  let cleanup: (() => void) | undefined;
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -87,14 +97,29 @@ export async function GET(request: Request) {
         staff: canViewBoard(user.role),
         ticketId,
         deliver: (event: RealtimeEvent) => {
-          // Only the type and, for a ticket signal, the id the client already
-          // knows it is watching. Nothing about content, and nothing it could not
-          // have asked for through an authorised route.
-          send(
-            `event: ${event.type}\ndata: ${JSON.stringify({
-              ticketId: event.ticketId ?? null,
-            })}\n\n`,
-          );
+          /*
+           * Only the type and, for a ticket signal, the id the client already
+           * knows it is watching. Nothing about content, and nothing it could not
+           * have asked for through an authorised route.
+           *
+           * Built defensively, because a malformed frame is worse than a missing
+           * one: `EventSource` cannot resynchronise mid-stream, so one bad line
+           * breaks every event after it on that connection — and the client then
+           * shows a live indicator over a page that has stopped updating.
+           *
+           * `type` is checked against the three known values rather than
+           * interpolated, so nothing can put a newline into the `event:` line.
+           * `ticketId` is normalised to a string or null; `undefined` serialises
+           * the key away and leaves the client reading a property that is not
+           * there.
+           */
+          if (!ALLOWED_TYPES.includes(event.type)) return;
+
+          const payload = JSON.stringify({
+            ticketId: typeof event.ticketId === "string" ? event.ticketId : null,
+          });
+
+          send(`event: ${event.type}\ndata: ${payload}\n\n`);
         },
       });
 
@@ -113,10 +138,18 @@ export async function GET(request: Request) {
         }
       };
 
-      // Both paths matter: `abort` covers a navigation or a closed tab, and the
-      // stream's own `cancel` covers the runtime tearing it down. Leaking a
-      // subscriber keeps the per-process pump running for a browser that left.
+      // `abort` covers a navigation or a closed tab.
       request.signal.addEventListener("abort", close);
+      // …and this is the other half, which was missing: the runtime tearing a
+      // stream down calls `cancel`, not `abort`. Every such teardown left a
+      // registration behind whose `deliver` writes into a dead controller on
+      // every later publish — a leak that grows for as long as the process runs
+      // and takes the fan-out with it.
+      cleanup = close;
+    },
+
+    cancel() {
+      cleanup?.();
     },
   });
 

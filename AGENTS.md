@@ -1018,6 +1018,90 @@ genannten Hex-Werte sind die Light-Werte und stehen genau dort. Auf Dark sind si
 angehoben und leicht entsättigt: dasselbe Indigo, das auf Weiß souverän wirkt,
 ist auf Beinahe-Schwarz ein Loch.
 
+## Wenn etwas wirft: Grenzen, Kennung, Protokoll
+
+**`error.tsx` und nicht `react-error-boundary`.** Der gejagte Absturz passiert
+beim *serverseitigen* Rendern, und eine Client-Boundary kann nur fangen, was im
+Browser wirft. App-Router-Boundaries fangen beides: Next reicht einen
+Server-Render-Fehler an die nächste `error.tsx` weiter, mit einem Digest.
+
+Drei Ebenen, weil sie verschiedene Dinge abdecken:
+
+| Datei | Fängt |
+|---|---|
+| `app/global-error.tsx` | das Root-Layout selbst |
+| `app/error.tsx` | jede Seite darunter |
+| `…/tickets/[id]/error.tsx` | die beiden Ticketseiten einzeln |
+
+Die globale ist die wichtige und wird am ehesten übersehen: `error.tsx` liegt
+**innerhalb** des Layouts und kann sein eigenes Elternteil nicht fangen. Wirft das
+Layout, gibt es auf jeder Route gleichzeitig das nackte „A server error occurred"
+— ohne Wiederholen und ohne Hinweis, was gescheitert ist.
+
+**Das Layout kann nicht mehr werfen.** Seine drei Lesevorgänge (Zeitzone,
+Sitzung, Benachrichtigungseinstellungen) degradieren, statt die Anwendung
+mitzunehmen. Keiner davon ist tragend: ohne Sitzung bleibt der Stream aus und der
+Guard der Seite leitet weiterhin korrekt um, ohne Einstellungen nehmen die Toasts
+ihre Defaults.
+
+**`unstable_rethrow` steht als erste Zeile in jedem dieser `catch`.** Next
+signalisiert Kontrollfluss durch Werfen — `DynamicServerError`, wenn ein
+statischer Render `headers()` anfasst, dazu die Marker hinter `redirect()` und
+`notFound()`. Eines davon zu verschlucken macht eine Seite nicht robust, es macht
+das Framework kaputt: die erste Fassung dieses Wrappers fing den
+Dynamic-Bail-out ab und ließ `next build` mit Exit 255 scheitern. Ein breites
+`catch` um Framework-Aufrufe braucht diese Zeile, immer.
+
+**Die Fehlerkarte zeigt den Digest.** Next ersetzt eine serverseitige
+Fehlermeldung absichtlich durch einen Hash, damit kein Stack den Server verlässt
+— die Folge ist, dass „A server error occurred" alles ist, was jemand melden
+kann, während dieselbe Zahl im Container-Log neben dem echten Stack steht:
+
+```bash
+docker logs mits-web 2>&1 | grep <digest>
+```
+
+### Was nach dem Schreiben passiert, darf das Schreiben nicht scheitern lassen
+
+Der Fehlerklasse nach war das der wahrscheinlichste Absturz beim Absenden: der
+Beitrag steht in der Datenbank, und *danach* wirft etwas — eine Revalidierung,
+ein SMTP-Host, der langsam auflöst, eine Vorlage, die auf ein entferntes Feld
+greift. Der Agent sieht „A server error occurred", sendet erneut, und das Ticket
+hat die Nachricht zweimal.
+
+Jetzt entscheidet der Schreibvorgang das Ergebnis, alles danach ist Beiwerk und
+wird protokolliert. Beim „Antworten & Schließen" ist das Schließen die Ausnahme:
+es gehört zum Versprechen des Knopfes, wird also gemeldet („Antwort ist raus, der
+Status nicht") statt verschluckt.
+
+Ein abgelehnter Beitrag ist zusätzlich ein Toast. Der Alert darunter steht am
+unteren Ende einer scrollenden Spalte und ist auf einem langen Verlauf regelmäßig
+außerhalb des Bildes — was der Agent dann sieht, ist ein Knopf, der wieder normal
+aussieht, und ein Text, der noch dasteht. **Der Text bleibt bei jedem Fehler
+stehen**; was auch schiefging, das eine, was es überleben muss, ist das gerade
+Geschriebene.
+
+### Der Stream
+
+- **`cancel()` fehlte.** `abort` deckt Navigation und geschlossenen Tab ab, aber
+  wenn die Runtime den Stream abräumt, ruft sie `cancel`. Jeder solche Abbau ließ
+  eine Registrierung zurück, deren `deliver` bei jedem späteren `publish` in
+  einen toten Controller schreibt — ein Leck, das mit der Laufzeit des Prozesses
+  wächst.
+- **Die Frames werden defensiv gebaut.** Ein fehlerhafter ist schlimmer als ein
+  fehlender: `EventSource` kann sich mitten im Strom nicht resynchronisieren, eine
+  kaputte Zeile bricht also alles Folgende auf dieser Verbindung — und der Client
+  zeigt weiter „live" über einer Seite, die stehengeblieben ist. `type` wird gegen
+  die drei bekannten Werte geprüft statt interpoliert, `ticketId` auf String oder
+  `null` normalisiert; `undefined` würde den Schlüssel wegserialisieren.
+
+### Kein doppeltes Rendern nach dem Senden
+
+Absicht und schon so gebaut: `publish` schließt den Verursacher aus (`actorId`),
+der Absender bekommt also **kein** SSE-Signal für seine eigene Nachricht. Was sie
+ihm zeigt, ist die `revalidateTicket` der Server Action — ein Weg, nicht zwei.
+Alle anderen bekommen das Signal und rendern zusammengefasst.
+
 ## Was hundert gleichzeitige Chatter kostet
 
 Vier Stellen, an denen die Echtzeit teurer war als nötig. Alle vier folgen

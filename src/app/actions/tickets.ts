@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 
 import { canViewBoard } from "@/lib/auth/roles";
 import { requireUser, type SessionUser } from "@/lib/auth/session";
@@ -221,22 +221,54 @@ export async function replyAndCloseAction(
     );
   } catch (error) {
     if (error instanceof CommentError) return { ok: false, error: error.message };
-    throw error;
+    unstable_rethrow(error);
+    console.error("[MITS] addComment (Antworten & Schließen) fehlgeschlagen:", error);
+    return {
+      ok: false,
+      error: "Der Beitrag konnte nicht gespeichert werden. Bitte erneut senden.",
+    };
   }
 
-  setTicketStatus(ticketId, "closed", auth.user);
+  /*
+   * Closing is part of the promise this button makes, so it is not best effort —
+   * but it must not surface as a crash either. Reported honestly instead: the
+   * reply is out, the status is not, and the agent can set it by hand.
+   */
+  try {
+    setTicketStatus(ticketId, "closed", auth.user);
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("[MITS] Schließen nach Antwort fehlgeschlagen:", error);
+    return {
+      ok: false,
+      error:
+        "Die Antwort wurde gesendet, das Schließen hat aber nicht geklappt. Bitte den Status von Hand setzen.",
+    };
+  }
 
-  revalidateTicket(ticketId);
+  // Everything past here happens after both writes; see the note in
+  // `addCommentAction` for why none of it may fail the action.
+  try {
+    revalidateTicket(ticketId);
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("[MITS] Revalidierung nach Antwort fehlgeschlagen:", error);
+  }
 
   if (auth.ticket.created_by_email !== comment.author_email) {
-    await sendNotification({
-      to: auth.ticket.created_by_email,
-      ...ticketReplyMail(
-        auth.ticket,
-        { author: comment.author_name, body: comment.body },
-        ticketUrl(auth.ticket.id),
-      ),
-    });
+    try {
+      await sendNotification({
+        to: auth.ticket.created_by_email,
+        ...ticketReplyMail(
+          auth.ticket,
+          { author: comment.author_name, body: comment.body },
+          ticketUrl(auth.ticket.id),
+        ),
+      });
+    } catch (error) {
+      unstable_rethrow(error);
+      console.error("[MITS] Benachrichtigungsmail fehlgeschlagen:", error);
+    }
   }
 
   return { ok: true, message: "Antwort gesendet, Ticket geschlossen." };
@@ -321,10 +353,34 @@ export async function addCommentAction(
     );
   } catch (error) {
     if (error instanceof CommentError) return { ok: false, error: error.message };
-    throw error;
+    // Anything else is a bug rather than a rejected input. Named in the log so
+    // it can be found, then reported as an error the agent can act on instead of
+    // taking the page down.
+    unstable_rethrow(error);
+    console.error("[MITS] addComment fehlgeschlagen:", error);
+    return {
+      ok: false,
+      error: "Der Beitrag konnte nicht gespeichert werden. Bitte erneut senden.",
+    };
   }
 
-  revalidateTicket(ticketId);
+  /*
+   * Everything past this point is *after* the message exists.
+   *
+   * That is the whole reason for the guard below. A throw here — a revalidation
+   * against a path that changed, an SMTP host that resolves slowly, a template
+   * that hits a field somebody removed — turns a reply that was written and
+   * stored into "A server error occurred". The agent then sends it again, and the
+   * ticket has it twice.
+   *
+   * So: the write decides the outcome, and the follow-up work is best effort.
+   */
+  try {
+    revalidateTicket(ticketId);
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("[MITS] Revalidierung nach Beitrag fehlgeschlagen:", error);
+  }
 
   /*
    * Notify the reporter, under three conditions that all have to hold:
@@ -345,14 +401,25 @@ export async function addCommentAction(
     comment.author_is_agent &&
     auth.ticket.created_by_email !== comment.author_email
   ) {
-    await sendNotification({
-      to: auth.ticket.created_by_email,
-      ...ticketReplyMail(
-        auth.ticket,
-        { author: comment.author_name, body: comment.body },
-        ticketUrl(auth.ticket.id),
-      ),
-    });
+    /*
+     * `sendNotification` swallows a transport failure itself, but the two calls
+     * around it do not: `ticketReplyMail` renders a template and `ticketUrl`
+     * reads the SMTP settings. Neither has any business failing a reply that is
+     * already in the database.
+     */
+    try {
+      await sendNotification({
+        to: auth.ticket.created_by_email,
+        ...ticketReplyMail(
+          auth.ticket,
+          { author: comment.author_name, body: comment.body },
+          ticketUrl(auth.ticket.id),
+        ),
+      });
+    } catch (error) {
+      unstable_rethrow(error);
+      console.error("[MITS] Benachrichtigungsmail fehlgeschlagen:", error);
+    }
   }
 
   return {

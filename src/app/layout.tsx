@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Roboto, Roboto_Mono } from "next/font/google";
 
+import { unstable_rethrow } from "next/navigation";
+
 import { ThemeProvider } from "@/components/branding/theme-provider";
 import { ToastProvider } from "@/components/feedback/toast";
 import { QueryProvider } from "@/components/providers/query-provider";
@@ -11,6 +13,7 @@ import { TimezoneProvider } from "@/components/providers/timezone-provider";
 import { getSessionUser } from "@/lib/auth/session";
 import { getNotificationSettings } from "@/lib/notification-settings";
 import { getSystemTimezone } from "@/lib/system-settings";
+import { DEFAULT_NOTIFICATION_SETTINGS } from "@/types/mits";
 
 import "./globals.css";
 
@@ -47,7 +50,13 @@ export default async function RootLayout({
 }>) {
   // Resolved once per request and handed to the client tree, so both halves format
   // timestamps in the same zone — see TimezoneProvider.
-  const timezone = getSystemTimezone();
+  let timezone = "Europe/Berlin";
+  try {
+    timezone = getSystemTimezone();
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("[MITS] Zeitzone nicht lesbar:", error);
+  }
 
   /*
    * One stream per tab, opened here rather than per page.
@@ -62,8 +71,42 @@ export default async function RootLayout({
    * has a session the stream could be scoped to, and the route would answer 401
    * on a loop.
    */
-  const user = await getSessionUser();
-  const streaming = user !== null && !user.mustChangePassword;
+  /*
+   * Both reads degrade rather than throw, and that is the point of the wrapper.
+   *
+   * A layout that throws takes the **whole application** with it: `error.tsx`
+   * lives inside the layout, so it cannot catch its own parent, and what the
+   * browser gets is the bare "A server error occurred" on every route at once —
+   * with no retry and nothing that says which of the two reads failed.
+   *
+   * Neither is load-bearing. Without a session the stream stays off and the
+   * page's own guard still redirects correctly; without the settings the toasts
+   * use their defaults. Both are strictly better than an application that will
+   * not render.
+   *
+   * **`unstable_rethrow` first in every catch.** Next signals control flow by
+   * throwing — `DynamicServerError` when a static render touches `headers()`,
+   * and the markers behind `redirect()` and `notFound()`. Swallowing one of those
+   * does not make a page resilient, it breaks the framework: the first version of
+   * this wrapper caught the dynamic-render bail-out and failed `next build`
+   * outright. A broad catch around framework calls needs this line, always.
+   */
+  let streaming = false;
+  try {
+    const user = await getSessionUser();
+    streaming = user !== null && !user.mustChangePassword;
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("[MITS] Sitzung im Layout nicht lesbar:", error);
+  }
+
+  let notifications = DEFAULT_NOTIFICATION_SETTINGS;
+  try {
+    notifications = getNotificationSettings();
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("[MITS] Benachrichtigungseinstellungen nicht lesbar:", error);
+  }
 
   return (
     /*
@@ -118,7 +161,7 @@ export default async function RootLayout({
                 already where it belongs rather than moving after hydration. */}
             <QueryProvider>
               <RealtimeProvider enabled={streaming}>
-                <ToastProvider settings={getNotificationSettings()}>
+                <ToastProvider settings={notifications}>
                   {/*
                     At the root, so a pinned ticket survives navigation — that is
                     the whole point of pinning it. The panel renders nothing until

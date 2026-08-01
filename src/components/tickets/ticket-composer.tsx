@@ -156,6 +156,23 @@ export function TicketComposer({
   }, [result]);
 
   /*
+   * A refused reply is a toast, and the text stays in the field.
+   *
+   * The alert below already shows it, but the composer sits at the bottom of a
+   * column that scrolls — on a long thread the message can appear off-screen, and
+   * what the agent sees is a button that went back to normal and a reply that is
+   * still sitting there. The toast is the part that cannot be missed.
+   *
+   * Never clearing on failure is the other half: whatever went wrong, the one
+   * thing that must survive it is the text somebody just wrote.
+   */
+  useEffect(() => {
+    if (result && !result.ok) {
+      toast({ kind: "system", tone: "warning", title: result.error });
+    }
+  }, [result, toast]);
+
+  /*
    * Insert a snippet where the cursor is.
    *
    * In the rich variant the body travels as HTML and a canned response is stored
