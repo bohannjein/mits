@@ -245,7 +245,9 @@ async function openTicket(
   if (incident) {
     ticket = createTicket(
       {
-        source: "legacy",
+        // `email`, so the detail page knows the sender's message is already a
+        // stored comment and must not be synthesised on top of it.
+        source: "email",
         form_schema_id: incident.formSchemaId,
         payload: incident.payload,
         priority: incident.priority,
@@ -274,7 +276,7 @@ async function openTicket(
   } else {
     ticket = createTicket(
       {
-        source: "legacy",
+        source: "email",
         form_schema_id: QUICK_TICKET_SCHEMA.id,
         payload: {
           title: (title ?? mail.subject ?? "Meldung per E-Mail").slice(0, 120),

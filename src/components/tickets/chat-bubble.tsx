@@ -14,14 +14,16 @@ import type { TicketComment } from "@/types/mits";
 
    - **tone** is *who spoke* — reporter, agent, or an internal note. It picks the
      surface and the role label.
-   - **side** is *where the reader sits*. In the agent view the reporter is on the
-     left and the team on the right; in the reporter's own view their messages are
-     on the right, because that is what every messenger does and a thread where
-     your own words arrive on the left reads like somebody else's inbox.
+   - **side** is *where the bubble sits*. Today both views pass the same mapping —
+     reporter left, team right — so the thread looks identical to everybody who
+     opens it. That is the point: a screenshot from a reporter lines up with a
+     screenshot from an agent, and "die Bubble links" stays a location rather than
+     depending on who is reading.
 
-   Collapsing the two into `author_is_agent` would have hard-coded the agent's
-   perspective into the shared component, and the reporter's page would either get
-   its own copy of the bubble or the wrong layout.
+   The axis stays a prop even though both callers agree, so no perspective is
+   hard-coded into the shared component. Deriving `side` from `author_is_agent`
+   here would bake the current arrangement into the one file that must not have an
+   opinion about it.
 
    Internal notes are additionally inset and dashed. That is a courtesy to the
    agent, not the access control: `listCommentsFor` filters them out of a

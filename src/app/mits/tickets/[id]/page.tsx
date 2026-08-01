@@ -28,8 +28,13 @@ import { listCommentsFor } from "@/lib/ticket-comments";
 import { listLinksFor } from "@/lib/ticket-links";
 import { getTicketFor, markTicketRead } from "@/lib/tickets";
 import { getUserProfile } from "@/lib/user-profile";
-import { listUsers } from "@/lib/users";
+import { findUser, listUsers } from "@/lib/users";
 import { listWorklogs } from "@/lib/worklogs";
+import {
+  fieldsBesidesOpening,
+  openingFieldName,
+  openingMessageFor,
+} from "@/lib/ticket-opening";
 import {
   type MITSConfigurationItem,
   TICKET_PRIORITY_LABELS,
@@ -84,13 +89,35 @@ export default async function AgentTicketPage({
   const labels = new Map(
     schema ? resolveFields(schema).map((field) => [field.name, field.label]) : [],
   );
-  const fields = Object.entries(ticket.payload)
-    .map(([name, value]) => ({
+
+  /*
+   * The reporter's own words open the thread instead of sitting in the sidebar.
+   * `fieldsBesidesOpening` then drops that one field from the metadata list — the
+   * alternative states the problem twice, once as a message and once as a labelled
+   * value ten centimetres to the right.
+   */
+  /*
+   * By id, not by address. On a mailed ticket the two disagree on purpose —
+   * `created_by` is the fallback account, `created_by_email` the human — and
+   * looking up the address would name an account that did not write it. `email`
+   * tickets synthesise no bubble anyway, but a lookup that is right only by
+   * accident is one refactor from being wrong.
+   */
+  const reporterName =
+    findUser(ticket.created_by)?.name ?? ticket.created_by_email;
+  const opening = openingMessageFor(ticket, schema, reporterName);
+  const openingField = openingFieldName(ticket.payload, schema);
+
+  const fields = fieldsBesidesOpening(
+    Object.entries(ticket.payload).map(([name, value]) => ({
       name,
       label: labels.get(name) ?? name,
       text: formatValue(value),
-    }))
-    .filter((row) => row.text !== "");
+    })),
+    // Only hidden when a bubble actually replaced it. A mailed ticket keeps the
+    // field, because its opening bubble is the stored comment rather than this.
+    opening ? openingField : null,
+  ).filter((row) => row.text !== "");
 
   /*
    * Assets, only while the module is on. Three lists rather than one: what is attached,
@@ -172,7 +199,13 @@ export default async function AgentTicketPage({
             main={
               <TicketChat
                 ticketId={ticket.id}
-                comments={listCommentsFor(id, user)}
+                // Prepended, not merged by timestamp: the opening message *is* the
+                // earliest thing by definition, and sorting a synthetic entry into
+                // a list by a date it shares with the ticket row invites a tie.
+                comments={[
+                  ...(opening ? [opening] : []),
+                  ...listCommentsFor(id, user),
+                ]}
                 isAgent
                 // Title and blurb only. The macro's actions stay on the server —
                 // the browser posts an id and `runMacro` decides what that means.

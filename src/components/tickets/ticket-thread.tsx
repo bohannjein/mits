@@ -73,15 +73,23 @@ export function TicketThread({
         <div className="grid gap-3">
           {comments.map((comment) => {
             const tone = toneFor(comment);
-            // Mirrored against the agent view: the reporter reads their own
-            // messages on the right. An internal note stays right because only
-            // staff ever sees this list with one in it.
+            /*
+             * Same sides as the agent view: the reporter on the left, the team on
+             * the right, whoever is looking.
+             *
+             * The alternative — mirroring, so your own messages sit right the way
+             * a phone messenger does — was tried and dropped. It means the same
+             * conversation has two layouts, so a screenshot from a reporter and a
+             * screenshot from an agent do not line up, and "die Nachricht links"
+             * in a handover note stops being a location. Speaker-based sides make
+             * the thread the same object for everybody.
+             */
             return (
               <ChatBubble
                 key={comment.id}
                 comment={comment}
                 tone={tone}
-                side={tone === "customer" ? "right" : "left"}
+                side={tone === "customer" ? "left" : "right"}
               />
             );
           })}

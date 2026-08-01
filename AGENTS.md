@@ -140,7 +140,9 @@ src/
       form.tsx             RHF-Primitives (Ersatz für @shadcn/form)
       schema-form.tsx      <SchemaForm> — die einzige Formular-Komponente
     tickets/
-      tri-modal-container.tsx   Tabs: Legacy | Katalog | KI, POST /api/tickets
+      tri-modal-container.tsx   Tabs: Schnellmeldung | Katalog | KI, POST /api/tickets
+      chat-intake.tsx           Composer-Maske für die Schnellmeldung, Pills + Drop-Zone
+      chat-bubble.tsx           eine Nachricht; tone = wer sprach, side = wo sie sitzt
       service-catalog.tsx       Kategorie-Kacheln → SchemaForm
       ai-chat-tab.tsx           Freitext + Drag&Drop, Triage-Vorschau
       draft-receipt.tsx         validierter Entwurf als JSON
@@ -172,6 +174,7 @@ src/
     icons.ts                erlaubte Lucide-Icons für schema.icon
     utils.ts                cn()
     ticket-sort.ts          Sortier-Whitelist + ORDER BY + Header-Links (kein server-only!)
+    ticket-opening.ts       Erstnachricht aus dem Payload ableiten (rein, offline geprüft)
     worklogs.ts             erfasste Zeit, Summe immer als SUM() gelesen
     macros.ts               Makro-Store + Runner über die normalen Mutatoren
     notifications.ts        Feed für die Einblendungen, Sichtbarkeit je Abfrage neu
@@ -433,6 +436,54 @@ ist schlechter als kein Knopf.
 **Der Toast liegt in `components/feedback/`, nicht in `components/ui/`.** Regel 1:
 `ui/` ist CLI-verwaltet, und shadcn hat kein `toast` mehr (die Registry zeigt auf
 `sonner`). Gleiche Begründung wie bei `components/forms/form.tsx`.
+
+## Der Verlauf beginnt beim Melder
+
+**Die Erstnachricht ist eine abgeleitete Bubble, keine gespeicherte.**
+`openingMessageFor` (`lib/ticket-opening.ts`) baut zur Renderzeit einen
+`TicketComment` aus dem Payload. Ein zweites Mal geschrieben hätte das Ticket zwei
+Kopien seines eigenen Anliegens — eine durchsuchbare und eine angezeigte —, die
+beim ersten korrigierten Feld auseinanderlaufen.
+
+**Ausnahme Mail: `source === "email"`.** Der Ingest legt den Nachrichtentext schon
+als echten ersten Beitrag ab, in bereinigtem HTML, damit die Formatierung
+überlebt. Deshalb ist `email` ein `TicketSource`-Wert und deshalb überschreibt
+`createTicket` ihn, wenn kein `MailIngestOrigin` dabei ist: ein Melder, der
+`source: "email"` postet, verlöre sonst seine eigene Erstnachricht aus dem Verlauf.
+
+**Das Feld, das zur Bubble wurde, fällt aus der Angaben-Liste.**
+`fieldsBesidesOpening` — sonst steht dasselbe Anliegen zweimal auf der Seite, einmal
+als Nachricht und einmal als beschriftetes Feld daneben.
+
+**Die Bubble-Seiten hängen am Sprecher, nicht am Betrachter.** Melder links, Team
+rechts, in beiden Ansichten. Die naheliegende Spiegelung („eigene Nachrichten
+rechts", wie ein Handy-Messenger) war gebaut und ist wieder raus: derselbe Verlauf
+hätte zwei Layouts, ein Screenshot vom Melder und einer vom Agenten liegen nicht
+übereinander, und „die Nachricht links" in einer Übergabe wäre keine Ortsangabe
+mehr. `ChatBubble` nimmt `side` trotzdem als Prop — die geteilte Komponente soll
+keine Perspektive einbetoniert haben.
+
+## Kunden-Eingang: Chat statt Formular
+
+`/customer/new`, Tab „Schnellmeldung“, ist `ChatIntake` und nicht `SchemaForm` —
+**dasselbe Schema, dieselbe Payload, derselbe `POST /api/tickets`**, nur eine
+andere Maske. Es gibt keinen zweiten Weg in die Ticket-Tabelle.
+
+- **Drei Pills statt einer Auswahlliste**, `INTAKE_CATEGORIES` in `types/mits.ts`.
+  Feste Liste, weil der Wert im Payload landet und gegen das `enum` in
+  `QUICK_TICKET_SCHEMA` validiert wird — eine Liste, die davon abweicht, wäre ein
+  Knopf, der sich nicht absenden lässt. `npm test` prüft beide gegeneinander.
+- **`category` ist optional.** Wer nur beschreiben will, was kaputt ist, soll das
+  nicht erst einsortieren müssen. Eine unbeantwortete Kategorie ist eine Frage an
+  den Agenten, eine erzwungene ist eine Wand vor einer Supportanfrage.
+- **Die ganze Karte ist die Drop-Zone**, nicht ein gestricheltes Rechteck daneben.
+  Der `dragDepth`-Zähler ist nötig, weil `dragleave` auch beim Wechsel auf ein
+  Kindelement feuert.
+- **Die Kunden-Detailansicht teilt sich `TicketDetail` nicht mehr** mit der
+  Agentenseite. Eine mittige Spalte, schlanker Kopf, Verlauf — keine Priorität
+  (die kann ein Melder nicht setzen, und „Niedrig“ am eigenen Problem liest sich
+  als Urteil), kein Bearbeiter, keine Worklogs. Die Angaben bleiben als
+  zugeklapptes Accordion.
 
 **Verknüpfungen sind ein Fenster in andere Tickets.** `listLinksFor` prüft **jedes** Ziel
 einzeln mit `getTicketFor` und lässt ein nicht sichtbares Ticket komplett weg — nicht als

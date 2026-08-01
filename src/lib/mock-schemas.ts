@@ -1,4 +1,8 @@
-import type { MITSFormSchema } from "@/types/mits";
+import {
+  INTAKE_CATEGORY_LABELS,
+  INTAKE_CATEGORY_VALUES,
+  type MITSFormSchema,
+} from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Example form schemas.
@@ -36,7 +40,7 @@ export const QUICK_TICKET_SCHEMA: MITSFormSchema = {
   title: "Schnell-Ticket",
   description: "Freitext-Meldung, wenn keine Kategorie passt.",
   category: "Allgemein",
-  version: 2,
+  version: 3,
   icon: "PenLine",
   submitLabel: "Ticket senden",
   aiHint: "Auffangformular für alles, was in kein spezifisches Schema passt.",
@@ -50,6 +54,18 @@ export const QUICK_TICKET_SCHEMA: MITSFormSchema = {
         title: "Beschreibung",
         minLength: 20,
         maxLength: 4000,
+      },
+      /*
+       * Optional, and it is the one field the chat intake renders as pills.
+       *
+       * Not required: somebody who just wants to describe a problem should be able
+       * to send without classifying it first. An unanswered category is a question
+       * for the agent, a mandatory one is a wall in front of a support request.
+       */
+      category: {
+        type: "string",
+        title: "Art der Meldung",
+        enum: [...INTAKE_CATEGORY_VALUES],
       },
       attachments: {
         type: "array",
@@ -70,8 +86,13 @@ export const QUICK_TICKET_SCHEMA: MITSFormSchema = {
       placeholder: "Was ist passiert? Seit wann? Welche Fehlermeldung erscheint?",
       help: "Mindestens 20 Zeichen.",
     },
-    attachments: {
+    category: {
       order: 3,
+      widget: "radio",
+      optionLabels: { ...INTAKE_CATEGORY_LABELS },
+    },
+    attachments: {
+      order: 4,
       accept: "image/*,.pdf,.log,.txt",
       help: "Screenshots oder Logs, bis 5 Dateien.",
     },

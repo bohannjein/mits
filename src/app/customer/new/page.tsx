@@ -30,10 +30,17 @@ export default async function NewTicketPage({
   // Authoritative guard — the proxy only redirects early.
   const user = await requireUser("/customer/new");
 
-  // Validated against the enum rather than cast: `?mode=` is user input, and an
-  // unknown value should open the default tab, not render nothing.
+  /*
+   * Validated against the enum rather than cast: `?mode=` is user input, and an
+   * unknown value should open the default tab, not render nothing.
+   *
+   * `email` passes the enum and is still not a tab — it is how a ticket arrived,
+   * not a way to file one. Without the second check `?mode=email` would render a
+   * tab strip with nothing selected and an empty panel below it.
+   */
   const { mode } = await searchParams;
-  const initialMode = TicketSource.safeParse(mode).data;
+  const parsedMode = TicketSource.safeParse(mode).data;
+  const initialMode = parsedMode === "email" ? undefined : parsedMode;
 
   // Resolved on the server so builder-published schemas appear without a rebuild.
   // The quick-ticket form may itself be overridden by a stored version.
@@ -81,8 +88,8 @@ export default async function NewTicketPage({
                 Neues Ticket
               </h1>
               <p className="mt-2 text-muted-foreground">
-                Wähle den Weg, der passt. Alle drei erzeugen dieselbe
-                strukturierte Payload — gemeldet als {user.email}.
+                Einfach schreiben, ein Formular aus dem Katalog wählen oder die KI
+                fragen — gemeldet als {user.email}.
               </p>
             </div>
             <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
@@ -101,6 +108,12 @@ export default async function NewTicketPage({
             initialMode={initialMode}
             locations={activeLocations}
             fieldOptions={fieldOptions}
+            // First word of the display name, same rule the portal hero uses. An
+            // account whose name is its address falls back to the neutral heading
+            // rather than greeting somebody as "anna.meier@firma.de".
+            greetingName={
+              user.name.includes("@") ? "" : user.name.trim().split(/\s+/)[0]
+            }
           />
         </div>
       </main>

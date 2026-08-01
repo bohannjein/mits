@@ -11,9 +11,28 @@ import { z } from "zod";
    submission.
    ────────────────────────────────────────────────────────────────────────── */
 
-/** How the ticket entered the system. */
-export const TicketSource = z.enum(["legacy", "wizard", "ai_chat"]);
+/**
+ * How the ticket entered the system.
+ *
+ * `email` is not just provenance — it changes what the ticket page renders. A
+ * mailed-in ticket already carries the sender's message as its first stored
+ * comment, so the opening bubble must **not** be synthesised from the payload on
+ * top of it; every other source has no such comment and needs one. See
+ * `openingMessageFor`.
+ *
+ * Which is also why a client cannot claim it: `createTicket` overrides the value
+ * unless the caller is the mail ingest. A reporter posting `source: "email"` would
+ * otherwise lose their own opening message from the thread.
+ */
+export const TicketSource = z.enum(["legacy", "wizard", "ai_chat", "email"]);
 export type TicketSource = z.infer<typeof TicketSource>;
+
+export const TICKET_SOURCE_LABELS: Record<TicketSource, string> = {
+  legacy: "Schnellmeldung",
+  wizard: "Service-Katalog",
+  ai_chat: "KI-Assistent",
+  email: "E-Mail",
+};
 
 /**
  * Ticket lifecycle.
@@ -101,6 +120,36 @@ export const isElevatedPriority = (priority: TicketPriority): boolean =>
  * note there.
  */
 export const DEFAULT_TICKET_PRIORITY: TicketPriority = "medium";
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Quick categories for the chat intake.
+
+   Three pills, not a dropdown of every schema category. This is the *free-text*
+   path — somebody who knows which form they need takes the catalogue instead — and
+   its whole purpose is to be answerable in one tap. A picker with fifteen entries
+   would be the form monster this route exists to avoid.
+
+   A fixed list rather than the distinct `category` values of the installed
+   schemas: the value is stored in the payload and validated against the enum in
+   `QUICK_TICKET_SCHEMA`, so a list that drifted from that enum would make the pill
+   unsubmittable — and the enum is what the offline suite can check.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const INTAKE_CATEGORIES = [
+  { value: "hardware", label: "Hardware-Problem" },
+  { value: "software", label: "Software / Zugang" },
+  { value: "other", label: "Sonstiges" },
+] as const;
+
+export type IntakeCategory = (typeof INTAKE_CATEGORIES)[number]["value"];
+
+export const INTAKE_CATEGORY_VALUES = INTAKE_CATEGORIES.map(
+  (entry) => entry.value,
+) as IntakeCategory[];
+
+export const INTAKE_CATEGORY_LABELS = Object.fromEntries(
+  INTAKE_CATEGORIES.map((entry) => [entry.value, entry.label]),
+) as Record<IntakeCategory, string>;
 
 /**
  * Rank order for sorting, low to critical.

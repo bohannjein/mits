@@ -182,6 +182,18 @@ export function createTicket(
     ? draft.priority
     : DEFAULT_TICKET_PRIORITY;
 
+  /*
+   * `email` is the ingest's to claim, nobody else's.
+   *
+   * It is not decoration: the detail page skips synthesising an opening bubble for
+   * a mailed ticket, because the ingest already stored the sender's message as a
+   * real first comment. A reporter who posted `source: "email"` from the portal
+   * would therefore lose their own opening message out of the thread — a form
+   * submission that quietly drops the thing it submitted.
+   */
+  const source =
+    draft.source === "email" && !origin ? "legacy" : draft.source;
+
   const ticket: TicketRow = {
     id: randomUUID(),
     // Filled inside the transaction below, where the read cannot race an insert.
@@ -191,7 +203,7 @@ export function createTicket(
     // differ, and only for the mail ingest — see `MailIngestOrigin`.
     created_by: user.id,
     created_by_email: origin?.reporterEmail.trim() || user.email,
-    source: draft.source,
+    source,
     form_schema_id: schema.id,
     title: deriveTitle(parsed.data, schema.title),
     payload: JSON.stringify(parsed.data),

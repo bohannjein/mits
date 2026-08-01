@@ -24,6 +24,12 @@ import {
 } from "../src/lib/mock-schemas";
 import { pieSlice, sharePercent } from "../src/lib/chart";
 import {
+  fieldsBesidesOpening,
+  isSyntheticOpening,
+  openingFieldName,
+  openingMessageFor,
+} from "../src/lib/ticket-opening";
+import {
   ATTRIBUTE_PREFIX,
   CI_IMPORT_TARGETS,
   coerceCIStatus,
@@ -90,6 +96,7 @@ import {
   DEFAULT_PORTAL_FAQS,
   KEEP_SMTP_PASSWORD,
   type MITSFormSchema,
+  type MITSTicket,
   MITSTicketSchema,
   PORTAL_WIDGET_ORDER,
   PRESENCE_IDLE_AFTER_SECONDS,
@@ -144,6 +151,7 @@ import {
   expiryState,
   normaliseCIAttributes,
   DEFAULT_MAIL_SETTINGS,
+  INTAKE_CATEGORIES,
   isMailInboundConfigured,
   organizationIdForEmail,
   parseDurationMinutes,
@@ -2598,6 +2606,123 @@ console.log("mail ingest");
     imapPassword: "secret",
   }));
   check("the default transport fetches nothing", !isMailInboundConfigured(DEFAULT_MAIL_SETTINGS));
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   The opening bubble.
+
+   Derived from the payload at render time, so a wrong field pick shows the
+   reporter a bubble containing their cost centre instead of their problem — and
+   nothing logs it, because from the code's point of view it worked.
+   ────────────────────────────────────────────────────────────────────────── */
+console.log("opening message");
+{
+  const long = "Der Drucker in Etage 3 ist seit heute Morgen offline.";
+
+  const ticket = (over: Record<string, unknown> = {}): MITSTicket =>
+    MITSTicketSchema.parse({
+      id: "t1",
+      ticket_number: 1042,
+      location_id: null,
+      source: "legacy",
+      form_schema_id: QUICK_TICKET_SCHEMA.id,
+      title: "Drucker",
+      payload: { title: "Drucker", description: long },
+      status: "open",
+      priority: "medium",
+      created_by: "u1",
+      created_by_email: "anna@firma.de",
+      created_at: "2026-08-01T09:00:00.000Z",
+      ...over,
+    });
+
+  check(
+    "description is the opening field",
+    openingFieldName({ title: "Drucker", description: long }) === "description",
+  );
+  // A title is short by design; picking it would put the ticket's own heading in
+  // the bubble and leave the actual message in the sidebar.
+  check(
+    "a short value is never the message",
+    openingFieldName({ title: "Drucker", room: "3.14" }) === null,
+  );
+  check(
+    "a textarea field is found through the schema",
+    openingFieldName(
+      { device_type: "notebook", justification: long },
+      HARDWARE_ORDER_SCHEMA,
+    ) !== null,
+  );
+  check("an empty payload yields nothing", openingFieldName({}) === null);
+
+  const bubble = openingMessageFor(ticket(), QUICK_TICKET_SCHEMA, "Anna Meier");
+  check("a portal ticket gets an opening bubble", bubble !== null);
+  check("…carrying the description", bubble?.body === long);
+  check("…attributed to the reporter", bubble?.author_name === "Anna Meier");
+  // Always the customer surface, and always plain text: the payload holds what a
+  // form field collected, so the HTML branch would render a literal <b> as markup.
+  check("…on the customer surface", bubble?.author_is_agent === false);
+  check("…as text, not markup", bubble?.body_format === "text");
+  check("…stamped when the ticket was filed", bubble?.created_at.toISOString() === "2026-08-01T09:00:00.000Z");
+  check("…and marked synthetic", isSyntheticOpening(bubble?.id ?? ""));
+
+  /*
+   * The whole reason `source` grew an `email` member. A mailed ticket already
+   * stores the sender's message as a real first comment, in sanitised HTML;
+   * synthesising on top of it shows the same message twice, once flattened.
+   */
+  const mailed = openingMessageFor(ticket({ source: "email" }), QUICK_TICKET_SCHEMA, "Anna");
+  check("a mailed ticket synthesises nothing", mailed === null);
+
+  check(
+    "the opening field drops out of the answer list",
+    fieldsBesidesOpening(
+      [{ name: "title" }, { name: "description" }],
+      "description",
+    ).length === 1,
+  );
+  check(
+    "…and nothing drops when there is no bubble",
+    fieldsBesidesOpening([{ name: "title" }, { name: "description" }], null)
+      .length === 2,
+  );
+
+  /*
+   * The pills and the enum have to agree: the value is stored in the payload and
+   * validated against `QUICK_TICKET_SCHEMA`, so a pill outside the enum would be
+   * a button that cannot be submitted.
+   */
+  const quick = schemaToZod(QUICK_TICKET_SCHEMA);
+  for (const entry of INTAKE_CATEGORIES) {
+    check(
+      `the pill "${entry.label}" is submittable`,
+      quick.safeParse({
+        title: "Drucker Etage 3 offline",
+        description: long,
+        category: entry.value,
+        attachments: [],
+      }).success,
+    );
+  }
+  check(
+    "an invented category is refused",
+    !quick.safeParse({
+      title: "Drucker Etage 3 offline",
+      description: long,
+      category: "quantenphysik",
+      attachments: [],
+    }).success,
+  );
+  // Optional on purpose: classifying must not be a wall in front of a support
+  // request from somebody who just wants to describe what broke.
+  check(
+    "no category at all is fine",
+    quick.safeParse({
+      title: "Drucker Etage 3 offline",
+      description: long,
+      attachments: [],
+    }).success,
+  );
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

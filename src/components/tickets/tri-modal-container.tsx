@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import { SchemaForm } from "@/components/forms/schema-form";
 import { AiChatTab } from "@/components/tickets/ai-chat-tab";
+import { ChatIntake } from "@/components/tickets/chat-intake";
 import { TicketReceipt } from "@/components/tickets/draft-receipt";
 import { LocationPicker } from "@/components/tickets/location-picker";
 import { ServiceCatalog } from "@/components/tickets/service-catalog";
@@ -53,7 +54,7 @@ const TABS: {
   /** The AI tab keeps the Gemini gradient identity of the portal tile. */
   gemini?: boolean;
 }[] = [
-  { value: "legacy", label: "Schnell-Ticket", icon: PenLineIcon },
+  { value: "legacy", label: "Schnellmeldung", icon: PenLineIcon },
   { value: "wizard", label: "Service-Katalog", icon: ListChecksIcon },
   { value: "ai_chat", label: "KI-Assistent", icon: BotIcon, gemini: true },
 ];
@@ -100,12 +101,15 @@ export function TriModalContainer({
    * these fill schema fields and are labels, not foreign keys.
    */
   fieldOptions = { locations: [], users: [] },
+  /** First name for the composer's greeting. Empty renders the neutral wording. */
+  greetingName = "",
 }: {
   quickTicketSchema: MITSFormSchema;
   catalogSchemas: MITSFormSchema[];
   initialMode?: TicketSource;
   locations?: MITSLocation[];
   fieldOptions?: FormFieldOptions;
+  greetingName?: string;
 }) {
   const router = useRouter();
   // Both tabs' AI proposal and the wizard resolve ids against the same list.
@@ -277,11 +281,17 @@ export function TriModalContainer({
       <FormOptionsProvider options={fieldOptions}>
           <TabsContent value="legacy">
             <TabPanel>
-              <SchemaForm
-                schema={quickTicketSchema}
-                source="legacy"
+              {/*
+                The composer, not `SchemaForm`, even though both fill the same
+                schema. This is the path somebody takes when they do not know which
+                form they need, and rendering the quick ticket as a labelled stack
+                of controls made the easiest case look like the hardest one. The
+                catalogue tab is one click away for anybody who wants the fields.
+              */}
+              <ChatIntake
+                schemaId={quickTicketSchema.id}
                 onSubmit={handleSubmit}
-                locationId={locationId}
+                greetingName={greetingName}
               />
             </TabPanel>
           </TabsContent>

@@ -158,10 +158,9 @@ export function TicketChat({
             </p>
           ) : (
             /*
-             * The agent's perspective: the reporter on the left, the team on the
-             * right. `side` is derived here rather than inside the bubble so the
-             * reporter's own page can mirror it without a second component — see
-             * the note in chat-bubble.tsx.
+             * Reporter left, team right — the same mapping the reporter's own page
+             * passes, so the thread is one object both sides can point at. `side`
+             * is decided here rather than inside the bubble; see chat-bubble.tsx.
              */
             comments.map((comment) => {
               const tone = toneFor(comment);

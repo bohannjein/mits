@@ -268,6 +268,23 @@ Bewusst offen geblieben: Anhänge aus eingehenden Mails werden **nicht** überno
 (Body ja, Dateien nein), es gibt keine Migration bestehender Uploads von der Platte
 nach S3, und Textbausteine kennen keine Kategorien-Filterung im `/`-Menü.
 
+## Danach: Kunden-Eingang und Erstnachricht
+
+- **Die Erstnachricht ist abgeleitet, nicht gespeichert.** Wer sie beim Anlegen als
+  Kommentar mitschreibt, hat das Anliegen zweimal in der Datenbank. Der einzige
+  Sonderfall ist `source === "email"`, wo der Ingest genau das schon tut.
+- **`TicketSource` um `email` erweitert — und `createTicket` überschreibt den Wert**,
+  wenn kein `MailIngestOrigin` mitkommt. Ohne diese Klammer wäre ein
+  `source: "email"` aus dem Browser ein Formular, das die eigene Eingabe verschluckt.
+- **Pills und `enum` müssen zusammenpassen.** `INTAKE_CATEGORIES` und das
+  `category`-Enum in `QUICK_TICKET_SCHEMA` prüft `npm test` gegeneinander; eine
+  Abweichung ist ein Knopf, der sich nicht absenden lässt.
+- **`QUICK_TICKET_SCHEMA` ist bei Version 3.** v2 hat `priority` entfernt, v3 hat
+  `category` ergänzt. Beides sind Payload-Änderungen; alte Tickets werden beim Lesen
+  nicht neu validiert und öffnen weiter.
+- **Bubble-Seiten hängen am Sprecher.** Die Spiegelung für die Kundensicht war
+  gebaut und ist wieder raus — zwei Layouts für einen Verlauf.
+
 ## Verifikation für jeden Part
 
 ```bash
