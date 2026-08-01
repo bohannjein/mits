@@ -81,6 +81,75 @@ export function softDeleteTicket(ticketId: string, user: SessionUser): void {
   recordAudit(ticketId, user, "ticket_deleted", { to: stamp });
 }
 
+/**
+ * The reporter takes their own ticket back.
+ *
+ * A different door to the same room as `softDeleteTicket`, and separate rather
+ * than a role branch inside it, because the conditions are the opposite way
+ * round: that one is staff-only and unconditional, this one is
+ * **reporter-only and conditional**.
+ *
+ * The conditions are what make it safe to let a non-agent delete a row:
+ *
+ * - It has to be their own ticket. `created_by`, from the session, never the
+ *   request.
+ * - It has to still be `open` and unassigned. The moment somebody has picked it
+ *   up, work has happened — withdrawing it then would delete a colleague's
+ *   afternoon and, with the notification, tell them so afterwards.
+ *
+ * Not gated on the fifteen-second window. Withdrawing a ticket is a considered
+ * act — "I found it myself", "wrong department" — and forcing that decision into
+ * the same seconds as an unsend would mean the honest path is to leave the ticket
+ * and let an agent close it, which is the outcome this exists to avoid.
+ */
+export function withdrawTicket(ticketId: string, user: SessionUser): void {
+  const row = db
+    .prepare(
+      `SELECT created_by, status, assigned_to, deleted_at
+         FROM mits_ticket WHERE id = ?`,
+    )
+    .get(ticketId) as
+    | {
+        created_by: string;
+        status: string;
+        assigned_to: string | null;
+        deleted_at: string | null;
+      }
+    | undefined;
+
+  // Same answer for "does not exist" and "not yours": this is reachable with any
+  // id, and a distinguishable refusal confirms which ones are real.
+  if (!row || row.deleted_at || row.created_by !== user.id) {
+    throw new TrashError("Ticket nicht gefunden.");
+  }
+
+  if (row.status !== "open" || row.assigned_to !== null) {
+    throw new TrashError(
+      "Das Ticket wird bereits bearbeitet und kann nicht mehr zurückgezogen werden.",
+    );
+  }
+
+  const stamp = now();
+  db.transaction(() => {
+    db.prepare("UPDATE mits_ticket SET deleted_at = ? WHERE id = ?").run(
+      stamp,
+      ticketId,
+    );
+    db.prepare(
+      `UPDATE mits_ticket_comment SET deleted_at = ?
+        WHERE ticket_id = ? AND deleted_at IS NULL`,
+    ).run(stamp, ticketId);
+    db.prepare(
+      `UPDATE mits_upload SET deleted_at = ?
+        WHERE ticket_id = ? AND deleted_at IS NULL`,
+    ).run(stamp, ticketId);
+  })();
+
+  // Its own action rather than `ticket_deleted`, so the trash view can tell an
+  // agent's decision from a reporter's — they are restored for different reasons.
+  recordAudit(ticketId, user, "ticket_withdrawn", { to: stamp });
+}
+
 /** Reverse one soft delete, restoring only what that same action removed. */
 export function restoreTicket(ticketId: string, user: SessionUser): void {
   requireStaff(user);

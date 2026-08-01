@@ -121,6 +121,15 @@ export function openingMessageFor(
     // Handing it to the HTML branch would render a literal `<b>` as formatting.
     body_format: "text",
     created_at: ticket.created_at,
+    /*
+     * Never edited, because there is nothing here to edit.
+     *
+     * This bubble is derived from the payload at render time, so "changing" it
+     * would mean rewriting a form answer — and that answer is also what the ticket
+     * is searched and reported on. `isSyntheticOpening` is what the message
+     * actions check to leave it alone.
+     */
+    edited_at: null,
   };
 }
 

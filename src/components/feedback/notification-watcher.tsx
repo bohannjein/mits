@@ -1,9 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { useToast } from "@/components/feedback/toast";
+import { useRealtimeSignal, useRealtimeStatus } from "@/hooks/use-realtime";
 import {
   channelConfig,
   type NotificationChannel,
@@ -21,6 +22,12 @@ import {
    effect writes after the data arrives means a failed poll re-asks for the same
    window rather than skipping it; advancing the cursor on the request would drop
    every event that happened during an outage, and nothing would ever say so.
+
+   **Pushed while the stream is up, polled when it is not.** A `notify` signal
+   costs nothing until something happens and then arrives immediately; the
+   configured interval is the fallback for a connection that is down. The fetch
+   itself is unchanged either way — the signal carries no content, so what a
+   session may be told about is still decided once, by `listNotifications`.
 
    **A large batch becomes one digest.** Coming back from a meeting to twelve
    toasts is a wall somebody dismisses without reading, which is worse than not
@@ -80,8 +87,9 @@ export function NotificationWatcher({
   // page should not be greeted by four toasts about things from before lunch.
   const since = useRef(new Date().toISOString());
   const { toast } = useToast();
+  const live = useRealtimeStatus() === "live";
 
-  const { data } = useQuery({
+  const { data, refetch } = useQuery({
     queryKey: ["notifications"],
     queryFn: async (): Promise<FeedItem[]> => {
       const response = await fetch(
@@ -94,7 +102,12 @@ export function NotificationWatcher({
       const body = (await response.json()) as { notifications?: FeedItem[] };
       return body.notifications ?? [];
     },
-    refetchInterval: settings.pollSeconds * 1000,
+    /*
+     * No interval at all while the stream is up. The signal below replaces it,
+     * which is the difference between a request every twenty seconds per open tab
+     * and none.
+     */
+    refetchInterval: live ? false : settings.pollSeconds * 1000,
     // Off in a hidden tab. TanStack pauses the interval, and the cursor stays
     // put — so the events that arrived meanwhile show up on the first poll after
     // the tab comes back rather than being lost.
@@ -107,6 +120,19 @@ export function NotificationWatcher({
     // the next interval is the retry.
     retry: false,
   });
+
+  /*
+   * Fetch now, rather than at the end of an interval that is switched off.
+   *
+   * Deliberately not `void refetch()` inline in the hook call: `useRealtimeSignal`
+   * puts the handler in its dependency array, and a fresh arrow each render would
+   * re-subscribe on every render of every page.
+   */
+  const onNotify = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
+  useRealtimeSignal("notify", onNotify);
 
   useEffect(() => {
     if (!data || data.length === 0) return;

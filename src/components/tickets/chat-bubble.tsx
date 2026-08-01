@@ -1,6 +1,7 @@
 "use client";
 
-import { LockIcon } from "lucide-react";
+import { LockIcon, PencilIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { RelativeTime } from "@/components/layout/relative-time";
 import { CommentBody } from "@/components/tickets/comment-body";
@@ -98,11 +99,19 @@ export function ChatBubble({
   side,
   /** Arrived since this reader last opened the ticket. */
   isNew = false,
+  /**
+   * Rendered under the body. The bubble does not decide whether they apply —
+   * `TicketMessages` does, because ownership and the module switches are its
+   * props, and a component that draws one message should not be reading feature
+   * flags.
+   */
+  actions,
 }: {
   comment: TicketComment;
   tone: BubbleTone;
   side: "left" | "right";
   isNew?: boolean;
+  actions?: ReactNode;
 }) {
   const style = TONES[tone];
   const label = roleLabel(comment);
@@ -154,12 +163,28 @@ export function ChatBubble({
           {label}
         </span>
         {/* Relative, with the exact instant in the tooltip — see RelativeTime. */}
+        {/*
+          The edit marker sits next to the time, not inside the body.
+          A message whose text changed after somebody replied to it is a different
+          message, and the person reading the reply has to be able to tell — the
+          alternative is a thread that silently disagrees with itself.
+        */}
+        {comment.edited_at && (
+          <span
+            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
+            title={`Bearbeitet: ${comment.edited_at.toLocaleString("de-DE")}`}
+          >
+            <PencilIcon className="size-3" strokeWidth={1.5} aria-hidden />
+            bearbeitet
+          </span>
+        )}
         <RelativeTime
           date={comment.created_at}
           className="ml-auto text-[11px] text-muted-foreground"
         />
       </header>
       <CommentBody comment={comment} />
+      {actions}
     </article>
   );
 }

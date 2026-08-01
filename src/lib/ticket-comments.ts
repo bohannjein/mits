@@ -6,11 +6,13 @@ import { recordAudit } from "@/lib/audit";
 import { canViewBoard } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/sqlite";
+import { publish } from "@/lib/services/realtime";
 import {
   hasVisibleContent,
   sanitizeRichText,
   uploadIdsInHtml,
 } from "@/lib/sanitize";
+import { withinRetractWindow } from "@/lib/retract-window";
 import { UploadError, linkUploadsToTicket } from "@/lib/storage";
 import {
   TicketCommentSchema,
@@ -39,6 +41,7 @@ interface CommentRow {
   body: string;
   body_format: string;
   created_at: string;
+  edited_at: string | null;
 }
 
 function rowToComment(row: CommentRow): TicketComment {
@@ -55,9 +58,24 @@ const ALIVE = "deleted_at IS NULL";
 
 const SELECT = `
   SELECT id, ticket_id, author_id, author_email, author_name,
-         author_is_agent, visibility, body, body_format, created_at
+         author_is_agent, visibility, body, body_format, created_at, edited_at
     FROM mits_ticket_comment
 `;
+
+/*
+ * The undo window lives in `lib/retract-window.ts`, not here.
+ *
+ * The countdown on the button and the check that refuses a late retraction have
+ * to be the same number: a button offering three more seconds than the server
+ * allows produces a refusal that reads as a bug in the button. That module has no
+ * `server-only`, so the client can import the same constant.
+ *
+ * **It cannot recall a notification mail.** `addCommentAction` sends immediately,
+ * so a retraction removes the message from the ticket and not from an inbox.
+ * Delaying every notification by fifteen seconds to close that gap would make the
+ * whole system feel slower for a case that is rare — the retraction is honest
+ * about what it does instead.
+ */
 
 /**
  * The comments this user may see on this ticket.
@@ -236,6 +254,9 @@ export function addComment(
     body: text,
     body_format: format,
     created_at: new Date().toISOString(),
+    // Never on insert. A row stamped as edited at the moment it was written would
+    // put the marker on every message in the system.
+    edited_at: null,
   };
 
   /*
@@ -278,7 +299,171 @@ export function addComment(
     throw error;
   }
 
+  /*
+   * After the transaction, never inside it.
+   *
+   * A signal published from within the write would reach a browser that then
+   * refetches — and on a rollback that browser has been told about a message
+   * which does not exist. `publish` swallows its own failures, so the ordering
+   * costs nothing and removes the only case where the two can disagree.
+   *
+   * `notify` goes to everyone: who actually has something to see is decided by
+   * `listNotifications` on the fetch that follows, which is the one place that
+   * rule belongs. An internal note is a `ticket` signal only — the reporter's
+   * page would refetch and correctly find nothing new, and waking it to learn
+   * that is a round trip that also reveals the note's timing.
+   */
+  publish({
+    type: "ticket",
+    ticketId,
+    audience: "all",
+    actorId: user.id,
+  });
+  if (visibility !== "internal") {
+    publish({ type: "notify", audience: "all", actorId: user.id });
+  }
+  publish({ type: "queue", audience: "staff", actorId: user.id });
+
   return rowToComment(row);
+}
+
+/**
+ * Load one comment with the same visibility rule the listing uses.
+ *
+ * Answers `null` for "gone" and for "not yours to see" alike — the same choice
+ * `getTicketFor` makes, and for the same reason: a distinguishable "forbidden"
+ * turns an id into something worth guessing.
+ */
+function getCommentFor(
+  commentId: string,
+  user: SessionUser,
+): TicketComment | null {
+  const scope = canViewBoard(user.role) ? "" : "AND visibility = 'public'";
+  const row = db
+    .prepare(`${SELECT} WHERE ${ALIVE} AND id = ? ${scope}`)
+    .get(commentId) as CommentRow | undefined;
+
+  return row ? rowToComment(row) : null;
+}
+
+/**
+ * Correct the text of a message you wrote.
+ *
+ * **Only the author, and only ever the text.** Not an agent editing a reporter's
+ * words, not an admin editing an agent's — a conversation whose record can be
+ * rewritten by somebody other than the person who spoke is not a record. There is
+ * no "moderate" path here on purpose; the tool for a message that must go is
+ * deletion, which leaves a hole rather than a forgery.
+ *
+ * Visibility is not editable either. Turning a public reply into an internal note
+ * would not unsend it, and turning a note public would publish something written
+ * under the assumption that it was not.
+ */
+export function editComment(
+  commentId: string,
+  user: SessionUser,
+  body: string,
+): TicketComment {
+  const existing = getCommentFor(commentId, user);
+  if (!existing) throw new CommentError("Beitrag nicht gefunden.");
+  if (existing.author_id !== user.id) {
+    throw new CommentError("Nur der Verfasser kann einen Beitrag ändern.");
+  }
+
+  // Same treatment the original got, decided by the stored format rather than by
+  // the caller: a client that could pick would be choosing whether its own input
+  // goes through the sanitiser.
+  let text: string;
+  if (existing.body_format === "html") {
+    const { html } = sanitizeRichText(body);
+    if (!hasVisibleContent(html)) throw new CommentError("Der Beitrag ist leer.");
+    /*
+     * Images embedded by an edit are **not** re-bound to the ticket.
+     *
+     * `addComment` calls `linkUploadsToTicket` for exactly that, and it also
+     * re-checks that every id belongs to the caller. Repeating it here would be
+     * fine; leaving it out is not, because an edit that pastes a new screenshot
+     * would render as a broken box. So editing is text-only in practice — the
+     * editor keeps the images that were already bound and a newly pasted one is
+     * dropped by the sanitiser's own allow-list rather than half-stored.
+     */
+    text = html;
+  } else {
+    text = body.trim();
+    if (!text) throw new CommentError("Der Beitrag ist leer.");
+  }
+
+  if (text.length > 20000) throw new CommentError("Der Beitrag ist zu lang.");
+
+  /*
+   * Unchanged text is not an edit.
+   *
+   * Somebody who opens the editor, reads it again and saves has not corrected
+   * anything, and stamping `edited_at` would put a marker on the message that
+   * tells every later reader to distrust a text nobody touched.
+   */
+  if (text === existing.body) return existing;
+
+  const now = new Date().toISOString();
+  db.prepare(
+    "UPDATE mits_ticket_comment SET body = ?, edited_at = ? WHERE id = ?",
+  ).run(text, now, commentId);
+
+  recordAudit(existing.ticket_id, user, "comment_edited", {
+    field: existing.visibility === "internal" ? "interne Notiz" : "Antwort",
+  });
+
+  publish({
+    type: "ticket",
+    ticketId: existing.ticket_id,
+    audience: "all",
+    actorId: user.id,
+  });
+
+  const updated = getCommentFor(commentId, user);
+  if (!updated) throw new CommentError("Beitrag nicht gefunden.");
+  return updated;
+}
+
+/**
+ * Take a message back, within the window.
+ *
+ * Soft-deleted like everything else here, so the row survives for anybody
+ * restoring a backup or reading the audit trail — what disappears is the message,
+ * not the fact that there was one.
+ *
+ * The window is checked **server-side against the stored timestamp**, never
+ * against anything the client says. The countdown in the browser is a courtesy;
+ * this is the rule.
+ */
+export function retractComment(commentId: string, user: SessionUser): string {
+  const existing = getCommentFor(commentId, user);
+  if (!existing) throw new CommentError("Beitrag nicht gefunden.");
+  if (existing.author_id !== user.id) {
+    throw new CommentError("Nur der Verfasser kann einen Beitrag zurückziehen.");
+  }
+  if (!withinRetractWindow(existing.created_at)) {
+    throw new CommentError(
+      "Die Zeit zum Zurückziehen ist abgelaufen. Der Beitrag bleibt im Verlauf.",
+    );
+  }
+
+  db.prepare(
+    "UPDATE mits_ticket_comment SET deleted_at = ? WHERE id = ?",
+  ).run(new Date().toISOString(), commentId);
+
+  recordAudit(existing.ticket_id, user, "comment_retracted", {
+    field: existing.visibility === "internal" ? "interne Notiz" : "Antwort",
+  });
+
+  publish({
+    type: "ticket",
+    ticketId: existing.ticket_id,
+    audience: "all",
+    actorId: user.id,
+  });
+
+  return existing.ticket_id;
 }
 
 /** Public replies only, for the notification mail. */

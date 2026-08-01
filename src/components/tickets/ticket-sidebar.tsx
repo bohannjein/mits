@@ -33,6 +33,11 @@ import {
   type SidebarSection,
 } from "@/components/layout/sidebar-section";
 import { AuditTrail } from "@/components/tickets/audit-trail";
+import {
+  TicketResources,
+  type SharedFile,
+} from "@/components/tickets/ticket-resources";
+import type { SharedLink } from "@/lib/ticket-resources";
 import { TicketAssets, type AssetRow } from "@/components/tickets/ticket-assets";
 import { TicketLinks, type LinkRow } from "@/components/tickets/ticket-links";
 import { MajorIncidentPanel } from "@/components/tickets/major-incident-panel";
@@ -128,6 +133,13 @@ export function TicketSidebar({
   summarisable = false,
   /** Null unless this ticket is a major incident with children parked behind it. */
   majorIncident = null,
+  /**
+   * Files attached to the ticket and links pulled out of the conversation.
+   *
+   * Both resolved by the page. The section is skipped entirely when both are
+   * empty — same rule as every other optional block here.
+   */
+  resources = { files: [], links: [] },
 }: {
   ticket: MITSTicket;
   agents: { id: string; name: string }[];
@@ -150,6 +162,7 @@ export function TicketSidebar({
     children: { id: string; number: string; title: string }[];
     resolved: boolean;
   } | null;
+  resources?: { files: SharedFile[]; links: SharedLink[] };
 }) {
   /*
    * Assembled here so the card can decide whether there is an address at all. A
@@ -393,6 +406,25 @@ export function TicketSidebar({
         </div>
       ),
     },
+    /*
+     * Files and links, collected out of the conversation.
+     *
+     * A section rather than something in the thread: the thread is where they
+     * were said, this is where they are looked up. Both halves come from the
+     * page, which already has the uploads and the comments — gathering them here
+     * would mean a client component reaching for the database.
+     */
+    ...(resources.files.length > 0 || resources.links.length > 0
+      ? [
+          {
+            id: "resources",
+            title: "Geteiltes",
+            content: (
+              <TicketResources files={resources.files} links={resources.links} />
+            ),
+          },
+        ]
+      : []),
     {
       id: "reporter",
       title: "Melder",

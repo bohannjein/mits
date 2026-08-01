@@ -1,3 +1,13 @@
+import {
+  RECONNECT_BASE_MS,
+  RECONNECT_MAX_MS,
+  reconnectDelay,
+} from "../src/lib/realtime-backoff";
+import { collectLinks } from "../src/lib/ticket-resources";
+import {
+  RETRACT_WINDOW_SECONDS,
+  withinRetractWindow,
+} from "../src/lib/retract-window";
 import { NotificationSettingsSchema, channelConfig } from "../src/types/mits";
 import { deterministicDigest } from "../src/lib/notification-digest";
 /**
@@ -3280,6 +3290,118 @@ console.log("notification digest");
 
   const none = deterministicDigest([]);
   check("no events produce no parts", none.count === 0 && none.summary === "");
+}
+
+/* --------------------------------------------------------------------------
+   Realtime backoff, shared links and the retract window.
+
+   Three small pure things whose mistakes are all invisible at runtime. A backoff
+   without jitter looks fine until forty tabs reconnect in lockstep; a link
+   extractor that keeps a `javascript:` href renders a clickable one in a panel
+   built from message bodies; a retract window that disagrees with the server
+   produces a refusal that reads as a broken button.
+   -------------------------------------------------------------------------- */
+console.log("reconnect backoff");
+{
+  // Deterministic random, so the assertions are about the arithmetic and not
+  // about which numbers came up.
+  const mid = () => 0.5;
+
+  check("the first retry is about a second", reconnectDelay(0, mid) === 750);
+  check("it doubles", reconnectDelay(1, mid) === 1500);
+  check("...and again", reconnectDelay(2, mid) === 3000);
+
+  check(
+    "it stops at the ceiling",
+    reconnectDelay(20, mid) === Math.round(RECONNECT_MAX_MS * 0.75),
+    String(reconnectDelay(20, mid)),
+  );
+  check(
+    "a negative attempt is treated as the first",
+    reconnectDelay(-3, mid) === reconnectDelay(0, mid),
+  );
+
+  // Half-jitter, not full: a delay must never collapse to almost nothing, or the
+  // backoff stops being one.
+  check("the floor is half the window", reconnectDelay(3, () => 0) === 4000);
+  check("the ceiling is the whole window", reconnectDelay(3, () => 1) === 8000);
+  check(
+    "every delay is at least the base",
+    [0, 1, 2, 5, 9].every((n) => reconnectDelay(n, () => 0) >= RECONNECT_BASE_MS / 2),
+  );
+}
+
+console.log("shared links");
+{
+  const at = new Date("2026-08-01T09:00:00.000Z");
+  const message = (body: string, format = "text", author = "Anna") => ({
+    body,
+    body_format: format,
+    author_name: author,
+    created_at: at,
+  });
+
+  const plain = collectLinks([
+    message("Siehe https://wiki.firma.de/vpn/setup und melde dich"),
+  ]);
+  check("a bare url is found", plain.length === 1, JSON.stringify(plain));
+  check(
+    "...and labelled with host plus last segment",
+    plain[0]?.label === "wiki.firma.de/setup",
+    plain[0]?.label,
+  );
+  check("...and carries its author", plain[0]?.author === "Anna");
+
+  // Trailing punctuation is part of the sentence, not of the address.
+  const punctuated = collectLinks([message("Hier: https://firma.de/a) und fertig")]);
+  check(
+    "a closing bracket is not part of the url",
+    punctuated[0]?.href === "https://firma.de/a",
+    punctuated[0]?.href,
+  );
+
+  const anchored = collectLinks([
+    message('<p>Die <a href="https://firma.de/doku">Anleitung</a> hilft.</p>', "html"),
+  ]);
+  check("an anchor is found", anchored.length === 1);
+  check("...and uses its link text", anchored[0]?.label === "Anleitung");
+
+  // The sanitiser already refuses these on the way in; this is the second gate,
+  // because the panel turns message text into a list of things to click.
+  const unsafe = collectLinks([
+    message('<a href="javascript:alert(1)">klick</a>', "html"),
+    message("data:text/html;base64,PHNjcmlwdD4="),
+  ]);
+  check("a javascript href is dropped", unsafe.length === 0, JSON.stringify(unsafe));
+
+  const mail = collectLinks([message('<a href="mailto:it@firma.de">IT</a>', "html")]);
+  check("mailto survives", mail.length === 1 && mail[0].href === "mailto:it@firma.de");
+
+  // One resource, however often it is quoted back.
+  const repeated = collectLinks([
+    message("https://firma.de/x"),
+    message("https://firma.de/x", "text", "Bea"),
+  ]);
+  check("a repeated link appears once", repeated.length === 1);
+  check(
+    "...attributed to whoever posted it first",
+    repeated[0]?.author === "Anna",
+    repeated[0]?.author,
+  );
+}
+
+console.log("retract window");
+{
+  const now = Date.UTC(2026, 7, 1, 9, 0, 0);
+  const at = (msAgo: number) => new Date(now - msAgo);
+
+  check("fifteen seconds", RETRACT_WINDOW_SECONDS === 15);
+  check("a fresh message can be taken back", withinRetractWindow(at(0), now));
+  check("...and one at fourteen seconds", withinRetractWindow(at(14_000), now));
+  // The boundary is exclusive: at exactly fifteen the offer is over, which is
+  // what the countdown reaching zero means on screen.
+  check("...but not at exactly fifteen", !withinRetractWindow(at(15_000), now));
+  check("...and not an hour later", !withinRetractWindow(at(3_600_000), now));
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

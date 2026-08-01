@@ -153,8 +153,30 @@ export function TicketComposer({
 
   const canSend = body.trim() !== "" && !busy;
 
+  /*
+   * Ctrl+Enter (Cmd+Enter on a Mac) sends.
+   *
+   * Plain Enter deliberately does not. This box holds multi-line replies with
+   * steps in them, and a bare Enter that submits turns every numbered list into a
+   * half-written message — the mistake is unrecoverable in the direction that
+   * matters, because the half-message is already in the customer's inbox.
+   *
+   * On the form rather than on each editor: it then works from the textarea, from
+   * the rich editor and from the buttons, and there is one place that knows the
+   * shortcut. `requestSubmit` rather than `submit` so the reply action runs and
+   * the built-in validation is not skipped.
+   */
+  const onKeyDown = (event: React.KeyboardEvent<HTMLFormElement>) => {
+    if (event.key !== "Enter") return;
+    if (!event.ctrlKey && !event.metaKey) return;
+    if (!canSend) return;
+    event.preventDefault();
+    event.currentTarget.requestSubmit();
+  };
+
   return (
     <form
+      onKeyDown={onKeyDown}
       className={cn(
         /*
          * No border in the ordinary state: the frame already draws a rule
@@ -317,6 +339,19 @@ export function TicketComposer({
             Ihre Antwort ist für die Agenten sichtbar.
           </span>
         )}
+
+        {/* The shortcut, where the hand already is. Hidden below `sm` — a phone
+            has no Ctrl key and the line would be furniture. */}
+        <span className="hidden items-center gap-1 text-xs text-muted-foreground sm:inline-flex">
+          <kbd className="rounded border border-border px-1 font-mono text-[10px]">
+            Strg
+          </kbd>
+          +
+          <kbd className="rounded border border-border px-1 font-mono text-[10px]">
+            Enter
+          </kbd>
+          senden
+        </span>
 
         <div className="flex flex-wrap items-center gap-2">
           <Button

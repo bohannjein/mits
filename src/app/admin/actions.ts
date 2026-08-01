@@ -22,6 +22,7 @@ import {
 import { listCannedResponses, setCannedResponses } from "@/lib/canned-responses";
 import { setMacros } from "@/lib/macros";
 import { setAnalyticsSettings } from "@/lib/analytics/settings";
+import { invalidateAnalytics } from "@/lib/services/analytics-cache";
 import { setNotificationSettings } from "@/lib/notification-settings";
 import { verifyS3 } from "@/lib/services/s3";
 import { getS3Settings, setS3Settings } from "@/lib/services/storage";
@@ -721,6 +722,14 @@ export async function saveAnalyticsSettingsAction(
       defaultRefreshSeconds: formData.get("defaultRefreshSeconds"),
     }),
   );
+
+  /*
+   * The switches are part of the analytics cache key, so a stale entry cannot be
+   * served for the new setting — but the old entries stay in the map until they
+   * expire, and there is no reason to keep results for a configuration nobody
+   * will ask for again.
+   */
+  invalidateAnalytics();
 
   revalidatePath("/admin/settings/analytics");
   revalidatePath("/mits/analytics");

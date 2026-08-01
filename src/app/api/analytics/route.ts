@@ -1,6 +1,13 @@
 import { requireApiRole } from "@/lib/auth/session";
 import { analyticsToCsv, csvFilename } from "@/lib/analytics/export";
 import { collectAnalytics, earliestTicketAt } from "@/lib/analytics/queries";
+import { getAnalyticsSettings } from "@/lib/analytics/settings";
+import {
+  analyticsCacheKey,
+  cachedAnalytics,
+  invalidateAnalytics,
+} from "@/lib/services/analytics-cache";
+import { ANALYTICS_WIDGETS } from "@/types/mits";
 import {
   isGranularity,
   isTimeRange,
@@ -51,7 +58,32 @@ export async function GET(request: Request) {
     granularity,
   });
 
-  const data = collectAnalytics(range);
+  /*
+   * The widget switches are part of the key, not just the range.
+   *
+   * `collectAnalytics` reads them itself and skips whatever is off, so two
+   * different switch settings produce two different results for the same range.
+   * Without them in the key, an admin turning a widget on would see nothing
+   * change for up to half a minute and reasonably conclude the switch is broken.
+   */
+  const settings = getAnalyticsSettings();
+  const key = analyticsCacheKey({
+    from: range.from,
+    to: range.to,
+    granularity: range.granularity,
+    widgets: ANALYTICS_WIDGETS.map((widget) => (settings[widget] ? "1" : "0")).join(""),
+  });
+
+  /*
+   * `?refresh=1` is the panel's refresh button: clear first, then recompute.
+   *
+   * Somebody pressing it has usually just changed something and wants to see it —
+   * serving them the cached answer is the one case where the cache is visibly
+   * wrong rather than merely stale.
+   */
+  if (params.get("refresh") === "1") invalidateAnalytics();
+
+  const data = cachedAnalytics(key, () => collectAnalytics(range));
 
   if (params.get("format") === "csv") {
     /*

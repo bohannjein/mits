@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  BarChart3Icon,
   FilterIcon,
   FilterXIcon,
   ServerIcon,
@@ -11,6 +10,7 @@ import { IncidentBanner } from "@/components/dashboard/incident-banner";
 import { PresenceList } from "@/components/dashboard/presence-list";
 import { StatsTiles } from "@/components/dashboard/stats-tiles";
 import { AppHeader } from "@/components/layout/app-header";
+import { QueueLive } from "@/components/tickets/queue-live";
 import { QueueTabs } from "@/components/tickets/queue-tabs";
 import type { TicketFilterValues } from "@/components/tickets/ticket-filters";
 import { TicketPager } from "@/components/tickets/ticket-pager";
@@ -152,6 +152,9 @@ export default async function AgentQueuePage({
       <AppHeader />
       <main className="flex flex-1 flex-col items-center px-6 py-10">
         <div className="w-full max-w-7xl">
+          {/* Renders nothing. Refreshes the list on a realtime signal, and
+              falls back to an ETag check that answers 304 when nothing moved. */}
+          <QueueLive />
           <div>
             <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
               Queue
@@ -211,33 +214,27 @@ export default async function AgentQueuePage({
                 view={view}
                 counts={counts}
                 actions={
-                  <>
+                  /*
+                   * The CMDB only. "Statistiken" used to sit here as its equal and
+                   * has moved next to the pie chart in the sidebar — the CMDB is a
+                   * place agents work, the statistics are a place they look
+                   * occasionally, and two identical pills said otherwise.
+                   *
+                   * Hidden with the module, not merely disabled: a link into a 404
+                   * is a worse answer than no link.
+                   */
+                  flags.feature_cmdb ? (
                     <Button
                       asChild
                       size="sm"
                       className="h-11 rounded-full border border-border bg-card px-4 text-foreground hover:bg-accent hover:text-accent-foreground"
                     >
-                      <Link href="/mits/analytics">
-                        <BarChart3Icon strokeWidth={1.5} />
-                        Statistiken
+                      <Link href="/mits/cmdb">
+                        <ServerIcon strokeWidth={1.5} />
+                        CMDB
                       </Link>
                     </Button>
-
-                    {/* Hidden with the module, not merely disabled: a link into a
-                        404 is a worse answer than no link. */}
-                    {flags.feature_cmdb && (
-                      <Button
-                        asChild
-                        size="sm"
-                        className="h-11 rounded-full border border-border bg-card px-4 text-foreground hover:bg-accent hover:text-accent-foreground"
-                      >
-                        <Link href="/mits/cmdb">
-                          <ServerIcon strokeWidth={1.5} />
-                          CMDB
-                        </Link>
-                      </Button>
-                    )}
-                  </>
+                  ) : undefined
                 }
               />
 

@@ -4,7 +4,9 @@ import { Roboto, Roboto_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/branding/theme-provider";
 import { ToastProvider } from "@/components/feedback/toast";
 import { QueryProvider } from "@/components/providers/query-provider";
+import { RealtimeProvider } from "@/components/providers/realtime-provider";
 import { TimezoneProvider } from "@/components/providers/timezone-provider";
+import { getSessionUser } from "@/lib/auth/session";
 import { getNotificationSettings } from "@/lib/notification-settings";
 import { getSystemTimezone } from "@/lib/system-settings";
 
@@ -44,6 +46,22 @@ export default async function RootLayout({
   // Resolved once per request and handed to the client tree, so both halves format
   // timestamps in the same zone — see TimezoneProvider.
   const timezone = getSystemTimezone();
+
+  /*
+   * One stream per tab, opened here rather than per page.
+   *
+   * Browsers cap concurrent connections per origin, and an event stream is a
+   * connection that never returns — a provider per page would open a new one on
+   * every navigation and leave the old one draining. At the root it survives
+   * navigation, which is also what lets the ticket page hand it a ticket id
+   * instead of reconnecting from scratch.
+   *
+   * Off for a signed-out visitor and while the password gate is closed: neither
+   * has a session the stream could be scoped to, and the route would answer 401
+   * on a loop.
+   */
+  const user = await getSessionUser();
+  const streaming = user !== null && !user.mustChangePassword;
 
   return (
     /*
@@ -97,9 +115,11 @@ export default async function RootLayout({
                 settings, resolved here so the very first toast of a session is
                 already where it belongs rather than moving after hydration. */}
             <QueryProvider>
-              <ToastProvider settings={getNotificationSettings()}>
-                {children}
-              </ToastProvider>
+              <RealtimeProvider enabled={streaming}>
+                <ToastProvider settings={getNotificationSettings()}>
+                  {children}
+                </ToastProvider>
+              </RealtimeProvider>
             </QueryProvider>
           </TimezoneProvider>
         </ThemeProvider>

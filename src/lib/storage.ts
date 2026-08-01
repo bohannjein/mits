@@ -224,6 +224,42 @@ export async function storeUpload(
   };
 }
 
+/**
+ * Everything attached to one ticket, oldest first.
+ *
+ * For the resources panel. **No access check here** — the caller has already
+ * resolved the ticket through `getTicketFor`, and every one of these ids is
+ * checked again by the download route on the request that actually reads a file.
+ * A list is not a grant, which is why this can be the cheap query.
+ */
+export function listUploadsForTicket(ticketId: string): {
+  id: string;
+  name: string;
+  bytes: number;
+  createdAt: Date;
+}[] {
+  const rows = db
+    .prepare(
+      `SELECT id, original_name, size_bytes, created_at
+         FROM mits_upload
+        WHERE deleted_at IS NULL AND ticket_id = ?
+        ORDER BY created_at ASC`,
+    )
+    .all(ticketId) as {
+    id: string;
+    original_name: string;
+    size_bytes: number;
+    created_at: string;
+  }[];
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.original_name,
+    bytes: row.size_bytes,
+    createdAt: new Date(row.created_at),
+  }));
+}
+
 export interface ReadableUpload {
   name: string;
   type: string;

@@ -10,12 +10,18 @@ import { ticketReplyMail } from "@/lib/mail-templates";
 import { MacroError, getMacro, runMacro } from "@/lib/macros";
 import { TicketLinkError, addLink, removeLink } from "@/lib/ticket-links";
 import { sendNotification, ticketUrl } from "@/lib/smtp";
-import { CommentError, addComment } from "@/lib/ticket-comments";
+import {
+  CommentError,
+  addComment,
+  editComment,
+  retractComment,
+} from "@/lib/ticket-comments";
 import {
   TrashError,
   restoreComment,
   restoreTicket,
   softDeleteTicket,
+  withdrawTicket,
 } from "@/lib/trash";
 import {
   TicketUpdateError,
@@ -346,6 +352,109 @@ export async function addCommentAction(
         : "Antwort gespeichert.",
   };
 }
+
+/* -- Correcting and taking back ------------------------------------------ */
+
+/**
+ * Change the text of a message you wrote.
+ *
+ * The module switch is checked here as well as being absent from the UI: a
+ * disabled feature whose Server Function still answers is a disabled feature in
+ * appearance only, and the Next docs are explicit that a Server Function is a
+ * POST endpoint on whatever route it is used from.
+ *
+ * Ownership is not checked here — `editComment` does it against the stored row.
+ * Doing it in both places would be two rules to keep in step, and the one further
+ * from the database is the one that would drift.
+ */
+export async function editCommentAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, false);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  if (!isFeatureEnabled("feature_message_editing")) {
+    return { ok: false, error: "Das nachträgliche Bearbeiten ist deaktiviert." };
+  }
+
+  try {
+    editComment(
+      String(formData.get("commentId") ?? ""),
+      auth.user,
+      String(formData.get("body") ?? ""),
+    );
+  } catch (error) {
+    if (error instanceof CommentError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath(`/customer/tickets/${ticketId}`);
+  revalidatePath(`/mits/tickets/${ticketId}`);
+
+  return { ok: true, message: "Beitrag geändert." };
+}
+
+/**
+ * Take back the message you just sent.
+ *
+ * The fifteen-second window is enforced in `retractComment` against the stored
+ * timestamp. Nothing here trusts the client's idea of how long ago it was — the
+ * countdown in the browser is a courtesy, not the rule.
+ */
+export async function retractCommentAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, false);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  if (!isFeatureEnabled("feature_message_retract")) {
+    return { ok: false, error: "Das Zurückziehen ist deaktiviert." };
+  }
+
+  try {
+    retractComment(String(formData.get("commentId") ?? ""), auth.user);
+  } catch (error) {
+    if (error instanceof CommentError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath(`/customer/tickets/${ticketId}`);
+  revalidatePath(`/mits/tickets/${ticketId}`);
+
+  return { ok: true, message: "Beitrag zurückgezogen." };
+}
+
+/**
+ * The reporter withdraws their own ticket.
+ *
+ * Redirects rather than returning a result: the page it was called from no longer
+ * exists once the ticket is gone, and leaving somebody on a 404 they caused by
+ * pressing the button is a worse ending than landing on their list.
+ */
+export async function withdrawTicketAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, false);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  try {
+    withdrawTicket(ticketId, auth.user);
+  } catch (error) {
+    if (error instanceof TrashError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath("/customer/tickets");
+  revalidatePath("/mits");
+  redirect("/customer/tickets");
+}
+
 
 /* ── Macros ─────────────────────────────────────────────────────────────── */
 

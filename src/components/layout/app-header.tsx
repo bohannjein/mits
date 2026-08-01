@@ -6,6 +6,7 @@ import { ThemeToggle } from "@/components/branding/theme-toggle";
 import { PresenceHeartbeat } from "@/components/dashboard/presence-heartbeat";
 import { NotificationWatcher } from "@/components/feedback/notification-watcher";
 import { AutoRefresh } from "@/components/layout/auto-refresh";
+import { ConnectionDot } from "@/components/layout/connection-dot";
 import { TicketSearch } from "@/components/tickets/ticket-search";
 import { TicketSearchDialog } from "@/components/tickets/ticket-search-dialog";
 import { Button } from "@/components/ui/button";
@@ -135,6 +136,9 @@ export async function AppHeader() {
             {!user.mustChangePassword && (
               <AutoRefresh minutes={resolveRefreshMinutes(user)} />
             )}
+            {/* Live status. Only for a session that has a stream — the password
+                gate leaves nothing to be live about. */}
+            {!user.mustChangePassword && <ConnectionDot />}
             <ThemeToggle />
             <UserMenu user={user} />
           </>

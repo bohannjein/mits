@@ -509,6 +509,12 @@ function addColumns(database: Database.Database): void {
      */
     { table: "mits_ticket", column: "deleted_at", definition: "TEXT" },
     { table: "mits_ticket_comment", column: "deleted_at", definition: "TEXT" },
+    /*
+     * When a comment was last edited. NULL means never, which is what every
+     * row written before editing existed correctly reports — the alternative,
+     * defaulting it to `created_at`, would mark the entire history as edited.
+     */
+    { table: "mits_ticket_comment", column: "edited_at", definition: "TEXT" },
     { table: "mits_upload", column: "deleted_at", definition: "TEXT" },
     /*
      * Which company a reporter belongs to.

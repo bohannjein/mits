@@ -6,6 +6,7 @@ import type { SessionUser } from "@/lib/auth/session";
 import { recordAudit } from "@/lib/audit";
 import { canViewBoard, toRole } from "@/lib/auth/roles";
 import { db, nextTicketNumber } from "@/lib/db/sqlite";
+import { publish } from "@/lib/services/realtime";
 import { getFormSchema } from "@/lib/form-schemas";
 import { resolveFields, schemaToZod } from "@/lib/forms/schema-to-zod";
 import { getLocation } from "@/lib/locations";
@@ -794,9 +795,93 @@ export function assignTicket(
       from: nameOf(before.assigned_to),
       to: nameOf(assigneeId),
     });
+    announce(ticketId, actor.id);
+    // The one state change that does produce a notification — "dir zugewiesen"
+    // — so the recipient's watcher is woken rather than left on its interval.
+    publish({ type: "notify", audience: "staff", actorId: actor.id });
   }
 
   return requireTicket(ticketId);
+}
+
+/**
+ * A short string that changes whenever this user's queue would look different.
+ *
+ * The ETag behind `/api/tickets/check-updates`. Four indexed aggregates rather
+ * than the ticket rows themselves — the question is "is my list stale", and
+ * answering it by sending the list is the thing the endpoint exists to avoid.
+ *
+ * **Not `mits_ticket.updated_at`.** That column is written at insert and never
+ * touched again, so a status change would not move it — and a fingerprint that
+ * misses a status change is a queue that quietly shows the wrong badges. The
+ * audit log is the honest source: every mutator already writes there, and one
+ * that forgot would be a missing history entry too, which is a bug somebody
+ * notices. The comment maximum is in it because an unread dot depends on it.
+ *
+ * Scoped exactly like the listing. A reporter's fingerprint must not move when
+ * somebody else's ticket changes: it would cost them a refetch that returns the
+ * same rows, and repeated, it is a clock showing how busy the rest of the system
+ * is.
+ */
+export function queueFingerprint(user: SessionUser): string {
+  const staff = canViewBoard(user.role);
+
+  const row = staff
+    ? (db
+        .prepare(
+          `SELECT
+             (SELECT COUNT(*) FROM mits_ticket WHERE deleted_at IS NULL) AS tickets,
+             (SELECT MAX(created_at) FROM mits_ticket) AS newest,
+             (SELECT MAX(created_at) FROM mits_audit_log) AS changed,
+             (SELECT MAX(created_at) FROM mits_ticket_comment) AS said`,
+        )
+        .get() as FingerprintRow)
+    : (db
+        .prepare(
+          `SELECT
+             (SELECT COUNT(*) FROM mits_ticket
+               WHERE deleted_at IS NULL AND created_by = @user) AS tickets,
+             (SELECT MAX(created_at) FROM mits_ticket
+               WHERE created_by = @user) AS newest,
+             (SELECT MAX(a.created_at) FROM mits_audit_log a
+                JOIN mits_ticket t ON t.id = a.ticket_id
+               WHERE t.created_by = @user) AS changed,
+             (SELECT MAX(c.created_at) FROM mits_ticket_comment c
+                JOIN mits_ticket t ON t.id = c.ticket_id
+               WHERE t.created_by = @user AND c.visibility = 'public') AS said`,
+        )
+        .get({ user: user.id }) as FingerprintRow);
+
+  return [
+    row.tickets,
+    row.newest ?? "",
+    row.changed ?? "",
+    row.said ?? "",
+  ].join("|");
+}
+
+interface FingerprintRow {
+  tickets: number;
+  newest: string | null;
+  changed: string | null;
+  said: string | null;
+}
+
+/**
+ * Tell every open page that this ticket moved.
+ *
+ * Two signals, because two different sets of people are looking: whoever has the
+ * ticket open, and whoever is watching the queue it sits in. `notify` is left to
+ * the paths that actually produce a notification — a priority change is not
+ * something anybody gets told about, and firing it here would wake every
+ * connected browser to fetch an empty feed.
+ *
+ * `actorId` keeps the signal away from the page that caused it: that one has
+ * already re-rendered from its own action.
+ */
+function announce(ticketId: string, actorId: string): void {
+  publish({ type: "ticket", ticketId, audience: "all", actorId });
+  publish({ type: "queue", audience: "staff", actorId });
 }
 
 /** A display name for the log — an opaque id in a history nobody can read is noise. */
@@ -828,6 +913,9 @@ export function setTicketStatus(
       from: before.status,
       to: status,
     });
+    // Only on a real change, for the same reason the audit entry is: a signal
+    // that fires when nothing happened teaches every listener to distrust it.
+    announce(ticketId, actor.id);
   }
 
   return requireTicket(ticketId);
@@ -851,6 +939,7 @@ export function setTicketPriority(
       from: before.priority,
       to: priority,
     });
+    announce(ticketId, actor.id);
   }
 
   return requireTicket(ticketId);

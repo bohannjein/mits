@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PlusIcon } from "lucide-react";
 
 import { AppHeader } from "@/components/layout/app-header";
+import { QueueLive } from "@/components/tickets/queue-live";
 import { BackLink } from "@/components/layout/back-link";
 import { TicketFilters } from "@/components/tickets/ticket-filters";
 import { TicketSearch } from "@/components/tickets/ticket-search";
@@ -83,6 +84,9 @@ export default async function MyTicketsPage({
       <AppHeader />
       <main className="flex flex-1 flex-col items-center px-6 py-12">
         <div className="w-full max-w-5xl">
+          {/* Same live/fallback pair as the queue — a reporter’s list has to
+              show a status change without them reloading the page. */}
+          <QueueLive />
           <BackLink href="/customer" label="Zurück zum Portal" />
           <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
             <div>

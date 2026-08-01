@@ -4,6 +4,8 @@ import { SparkleIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import { ChatBubble, toneFor } from "@/components/tickets/chat-bubble";
+import { MessageActions } from "@/components/tickets/message-actions";
+import { isSyntheticOpening } from "@/lib/ticket-opening";
 import type { TicketComment } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -70,6 +72,12 @@ export function TicketMessages({
    * and two copies would be two places to fix the next scroll bug in.
    */
   order = "newest-last",
+  /** The ticket these belong to, for the edit and retract actions. */
+  ticketId,
+  /** `feature_message_editing`, resolved on the server. */
+  canEdit = false,
+  /** `feature_message_retract`, resolved on the server. */
+  canRetract = false,
   /**
    * When this reader last opened the ticket. Anything written after it is marked
    * as new, and a divider is drawn before the first one.
@@ -83,6 +91,9 @@ export function TicketMessages({
 }: {
   comments: TicketComment[];
   viewerId: string;
+  ticketId: string;
+  canEdit?: boolean;
+  canRetract?: boolean;
   order?: "newest-last" | "newest-first";
   seenAt?: string | null;
   emptyText: string;
@@ -172,6 +183,26 @@ export function TicketMessages({
         // anything about who wrote the message.
         side={comment.author_is_agent ? "right" : "left"}
         isNew={isNew(comment)}
+        /*
+         * Only on your own messages, and never on the opening bubble: that one is
+         * derived from the form payload at render time and has no row behind it to
+         * edit or remove. Editing it would mean rewriting a stored form answer —
+         * the same value the ticket is searched and reported on.
+         *
+         * The ownership test here decides what is *drawn*. `editComment` and
+         * `retractComment` decide again against the stored row, which is the check
+         * that counts.
+         */
+        actions={
+          comment.author_id === viewerId && !isSyntheticOpening(comment.id) ? (
+            <MessageActions
+              comment={comment}
+              ticketId={ticketId}
+              canEdit={canEdit}
+              canRetract={canRetract}
+            />
+          ) : undefined
+        }
       />
     </div>
   ));

@@ -27,6 +27,8 @@ import { getLocation } from "@/lib/locations";
 import { formatDateTime } from "@/lib/format";
 import { getSystemTimezone } from "@/lib/system-settings";
 import { listAuditFor } from "@/lib/audit";
+import { listUploadsForTicket } from "@/lib/storage";
+import { collectLinks } from "@/lib/ticket-resources";
 import {
   listCommentsFor,
   ticketActivityFingerprint,
@@ -172,6 +174,18 @@ export default async function AgentTicketPage({
     : null;
 
   // Only staff may hold a ticket, so only staff appear in the picker.
+  /*
+   * Files and links, gathered once.
+   *
+   * The links come out of the comments this reader may see — `comments` is already
+   * the visibility-filtered list, so an address posted in an internal note never
+   * reaches a reporter's panel. Passing the raw thread here would be the leak.
+   */
+  const resources = {
+    files: listUploadsForTicket(id),
+    links: collectLinks([...(opening ? [opening] : []), ...comments]),
+  };
+
   const agents = listUsers()
     .filter((candidate) => canViewBoard(candidate.role))
     .map((candidate) => ({ id: candidate.id, name: candidate.name }));
@@ -260,6 +274,11 @@ export default async function AgentTicketPage({
                 // a list by a date it shares with the ticket row invites a tie.
                 comments={[...(opening ? [opening] : []), ...comments]}
                 viewerId={user.id}
+                ticketId={ticket.id}
+                // Resolved on the server: a client that could decide this would be
+                // deciding whether a disabled module is disabled.
+                canEdit={flags.feature_message_editing}
+                canRetract={flags.feature_message_retract}
                 seenAt={seenAt}
                 emptyText="Noch keine Beiträge. Die erste Antwort geht an den Melder."
               />
@@ -322,6 +341,7 @@ export default async function AgentTicketPage({
                   isAIFeatureOn(aiSettings, "summary") &&
                   comments.length >= SUMMARY_MIN_MESSAGES
                 }
+                resources={resources}
                 majorIncident={
                   ticket.major_incident
                     ? {

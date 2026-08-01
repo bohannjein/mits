@@ -388,6 +388,14 @@ export const TicketCommentSchema = z.object({
   body: z.string().min(1).max(20000),
   body_format: CommentBodyFormat.default("text"),
   created_at: z.coerce.date(),
+  /**
+   * When it was last corrected, or `null` for never.
+   *
+   * Shown as a marker next to the timestamp rather than hidden: a message whose
+   * text changed after somebody replied to it is a different message, and the
+   * reader of the reply has to be able to tell.
+   */
+  edited_at: z.coerce.date().nullable().default(null),
 });
 export type TicketComment = z.infer<typeof TicketCommentSchema>;
 
@@ -922,9 +930,12 @@ export const AuditAction = z.enum([
   "assigned",
   "unassigned",
   "comment_added",
+  "comment_edited",
+  "comment_retracted",
   "comment_deleted",
   "comment_restored",
   "ticket_deleted",
+  "ticket_withdrawn",
   "ticket_restored",
   "attachment_deleted",
   "link_added",
@@ -938,9 +949,12 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   assigned: "Zugewiesen",
   unassigned: "Zuweisung entfernt",
   comment_added: "Beitrag hinzugefügt",
+  comment_edited: "Beitrag bearbeitet",
+  comment_retracted: "Beitrag zurückgezogen",
   comment_deleted: "Beitrag gelöscht",
   comment_restored: "Beitrag wiederhergestellt",
   ticket_deleted: "Ticket gelöscht",
+  ticket_withdrawn: "Ticket zurückgezogen",
   ticket_restored: "Ticket wiederhergestellt",
   attachment_deleted: "Anhang gelöscht",
   link_added: "Verknüpfung gesetzt",
@@ -1549,6 +1563,8 @@ export const FeatureFlagsSchema = z.object({
   feature_time_tracking: z.boolean().default(true),
   feature_macros: z.boolean().default(true),
   feature_toast_notifications: z.boolean().default(true),
+  feature_message_editing: z.boolean().default(true),
+  feature_message_retract: z.boolean().default(true),
   feature_mail_inbound: z.boolean().default(false),
   feature_s3_storage: z.boolean().default(false),
   feature_typing_indicator: z.boolean().default(false),
@@ -1753,6 +1769,16 @@ export const FEATURE_FLAG_META: Record<
     label: "Makros",
     description:
       "Ein Klick setzt Status, Priorität und Zuweisung und fügt einen Textbaustein ein. Gepflegt unter /admin/macros.",
+  },
+  feature_message_editing: {
+    label: "Nachrichten nachträglich bearbeiten",
+    description:
+      "Wer eine Nachricht geschrieben hat, kann ihren Text ändern. Die Änderung wird an der Nachricht vermerkt und in der Historie festgehalten.",
+  },
+  feature_message_retract: {
+    label: "Nachricht zurückziehen",
+    description:
+      "15 Sekunden lang lässt sich die eigene letzte Nachricht wieder entfernen. Danach nicht mehr.",
   },
   feature_toast_notifications: {
     label: "Live-Benachrichtigungen",

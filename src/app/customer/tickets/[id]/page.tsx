@@ -16,9 +16,20 @@ import {
 } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { requireUser } from "@/lib/auth/session";
+import { getFeatureFlags } from "@/lib/features";
 import { getFormSchema } from "@/lib/form-schemas";
 import { resolveFields } from "@/lib/forms/schema-to-zod";
 import { getLocation } from "@/lib/locations";
+import { listUploadsForTicket } from "@/lib/storage";
+import { collectLinks } from "@/lib/ticket-resources";
+import { TicketResources } from "@/components/tickets/ticket-resources";
+import { WithdrawTicket } from "@/components/tickets/withdraw-ticket";
+import {
+  Accordion as ResourceAccordion,
+  AccordionContent as ResourceAccordionContent,
+  AccordionItem as ResourceAccordionItem,
+  AccordionTrigger as ResourceAccordionTrigger,
+} from "@/components/ui/accordion";
 import {
   listCommentsFor,
   ticketActivityFingerprint,
@@ -77,6 +88,13 @@ export default async function CustomerTicketPage({
   const seenAt = getTicketSeenAt(id, user.id);
   markTicketRead(id, user.id);
 
+  const flags = getFeatureFlags();
+
+  // The same visibility-filtered thread the bubbles are built from, so a link
+  // posted in an internal note cannot reach this list.
+  const comments = listCommentsFor(id, user);
+
+
   const schema = ticket.form_schema_id
     ? getFormSchema(ticket.form_schema_id)
     : undefined;
@@ -97,6 +115,16 @@ export default async function CustomerTicketPage({
     })),
     opening ? openingFieldName(ticket.payload, schema) : null,
   ).filter((row) => row.text !== "");
+
+  /*
+   * Files and links, gathered once. After `opening`, which is part of the thread
+   * the links are pulled from — the reporter's own first message frequently holds
+   * the address of whatever is broken.
+   */
+  const resources = {
+    files: listUploadsForTicket(id),
+    links: collectLinks([...(opening ? [opening] : []), ...comments]),
+  };
 
   return (
     <>
@@ -160,6 +188,42 @@ export default async function CustomerTicketPage({
                   thread: the reporter's own answers are worth re-reading
                   occasionally and are not what they came for.
                 */}
+                {/*
+                  Files and links from this ticket, collapsed.
+                  Same place as "Meine Angaben" and for the same reason: worth
+                  having, not what the reporter came for. Renders nothing at all
+                  when there is neither.
+                */}
+                {(resources.files.length > 0 || resources.links.length > 0) && (
+                  <ResourceAccordion type="single" collapsible className="mt-3">
+                    <ResourceAccordionItem
+                      value="resources"
+                      className="rounded-2xl border border-border px-4"
+                    >
+                      <ResourceAccordionTrigger className="py-2.5 text-sm hover:no-underline">
+                        Dateien und Links
+                      </ResourceAccordionTrigger>
+                      <ResourceAccordionContent className="pb-4">
+                        <TicketResources
+                          files={resources.files}
+                          links={resources.links}
+                        />
+                      </ResourceAccordionContent>
+                    </ResourceAccordionItem>
+                  </ResourceAccordion>
+                )}
+
+                {/*
+                  Only while nobody has picked it up. `withdrawTicket` checks the
+                  same condition against the row — this just avoids offering a
+                  button that would be refused.
+                */}
+                {ticket.status === "open" && ticket.assigned_to === null && (
+                  <div className="mt-3">
+                    <WithdrawTicket ticketId={ticket.id} />
+                  </div>
+                )}
+
                 {fields.length > 0 && (
                   <Accordion type="single" collapsible className="mt-3">
                     <AccordionItem
@@ -190,11 +254,11 @@ export default async function CustomerTicketPage({
             }
             messages={
               <TicketMessages
-                comments={[
-                  ...(opening ? [opening] : []),
-                  ...listCommentsFor(id, user),
-                ]}
+                comments={[...(opening ? [opening] : []), ...comments]}
                 viewerId={user.id}
+                ticketId={ticket.id}
+                canEdit={flags.feature_message_editing}
+                canRetract={flags.feature_message_retract}
                 seenAt={seenAt}
                 // Newest on top. Somebody opening their own ticket is checking
                 // whether anybody answered, and scrolling a long thread to find

@@ -1,3 +1,6 @@
+import Link from "next/link";
+import { ArrowUpRightIcon } from "lucide-react";
+
 import { OpenClosedPie } from "@/components/dashboard/open-closed-pie";
 import type { MITSLocation } from "@/types/mits";
 
@@ -35,7 +38,26 @@ export function StatsTiles({
 
   return (
     <section aria-label="Kennzahlen" className="grid gap-3">
-      <h2 className="label-industrial">Heute</h2>
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="label-industrial">Heute</h2>
+
+        {/*
+          The way into the statistics panel, next to the figures it expands on
+          rather than as a pill in the queue's header row.
+
+          It sat up there beside the CMDB button and read as its equal, which it
+          is not: the CMDB is a place agents work, the statistics are a place they
+          look occasionally. Two controls of the same size and weight say the two
+          things matter the same amount, and this one does not.
+        */}
+        <Link
+          href="/mits/analytics"
+          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          Statistiken
+          <ArrowUpRightIcon className="size-3" strokeWidth={1.5} aria-hidden />
+        </Link>
+      </div>
 
       {/* Both figures live in the pie's legend, so the counter tiles that used to
           sit here said the same thing a second time. */}

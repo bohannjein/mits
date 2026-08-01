@@ -142,7 +142,11 @@ src/
       schema-form.tsx      <SchemaForm> — die einzige Formular-Komponente
     tickets/
       ticket-frame.tsx          fixe Ticket-Seite: Kopf, scrollender Verlauf, Antwortzeile
-      ticket-live.tsx           Poller: Fingerabdruck vergleichen, router.refresh()
+      ticket-live.tsx           SSE-Signal, sonst Fingerabdruck-Poll
+      queue-live.tsx            SSE-Signal, sonst ETag gegen /check-updates
+      message-actions.tsx       Bearbeiten + 15-s-Rücknahme an der eigenen Bubble
+      ticket-resources.tsx      Dateien und Links des Tickets
+      withdraw-ticket.tsx       Melder zieht sein eigenes Ticket zurück
       ticket-messages.tsx       nur die Bubble-Liste, beide Ansichten
       ticket-composer.tsx       nur die Antwortzeile, rich | plain
       tri-modal-container.tsx   Tabs: Schnellmeldung | Katalog | KI, POST /api/tickets
@@ -197,6 +201,11 @@ src/
     notifications.ts        Feed für die Einblendungen, Sichtbarkeit je Abfrage neu
     notification-settings.ts Kanäle, Darstellung, Schwelle (mits_setting)
     notification-digest.ts  zählt und formuliert (rein, kein server-only!)
+    realtime-backoff.ts     Reconnect mit Jitter (kein server-only!)
+    retract-window.ts       15 s, Countdown und Prüfung (kein server-only!)
+    ticket-resources.ts     Links aus Nachrichten ziehen (kein server-only!)
+    services/realtime.ts    Event-Bus: In-Process plus Pump pro Prozess
+    services/analytics-cache.ts  30-s-Cache vor den teuren GROUP BY
     services/ai/digest.ts   schreibt die Sammelmeldung um, fällt immer zurück
     services/storage.ts     Backend-Weiche Platte | S3, pro Datei gemerkt
     services/s3.ts          PUT/GET/DELETE, fail closed
@@ -674,7 +683,9 @@ Maschinenaufruf bekommt also JSON statt eines Redirects auf die Anmeldung.
 /admin/settings/notifications Kanäle, Darstellung, Sammelmeldung
 /admin/mail             Postfach-Abruf + Defender-Regel
 /api/notifications      Feed für die Einblendungen, `?since=` (jede Rolle)
-/api/tickets/[id]/activity  Fingerabdruck für den Live-Verlauf, 2,5 s / 12 s
+/api/realtime/stream        SSE-Signale: ticket | notify | queue
+/api/tickets/check-updates  Queue-ETag, antwortet 304 wenn nichts anders ist
+/api/tickets/[id]/activity  Fingerabdruck, Ersatzweg wenn der Stream fehlt
 /api/notifications/digest   Sammelmeldung ab der eingestellten Schwelle
 /api/analytics          Kennzahlen als JSON oder `?format=csv` (Agenten)
 /api/mail/poll          Postfach abrufen, Service-Token **oder** Admin-Sitzung
@@ -994,6 +1005,161 @@ Werte — recharts nimmt `var(--chart-1)` direkt als `fill`. Die im Auftrag
 genannten Hex-Werte sind die Light-Werte und stehen genau dort. Auf Dark sind sie
 angehoben und leicht entsättigt: dasselbe Indigo, das auf Weiß souverän wirkt,
 ist auf Beinahe-Schwarz ein Loch.
+
+## Echtzeit: gepusht, wo es geht
+
+Drei Wege, absichtlich verschieden, weil die drei Dinge verschieden teuer sind.
+
+| Was | Wie | Kosten im Leerlauf |
+|---|---|---|
+| Chat + Toasts | SSE, `/api/realtime/stream` | eine offene Verbindung, keine Abfrage |
+| Queue-Liste | SSE-Signal, Ersatz: ETag / `304` | eine Kopfzeile alle 15 s im Ersatzmodus |
+| Statistiken | In-Memory-Cache, 30 s | eine Berechnung pro Intervall statt pro Leser |
+
+**Signale, keine Daten.** Ein Event sagt „Ticket X hat sich bewegt" und trägt
+keinen Inhalt. Der Client holt danach über die Route, die es ohnehin gibt — und
+damit bleibt es bei **einer** Stelle, die über Sichtbarkeit entscheidet. Ein Bus,
+der Nachrichtentexte verteilte, wäre die zweite, und die zweite ist die, die man
+falsch macht.
+
+**SSE statt WebSockets.** Der Verkehr ist einseitig, SSE ist eine gewöhnliche
+HTTP-Antwort, die jeder Reverse Proxy schon weiterleitet, und `EventSource`
+verbindet selbst neu. Ein WebSocket brächte einen Rückkanal, den es hier nicht
+gibt, und eine Deployment-Notiz für jeden Proxy davor. `X-Accel-Buffering: no`
+ist Pflicht: nginx puffert proxied Responses per Default, und ein gepufferter
+Event-Stream liefert erst, wenn ein paar Kilobyte zusammen sind — der häufigste
+Weg, wie SSE lokal funktioniert und in Produktion nicht.
+
+**Zwei Zustellwege, weil Next mehrere Worker fahren kann.** Dasselbe Problem wie
+beim Mail-Timer, von der anderen Seite: ein In-Process-Emitter erreicht die
+Hälfte der Browser. Also schreibt `publish` zusätzlich in `mits_realtime_event`,
+und **ein** Pump pro Prozess liest, was er nicht selbst geschrieben hat. Pro
+Prozess, nicht pro Verbindung: hundert Tabs auf einem Worker kosten denselben
+`id > ?`-Read alle zwei Sekunden wie einer. Ohne Verbindung läuft kein Pump.
+
+Der stille Fehler, den das verhindert: Echtzeit funktioniert für jeden, der
+zufällig denselben Worker hat wie der Schreiber, und für die anderen nicht. Das
+ist schlimmer als keine Echtzeit, weil es nicht reproduzierbar ist.
+
+**Das Ticket in `?ticket=` wird einmal beim Verbinden autorisiert**
+(`getTicketFor`), nicht pro Event. Pro Event wäre ein DB-Read im Fan-out für
+etwas, das sich bei offener Verbindung nicht ändern kann.
+
+**Ein `EventSource` pro Tab**, im Root-Layout. Browser deckeln gleichzeitige
+Verbindungen pro Origin, und ein Stream ist eine Verbindung, die nie zurückkommt.
+Die Seite meldet über `useRealtimeTicket`, was sie ansieht; der Provider
+verbindet dann neu.
+
+**Fällt der Stream aus, laufen die alten Abfragen weiter** — Ticketseite 2,5 s /
+12 s, Queue 15 s gegen den ETag. Echtzeit, die auf *nichts* zurückfällt, ist
+schlechter als Abfragen, weil der Ausfall unsichtbar ist. Der Punkt im Header
+sagt, welcher Modus läuft: grün live, gelb Ersatz, grau im Aufbau. Icon **und**
+Farbe, weil `--success` und `--warning` das Paar sind, das rot-grün-blinde Leser
+am wenigsten trennen können.
+
+**Reconnect mit Jitter** (`lib/realtime-backoff.ts`, in `npm test`). Der Jitter
+ist der Teil, der weggelassen wird: ohne ihn kommen vierzig Tabs nach einem
+Neustart alle bei 1 s wieder, dann alle bei 2 s — genau im Takt, in dem der
+Server sich zu erholen versucht. `EventSource` verbindet zwar selbst neu, aber in
+festem kurzem Abstand und ohne Obergrenze; deshalb wird die Verbindung geschlossen
+und die Zeit selbst gesteuert.
+
+**Der ETag ist pro Benutzer**, und das ist tragend statt ordentlich: sein Wert
+kommt aus Zeilen, die der Aufrufer sehen darf. Ein geteilter ETag verriete jedem,
+der ihn beobachtet, die Aktivität aller anderen. `private, no-cache`, nicht
+`no-store` — letzteres verbietet dem Browser das Behalten und damit die
+Revalidierung, die den ganzen Mechanismus ausmacht.
+
+**Der Queue-Fingerabdruck kommt nicht aus `mits_ticket.updated_at`.** Die Spalte
+wird beim Insert geschrieben und nie wieder angefasst, ein Statuswechsel bewegt
+sie also nicht. Stattdessen vier indizierte Aggregate über Ticket, Audit-Log und
+Kommentare: jeder Mutator schreibt ohnehin ins Log, und einer, der das vergäße,
+wäre auch ein fehlender Historieneintrag — ein Fehler, den jemand bemerkt.
+
+**Der Analytics-Cache ist auf den Zeitraum geschlüsselt, nicht auf den Benutzer.**
+Nur zulässig, weil diese Zahlen nicht gescoped sind: `/api/analytics` ist als
+Ganzes agentengesperrt und jeder, der daran vorbeikommt, sieht dieselben Werte.
+Käme je eine melderseitige Sicht dazu, muss der Schlüssel eine Benutzer-Id
+bekommen. Die Widget-Schalter stehen mit im Schlüssel, sonst sähe ein Admin nach
+dem Einschalten eine halbe Minute lang nichts und hielte den Schalter für kaputt.
+`?refresh=1` leert den ganzen Cache, nicht nur den angefragten Eintrag — wer den
+Knopf drückt, hat gerade etwas geändert und wechselt gleich darauf ebenso
+wahrscheinlich den Zeitraum.
+
+## Nachrichten korrigieren und zurückziehen
+
+**Strg+Enter sendet, Enter nicht.** Auf dem Formular statt auf jedem Editor, also
+aus Textarea und Rich-Text gleichermaßen. Blankes Enter absichtlich nicht: hier
+stehen mehrzeilige Antworten mit Schritten drin, und ein Enter, das absendet,
+macht aus jeder nummerierten Liste eine halbe Nachricht — im Postfach des Kunden.
+
+**Bearbeiten ist Textänderung, sonst nichts** (`feature_message_editing`). Nur der
+Verfasser, nie ein Agent an den Worten eines Melders. Ein Verlauf, den jemand
+anderes umschreiben kann, ist kein Verlauf; das Werkzeug für eine Nachricht, die
+weg muss, ist Löschen — das hinterlässt eine Lücke statt einer Fälschung. Die
+Sichtbarkeit ist ebenfalls nicht änderbar: eine öffentliche Antwort nachträglich
+intern zu machen macht sie nicht ungesendet.
+
+`edited_at` wird an der Nachricht angezeigt. Eine Nachricht, deren Text sich
+geändert hat, nachdem jemand darauf geantwortet hat, ist eine andere Nachricht —
+und wer die Antwort liest, muss das sehen können. Unveränderter Text ist keine
+Bearbeitung und setzt den Stempel nicht.
+
+**15 Sekunden zum Zurückziehen** (`feature_message_retract`), Konstante in
+`lib/retract-window.ts` — **kein** `server-only`, weil Countdown und Prüfung
+dieselbe Zahl brauchen. Geprüft wird serverseitig gegen den gespeicherten
+Zeitstempel; der Countdown im Browser ist Höflichkeit, keine Regel. Bewusst nicht
+konfigurierbar: bei zehn Minuten würde man anbieten, eine Nachricht zu löschen,
+auf die schon jemand reagiert hat.
+
+**Eine Benachrichtigungsmail holt das nicht zurück.** `addCommentAction` sendet
+sofort. Jede Benachrichtigung um 15 s zu verzögern, um die Lücke zu schließen,
+machte das ganze System für einen seltenen Fall langsamer — die Rücknahme ist
+stattdessen ehrlich darüber, was sie tut.
+
+**Ticket zurückziehen** ist reine Melder-Sache und nur, solange `open` **und**
+nicht zugewiesen. Sobald jemand es übernommen hat, ist Arbeit passiert. Nicht an
+das 15-Sekunden-Fenster gekoppelt: „habe ich selbst gefunden" ist eine überlegte
+Entscheidung, und sie in dieselben Sekunden zu zwängen hieße, den ehrlichen Weg
+unattraktiv zu machen.
+
+**Die Erstnachricht hat keine Aktionen.** Sie ist zur Renderzeit aus dem Payload
+abgeleitet; sie zu ändern hieße, eine gespeicherte Formularantwort umzuschreiben —
+denselben Wert, über den das Ticket durchsucht und ausgewertet wird.
+`isSyntheticOpening` ist der Test.
+
+## Geteiltes: Dateien und Links an einem Ort
+
+`lib/ticket-resources.ts` (kein `server-only`, in `npm test`) zieht die Links aus
+den Nachrichtentexten, `listUploadsForTicket` die Dateien. Beim Agenten ein
+Sidebar-Abschnitt, beim Melder ein zugeklapptes Accordion; beide rendern `null`,
+wenn nichts da ist.
+
+- **Gebaut aus dem sichtbarkeitsgefilterten Verlauf.** Ein Link aus einer internen
+  Notiz darf nicht in der Melderliste landen — deshalb bekommt `collectLinks`
+  `comments`, nicht den Rohbestand.
+- **Zweites Schema-Gate.** Der Sanitizer lehnt `javascript:` schon beim Schreiben
+  ab; hier steht die Prüfung noch einmal, weil dieses Panel Text aus Nachrichten
+  in eine Liste von Klickzielen verwandelt.
+- **Ein Link, so oft er auch zitiert wird.** Dedupliziert auf den href, behalten
+  wird die erste Nennung — deren Autor und Zeitpunkt bedeuten etwas.
+- **`target="_blank"` mit `noopener noreferrer`.** Manche dieser Adressen hat
+  geschrieben, wer per Mail hereingekommen ist.
+- Eine Datei zu listen macht sie nicht lesbar: `/api/uploads/[fileId]` prüft pro
+  Anfrage weiter selbst.
+
+## Der Statistik-Knopf sitzt am Tortendiagramm
+
+Nicht mehr als Pille neben „CMDB" in der Queue-Kopfzeile. Zwei gleich große
+Bedienelemente sagen, dass zwei Dinge gleich wichtig sind, und das sind sie
+nicht: die CMDB ist ein Ort, an dem Agenten arbeiten, die Statistiken einer, an
+den sie gelegentlich schauen. Der Link steht jetzt als Textlink über den Zahlen,
+die er aufschlüsselt.
+
+**Zusätzlich im Benutzermenü**, weil `StatsTiles` hinter
+`feature_stats_heatmap` liegt — sonst hätte eine Instanz mit ausgeschaltetem
+Widget ein Statistik-Panel ohne jeden Weg hinein. Gegated auf `canViewBoard`, wie
+jeder andere Bereichswechsel dort.
 
 ## Benachrichtigungen: Kanäle wie auf dem Telefon
 

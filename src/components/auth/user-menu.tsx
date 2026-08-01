@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BarChart3Icon,
   ChevronDownIcon,
   HeadsetIcon,
   LogOutIcon,
@@ -130,6 +131,24 @@ export function UserMenu({ user }: { user: SessionUser }) {
               <Link href={AGENT_HOME}>
                 <HeadsetIcon />
                 Agenten-Desk
+              </Link>
+            </DropdownMenuItem>
+          )}
+
+          {/*
+            The reliable way to the statistics.
+
+            The prominent one is the link beside the pie chart in the queue's
+            sidebar, but that whole widget is behind `feature_stats_heatmap` — an
+            instance with it switched off would otherwise have a panel with no way
+            in. Gated on the same predicate as the desk entry, which is the guard
+            `/mits/analytics` itself uses.
+          */}
+          {showBoard && (
+            <DropdownMenuItem asChild>
+              <Link href="/mits/analytics">
+                <BarChart3Icon />
+                Statistiken
               </Link>
             </DropdownMenuItem>
           )}
