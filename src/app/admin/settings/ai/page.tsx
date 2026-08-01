@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { InfoIcon } from "lucide-react";
 
-import { AISettingsForm } from "@/components/admin/ai-settings-form";
+import { AIFeaturesForm } from "@/components/admin/ai-features-form";
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -37,8 +37,8 @@ export default async function AISettingsPage() {
                 KI-Einstellungen
               </h1>
               <p className="mt-2 max-w-2xl text-muted-foreground">
-                Ollama-Adresse und Modelle werden hier gepflegt, nicht in
-                Umgebungsvariablen. Änderungen greifen ab der nächsten Anfrage.
+                Anbieter, Modelle und jede einzelne Assistenzfunktion. Änderungen
+                greifen ab der nächsten Anfrage.
               </p>
             </div>
           </div>
@@ -57,10 +57,12 @@ export default async function AISettingsPage() {
             </AlertDescription>
           </Alert>
 
-          <AISettingsForm
-            stored={stored}
+          {/* The key never leaves the server — only whether one exists. */}
+          <AIFeaturesForm
+            stored={{ ...stored, apiKey: "" }}
             effective={effective}
             source={source}
+            hasKey={stored.apiKey !== ""}
           />
         </div>
       </main>

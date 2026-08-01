@@ -46,6 +46,7 @@ export const TicketStatus = z.enum([
   "open",
   "in_progress",
   "waiting_user",
+  "waiting_major",
   "resolved",
   "closed",
 ]);
@@ -55,6 +56,7 @@ export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
   open: "Offen",
   in_progress: "In Bearbeitung",
   waiting_user: "Wartet auf Anwender",
+  waiting_major: "Wartet auf Hauptstörung",
   resolved: "Gelöst",
   closed: "Geschlossen",
 };
@@ -68,6 +70,10 @@ export const OPEN_TICKET_STATUSES: TicketStatus[] = [
   "open",
   "in_progress",
   "waiting_user",
+  // A ticket parked behind a major incident is still somebody's problem — the
+  // major one. Counting it as closed would make an outage look like it shrank the
+  // queue instead of consuming it.
+  "waiting_major",
   "resolved",
 ];
 
@@ -170,8 +176,9 @@ export const STATUS_RANK: Record<TicketStatus, number> = {
   open: 0,
   in_progress: 1,
   waiting_user: 2,
-  resolved: 3,
-  closed: 4,
+  waiting_major: 3,
+  resolved: 4,
+  closed: 5,
 };
 
 /**
@@ -287,6 +294,23 @@ export const MITSTicketSchema = z.object({
   unread: z.boolean().default(false),
   /** Minutes of work logged against this ticket. Summed on read, never stored. */
   logged_minutes: z.number().int().nonnegative().default(0),
+  /**
+   * Topic labels, one to three, written once when the ticket is created.
+   *
+   * Stored rather than derived: they are produced by a model, and a value that
+   * changed every time somebody opened the page — or vanished when the provider
+   * was switched off — would be worse than no labels. An agent can see what was
+   * suggested at the time and judge it.
+   */
+  tags: z.array(z.string()).default([]),
+  /**
+   * This ticket *is* the outage, not one of its reports.
+   *
+   * A column rather than "has children", because the two are different claims: a
+   * major incident is declared, and it stays one for the whole time it is being
+   * worked even if its last child gets unlinked.
+   */
+  major_incident: z.boolean().default(false),
   /** Coerced: the API and Ollama both hand us ISO strings, not Date objects. */
   created_at: z.coerce.date(),
 });
@@ -318,6 +342,10 @@ export const MITSTicketDraftSchema = MITSTicketSchema.omit({
   last_activity_at: true,
   unread: true,
   logged_minutes: true,
+  // Written by the routing service after the ticket exists, and declared by an
+  // agent respectively. Neither is a client's to state.
+  tags: true,
+  major_incident: true,
 }).extend({
   priority: TicketPriority.default(DEFAULT_TICKET_PRIORITY),
   /** The reporter may state their site; everything else about them comes from the session. */
@@ -1880,19 +1908,159 @@ export function clockHealth(offsetMs: number): ClockHealth {
 /** Ollama model tag: `llama3.1`, `qwen2.5-vl:7b`, `registry/user/model:tag`. */
 const MODEL_PATTERN = /^[A-Za-z0-9._\-/]+(:[A-Za-z0-9._-]+)?$/;
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Which model service MITS talks to.
+
+   Three, because a self-hosted helpdesk has three plausible answers: a GPU in the
+   rack (Ollama or anything speaking its API, vLLM included), or one of the two
+   hosted providers most organisations already have a contract with.
+
+   `ollama` stays the default and is the only one that needs no key — an instance
+   that never opens this page has a working local path and no outbound traffic.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const AIProvider = z.enum(["ollama", "openai", "anthropic"]);
+export type AIProvider = z.infer<typeof AIProvider>;
+
+export const AI_PROVIDER_LABELS: Record<AIProvider, string> = {
+  ollama: "Ollama / vLLM (lokal)",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+};
+
+/** Default endpoint per provider. An empty `baseUrl` resolves to these. */
+export const AI_PROVIDER_ENDPOINTS: Record<AIProvider, string> = {
+  ollama: "http://host.docker.internal:11434",
+  openai: "https://api.openai.com",
+  anthropic: "https://api.anthropic.com",
+};
+
+/** Only the cloud providers authenticate; Ollama has no key to give. */
+export const providerNeedsKey = (provider: AIProvider): boolean =>
+  provider !== "ollama";
+
+/**
+ * The optional assistance features, each its own switch.
+ *
+ * **All four default to off.** That is the whole architecture: an instance is a
+ * complete ticket system with no model configured at all, and every feature that
+ * sends text somewhere is something an administrator turned on deliberately. A
+ * default-on assistance feature would be a silent outbound request on first start.
+ */
+export const AI_FEATURES = [
+  "clustering",
+  "summary",
+  "routing",
+  "deflection",
+] as const;
+export type AIFeature = (typeof AI_FEATURES)[number];
+
+export const AI_FEATURE_META: Record<
+  AIFeature,
+  { label: string; description: string; needsModel: boolean }
+> = {
+  clustering: {
+    label: "Hauptstörungs-Erkennung",
+    description:
+      "Meldet im Queue-Kopf, wenn mehrere Tickets in kurzer Zeit dasselbe Thema haben, und bietet an, daraus eine Hauptstörung zu machen.",
+    // The grouping itself is arithmetic; the model only writes the headline.
+    needsModel: false,
+  },
+  summary: {
+    label: "Verlaufszusammenfassung",
+    description:
+      "Schaltfläche im Ticket ab vier Nachrichten: Problem, bisherige Schritte, aktueller Stand.",
+    needsModel: true,
+  },
+  routing: {
+    label: "Auto-Tagging & Routing-Vorschlag",
+    description:
+      "Vergibt beim Anlegen ein bis drei Schlagworte und nennt die Kategorie, die besser gepasst hätte.",
+    needsModel: true,
+  },
+  deflection: {
+    label: "Selbsthilfe-Vorschläge",
+    description:
+      "Zeigt Anwendern während der Eingabe passende FAQ-Einträge. Durchsucht nur die eigene FAQ und braucht kein Modell.",
+    needsModel: false,
+  },
+};
+
+/** Fields that fall back to an environment variable when left empty. */
+export const AI_FALLBACK_FIELDS = [
+  "ollamaBaseUrl",
+  "textModel",
+  "visionModel",
+] as const;
+export type AIFallbackField = (typeof AI_FALLBACK_FIELDS)[number];
+
 export const AISettingsSchema = z.object({
+  /**
+   * The master switch. On by default because the triage that shipped before this
+   * page existed depends on it, and silently removing a working feature on update
+   * is not an opt-in — it is a regression. Everything *new* is off below.
+   */
+  enabled: z.boolean().default(true),
+  provider: AIProvider.default("ollama"),
   /** Where Ollama listens. Empty falls back to the environment default. */
-  ollamaBaseUrl: z.string().max(300),
-  textModel: z.string().max(120),
-  visionModel: z.string().max(120),
+  ollamaBaseUrl: z.string().max(300).default(""),
+  /** Endpoint override for the cloud providers. Empty uses the documented one. */
+  baseUrl: z.string().max(300).default(""),
+  /** Empty on save means "keep the stored one" — never "clear it". */
+  apiKey: z.string().max(512).default(""),
+  textModel: z.string().max(120).default(""),
+  visionModel: z.string().max(120).default(""),
+
+  clustering: z.boolean().default(false),
+  summary: z.boolean().default(false),
+  routing: z.boolean().default(false),
+  deflection: z.boolean().default(false),
+
+  /**
+   * How far back the clustering looks, and how many reports make an outage.
+   *
+   * Both admin-tunable because the right numbers depend on the size of the
+   * organisation: three tickets in an hour is an outage in a fifty-person company
+   * and a Tuesday in a five-thousand-person one.
+   */
+  clusterWindowMinutes: z.coerce.number().int().min(15).max(1440).default(60),
+  clusterMinTickets: z.coerce.number().int().min(2).max(20).default(3),
 });
 export type AISettings = z.infer<typeof AISettingsSchema>;
 
-export const DEFAULT_AI_SETTINGS: AISettings = {
-  ollamaBaseUrl: "http://host.docker.internal:11434",
+export const DEFAULT_AI_SETTINGS: AISettings = AISettingsSchema.parse({
+  ollamaBaseUrl: AI_PROVIDER_ENDPOINTS.ollama,
   textModel: "llama3.1",
   visionModel: "llava",
-};
+});
+
+/** Sentinel the admin form posts to mean "keep the stored key". */
+export const KEEP_AI_KEY = "__keep__";
+
+/**
+ * Whether a model call can be attempted at all.
+ *
+ * Fail closed: a cloud provider without a key produces an unauthenticated request
+ * and a 401 in a place the admin will not be looking. The features that need no
+ * model — clustering's arithmetic, the FAQ search — do not consult this.
+ */
+export function isAIModelReady(settings: AISettings): boolean {
+  if (!settings.enabled) return false;
+  if (settings.textModel.trim() === "") return false;
+  if (providerNeedsKey(settings.provider) && settings.apiKey.trim() === "") {
+    return false;
+  }
+  return true;
+}
+
+/** Whether one feature should do anything right now. */
+export function isAIFeatureOn(
+  settings: AISettings,
+  feature: AIFeature,
+): boolean {
+  if (!settings.enabled || !settings[feature]) return false;
+  return AI_FEATURE_META[feature].needsModel ? isAIModelReady(settings) : true;
+}
 
 /**
  * Whether this may be used as the Ollama endpoint.

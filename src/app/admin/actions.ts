@@ -2,7 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 
-import { AISettingsError, setAISettings } from "@/lib/ai-settings";
+import {
+  AISettingsError,
+  getAISettings,
+  getStoredAISettings,
+  setAISettings,
+} from "@/lib/ai-settings";
+import { AIProviderError, verifyAIProvider } from "@/lib/services/ai/provider";
 import { isRole } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
 import { isFeatureEnabled, setFeatureFlags } from "@/lib/features";
@@ -64,6 +70,9 @@ import {
   setUserRole,
 } from "@/lib/users";
 import {
+  AIProvider,
+  AI_FEATURES,
+  AI_FEATURE_META,
   CannedResponseSchema,
   MacroSchema,
   S3SettingsSchema,
@@ -684,32 +693,97 @@ export async function sendTestMailAction(
 
 /* ── AI settings ────────────────────────────────────────────────────────── */
 
+/**
+ * Round-trip test against the *stored* configuration.
+ *
+ * Deliberately not the values in the form: what matters is whether the setup this
+ * instance will actually use works. Testing unsaved input would hand an admin a
+ * green result for a configuration that is not in effect.
+ *
+ * It asks for a structured answer rather than listing models, because a reachable
+ * endpoint whose configured model does not exist passes a list call and fails
+ * every real request.
+ */
+export async function testAIProviderAction(
+  _previous: ActionResult | null,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const settings = getAISettings();
+  if (!settings.enabled) {
+    return { ok: false, error: "Der Hauptschalter ist aus." };
+  }
+
+  try {
+    return { ok: true, message: await verifyAIProvider(settings) };
+  } catch (error) {
+    if (error instanceof AIProviderError) return { ok: false, error: error.message };
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Test fehlgeschlagen.",
+    };
+  }
+}
+
 export async function saveAISettingsAction(
   _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
   await requireRole("admin");
 
+  const stored = getStoredAISettings();
+  const provider = AIProvider.safeParse(formData.get("provider"));
+
   try {
     const saved = setAISettings({
+      enabled: formData.get("enabled") === "on",
+      provider: provider.success ? provider.data : stored.provider,
       ollamaBaseUrl: String(formData.get("ollamaBaseUrl") ?? ""),
+      baseUrl: String(formData.get("baseUrl") ?? ""),
+      // Same rule as the SMTP password and the S3 secret: a password input is
+      // never populated on render, so a blank field means "not touched".
+      apiKey: resolveSmtpPassword(
+        String(formData.get("apiKey") ?? ""),
+        stored.apiKey,
+      ),
       textModel: String(formData.get("textModel") ?? ""),
       visionModel: String(formData.get("visionModel") ?? ""),
+      clustering: formData.get("clustering") === "on",
+      summary: formData.get("summary") === "on",
+      routing: formData.get("routing") === "on",
+      deflection: formData.get("deflection") === "on",
+      clusterWindowMinutes: Number(formData.get("clusterWindowMinutes") ?? 60),
+      clusterMinTickets: Number(formData.get("clusterMinTickets") ?? 3),
     });
 
     revalidatePath("/admin/settings/ai");
+    // Every agent page reads the toggles: the queue for the banner, the ticket
+    // page for the summary button.
+    revalidatePath("/mits", "layout");
+    revalidatePath("/customer/new");
 
-    const blank = [
-      !saved.ollamaBaseUrl && "URL",
-      !saved.textModel && "Textmodell",
-      !saved.visionModel && "Vision-Modell",
-    ].filter(Boolean);
+    if (!saved.enabled) {
+      return {
+        ok: true,
+        message:
+          "Gespeichert. Der Hauptschalter ist aus — MITS stellt keine Anfragen an ein Modell.",
+      };
+    }
+
+    const on = AI_FEATURES.filter((feature) => saved[feature]);
+    if (on.length === 0) {
+      return {
+        ok: true,
+        message:
+          "Gespeichert. Es ist noch keine Assistenzfunktion eingeschaltet — unten auswählen.",
+      };
+    }
 
     return {
       ok: true,
-      message: blank.length
-        ? `Gespeichert. Leer gelassen und daher aus der Umgebung: ${blank.join(", ")}.`
-        : "Gespeichert. Die nächste KI-Anfrage nutzt diese Werte.",
+      message: `Gespeichert. Aktiv: ${on
+        .map((feature) => AI_FEATURE_META[feature].label)
+        .join(", ")}.`,
     };
   } catch (error) {
     if (error instanceof AISettingsError) return { ok: false, error: error.message };

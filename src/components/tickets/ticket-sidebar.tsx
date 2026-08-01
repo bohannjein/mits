@@ -29,6 +29,8 @@ import {
 import { AuditTrail } from "@/components/tickets/audit-trail";
 import { TicketAssets, type AssetRow } from "@/components/tickets/ticket-assets";
 import { TicketLinks, type LinkRow } from "@/components/tickets/ticket-links";
+import { MajorIncidentPanel } from "@/components/tickets/major-incident-panel";
+import { TicketSummaryCard } from "@/components/tickets/ticket-summary";
 import {
   TicketWorklog,
   type WorklogRow,
@@ -89,6 +91,10 @@ export function TicketSidebar({
   assets = null,
   /** Null when time tracking is off — the section then does not exist. */
   worklog = null,
+  /** Null when the summary feature is off or the thread is too short to need one. */
+  summarisable = false,
+  /** Null unless this ticket is a major incident with children parked behind it. */
+  majorIncident = null,
 }: {
   ticket: MITSTicket;
   agents: { id: string; name: string }[];
@@ -106,6 +112,11 @@ export function TicketSidebar({
     candidates: AssetRow[];
   } | null;
   worklog?: { entries: WorklogRow[]; today: string } | null;
+  summarisable?: boolean;
+  majorIncident?: {
+    children: { id: string; number: string; title: string }[];
+    resolved: boolean;
+  } | null;
 }) {
   /*
    * Assembled here so the card can decide whether there is an address at all. A
@@ -371,6 +382,41 @@ export function TicketSidebar({
           ))}
         </dl>
       ),
+    });
+  }
+
+  /*
+   * Directly after the workflow panel, before the reporter's details: on a ticket
+   * that is a major incident, "which tickets are waiting on me" is the second
+   * thing an agent needs after status and assignment.
+   */
+  if (majorIncident !== null && majorIncident.children.length > 0) {
+    sections.push({
+      id: "major",
+      title: "Hauptstörung",
+      badge: (
+        <Badge
+          variant="secondary"
+          className="h-auto rounded-full px-1.5 py-0 text-[10px] font-normal tabular-nums"
+        >
+          {majorIncident.children.length}
+        </Badge>
+      ),
+      content: (
+        <MajorIncidentPanel
+          ticketId={ticket.id}
+          children={majorIncident.children}
+          resolved={majorIncident.resolved}
+        />
+      ),
+    });
+  }
+
+  if (summarisable) {
+    sections.push({
+      id: "summary",
+      title: "Zusammenfassung",
+      content: <TicketSummaryCard ticketId={ticket.id} />,
     });
   }
 

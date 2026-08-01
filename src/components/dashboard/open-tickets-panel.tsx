@@ -38,6 +38,9 @@ const STATUS_STYLES: Record<TicketStatus, string> = {
   open: "bg-chart-2/15 text-chart-2",
   in_progress: "bg-warning/15 text-warning",
   waiting_user: "bg-chart-5/15 text-chart-5",
+  // Same tint as "in Bearbeitung": from the reporter's side, a ticket parked
+  // behind an outage *is* being worked on — by whoever is fixing the outage.
+  waiting_major: "bg-warning/15 text-warning",
   resolved: "bg-success/15 text-success",
   closed: "bg-muted text-muted-foreground",
 };

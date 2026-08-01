@@ -1,5 +1,7 @@
 import { requireApiUser } from "@/lib/auth/session";
+import { listCatalogSchemas } from "@/lib/form-schemas";
 import { ticketCreatedMail } from "@/lib/mail-templates";
+import { tagTicketInBackground } from "@/lib/services/ai/routing";
 import { sendNotification, ticketUrl } from "@/lib/smtp";
 import { getSystemTimezone } from "@/lib/system-settings";
 import { parseTicketQuery } from "@/lib/ticket-query";
@@ -107,6 +109,20 @@ export async function POST(request: Request) {
       to: ticket.created_by_email,
       ...ticketCreatedMail(ticket, ticketUrl(ticket.id), getSystemTimezone()),
     });
+
+    /*
+     * Labelling, explicitly *not* awaited — the opposite of the mail above.
+     *
+     * The mail is awaited because losing it loses information the reporter needs.
+     * Tags are a convenience for the queue, so they must not add a model's latency
+     * to a reporter pressing "Absenden", and a model that is down must not turn a
+     * filed ticket into an error. `tagTicketInBackground` swallows everything; the
+     * worst case is a ticket with no labels, which is what every ticket looked
+     * like before this existed.
+     *
+     * It does nothing at all unless an admin switched the feature on.
+     */
+    tagTicketInBackground(ticket, listCatalogSchemas());
 
     return Response.json({ ticket }, { status: 201 });
   } catch (error) {

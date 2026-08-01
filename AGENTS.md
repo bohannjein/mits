@@ -175,6 +175,13 @@ src/
     utils.ts                cn()
     ticket-sort.ts          Sortier-Whitelist + ORDER BY + Header-Links (kein server-only!)
     ticket-opening.ts       Erstnachricht aus dem Payload ableiten (rein, offline geprüft)
+    services/ai/provider.ts    Ollama | OpenAI | Anthropic über fetch, JSON erzwungen
+    services/ai/similarity.ts  Ticket-Gruppierung, rein und ohne Modell
+    services/ai/clustering.ts  Kandidaten, Ausblendungen, Hauptstörung anlegen
+    services/ai/summary.ts     Problem / Schritte / Stand, nie gespeichert
+    services/ai/routing.ts     Tags + Routing-Hinweis, blockiert nichts
+    services/ai/tags.ts        Tag-Normalisierung (kein server-only!)
+    services/ai/deflection.ts  FAQ-Treffer, lexikalisch, rein
     worklogs.ts             erfasste Zeit, Summe immer als SUM() gelesen
     macros.ts               Makro-Store + Runner über die normalen Mutatoren
     notifications.ts        Feed für die Einblendungen, Sichtbarkeit je Abfrage neu
@@ -679,6 +686,83 @@ in der SQL-Klausel gesetzt, bevor irgendein Filter greift. Ein Query-Parameter d
 Weiter offen und **nicht** Teil der fünf Parts: echtes OCR für gescannte Dokumente per
 Tesseract — bräuchte `pytesseract` plus `tesseract-ocr-deu` im Backend-Image und sprengt
 damit das Vier-Pakete-Limit.
+
+## KI-Assistenz: opt-in, sonst gar nicht
+
+Vier Zusatzfunktionen, alle einzeln schaltbar unter `/admin/settings/ai`. Die Regel
+darüber ist die eigentliche Architektur: **MITS ist ohne Modell ein vollständiges
+Ticketsystem**, und keine dieser Funktionen stellt eine Anfrage, die nicht jemand
+eingeschaltet hat.
+
+| Schalter | Default | Braucht ein Modell? |
+|---|---|---|
+| `enabled` (Hauptschalter) | **an** | — |
+| `clustering` | aus | nein, nur für die Überschrift |
+| `summary` | aus | ja |
+| `routing` | aus | ja |
+| `deflection` | aus | nein |
+
+**Der Hauptschalter ist an, die vier Funktionen sind aus.** Kein Widerspruch: der
+Hauptschalter deckt auch die KI-Triage ab, die es vor dieser Seite schon gab, und
+eine funktionierende Funktion beim Update still zu entfernen ist kein Opt-in
+sondern eine Regression. Alles *Neue* ist aus.
+
+**Zwei Funktionen laufen ohne Modell.** Das Gruppieren ähnlicher Tickets ist
+Mengenarithmetik (`services/ai/similarity.ts`), die FAQ-Suche ist lexikalisch
+(`services/ai/deflection.ts`). Beide sind rein und in `npm test` abgedeckt — das
+ist der Grund, warum sie so gebaut sind: sie laufen bei jedem Queue-Render
+beziehungsweise bei jeder Tippause, und ihre Fehler sind in beide Richtungen
+still. Ein Modell schreibt beim Clustering nur die Überschrift und fällt bei
+jedem Fehler auf die geteilten Wörter zurück; eine abgelaufene API-Schlüssel darf
+keine Großstörung verschwinden lassen.
+
+**Was Jaccard allein nicht kann.** Drei echte Meldungen derselben Störung
+(„Outlook startet nicht mehr“ / „Outlook geht nicht“ / „Outlook lässt sich nicht
+starten“) kommen auf 0,67 / 0,25 / 0,20 — bei Titeln aus zwei bis drei Tokens
+kostet jedes ungeteilte Wort ein Drittel. Deshalb gilt zusätzlich: **ein geteiltes
+Wort ab fünf Zeichen genügt.** Die Absicherung dagegen ist nicht die Schwelle,
+sondern `clusterMinTickets`. **Paraphrasen ohne gemeinsames Wort werden nicht
+erkannt** — „Outlook offline“ und „E-Mail geht nicht“ gruppieren nie. Das bräuchte
+Embeddings, einen Vektorspeicher und einen Reindex-Job, und der driftet als
+erstes von den Artikeln weg.
+
+**Nichts passiert automatisch.** Das Banner ist ein Vorschlag mit zwei Knöpfen.
+Eine Hauptstörung anzulegen setzt fremde Tickets auf „Wartet auf Hauptstörung“,
+und das auf Wortüberschneidung hin falsch zu tun zahlen die Melder.
+
+**`Ignorieren` merkt sich Tickets, nicht Gruppen.** Eine Gruppe hat keine
+Identität — sie wächst. Auf die Gruppe geschlüsselt wäre die Ausblendung entweder
+sofort hinfällig oder dauerhaft. Auf die Mitglieder geschlüsselt bleibt sie ruhig,
+bis ein *neues* Ticket dazukommt, und genau dann ist sie wieder erwähnenswert.
+
+**Der Provider ist eine Datei, kein SDK.** `services/ai/provider.ts` spricht
+Ollama, OpenAI und Anthropic über `fetch`. Die drei offiziellen Clients wären
+zweistellige Megabyte für einen POST pro Anbieter; der einzige echte Unterschied
+ist die Structured-Output-Direktive — Ollamas `format`, OpenAIs `json_schema`,
+Anthropics erzwungener Tool-Call. **Strukturierte Ausgabe ist Pflicht, nicht
+Bitte:** ein Modell, das JSON frei schreibt, liefert oft genug Unparsebares,
+dass der Fehler zum Normalzustand der Funktion wird. Deshalb sind in allen
+Schemata alle Felder `required` und `additionalProperties: false` — OpenAIs
+`strict` verlangt es, und ein Modell lässt sonst das Feld weg, das ihm am
+schwersten fiel.
+
+**Die Zusammenfassung wird nie gespeichert.** Sie ist im Moment der nächsten
+Antwort veraltet, und eine veraltete Zusammenfassung ist schlimmer als keine: sie
+ist selbstsicher falsch über den aktuellen Stand, und genau den liest jemand
+darin nach.
+
+**Verschlagwortung blockiert das Anlegen nicht.** `tagTicketInBackground` wird
+bewusst nicht awaited und schluckt alles — anders als die Eingangsmail eine
+Zeile darüber, deren Verlust Information kostet. Ein Melder wartet nicht auf ein
+Modell, und ein Modell, das steht, macht aus einem Ticket keinen Fehler.
+
+**Der Routing-Vorschlag ist ein Tag, keine Umsortierung.** `passt-eher:<id>`,
+gegen den echten Katalog geprüft. Ein Modell, das Tickets still zwischen Queues
+schiebt, schiebt manche falsch, und niemand weiß welche.
+
+**`lib/services/ai/tags.ts` trägt kein `server-only`** — drei Aufrufer: der
+Ticket-Kopf, `routing.ts` und die Offline-Suite. Gleiche Begründung wie bei
+`lib/csv.ts`.
 
 ## KI-Pipeline (Phase 3)
 

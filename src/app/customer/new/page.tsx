@@ -12,9 +12,10 @@ import { requireUser } from "@/lib/auth/session";
 import { getFormSchema, listCatalogSchemas } from "@/lib/form-schemas";
 import { listActiveLocations } from "@/lib/locations";
 import { QUICK_TICKET_SCHEMA } from "@/lib/mock-schemas";
-import { getActiveAnnouncements } from "@/lib/portal";
+import { getActiveAnnouncements, getPortalFaqs } from "@/lib/portal";
+import { getAISettings } from "@/lib/ai-settings";
 import { listUsers } from "@/lib/users";
-import { TicketSource } from "@/types/mits";
+import { TicketSource, isAIFeatureOn } from "@/types/mits";
 
 export const metadata: Metadata = {
   title: "Neues Ticket — MITS",
@@ -113,6 +114,18 @@ export default async function NewTicketPage({
             // rather than greeting somebody as "anna.meier@firma.de".
             greetingName={
               user.name.includes("@") ? "" : user.name.trim().split(/\s+/)[0]
+            }
+            /*
+             * Sent whole to the browser, and that is the point: the matching runs
+             * locally on every pause in typing, so there is no request per
+             * keystroke and no server round trip in the way. The FAQ is published
+             * to every signed-in user anyway — this hands over nothing the portal
+             * does not already show.
+             *
+             * Empty when the feature is off, which switches the whole area off.
+             */
+            faqs={
+              isAIFeatureOn(getAISettings(), "deflection") ? getPortalFaqs() : []
             }
           />
         </div>

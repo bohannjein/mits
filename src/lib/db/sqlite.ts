@@ -545,6 +545,31 @@ function addColumns(database: Database.Database): void {
       column: "checksum",
       definition: "TEXT NOT NULL DEFAULT ''",
     },
+    /*
+     * Topic labels, as a JSON array.
+     *
+     * A column rather than a `mits_ticket_tag` table: one to three short strings
+     * that are displayed and never joined on. A table would buy filtering, which
+     * nothing asks for, at the cost of a migration and a second write per ticket.
+     */
+    {
+      table: "mits_ticket",
+      column: "tags",
+      definition: "TEXT NOT NULL DEFAULT '[]'",
+    },
+    /*
+     * This ticket is an outage rather than a report of one.
+     *
+     * A flag rather than "has children": a major incident is *declared*, and it
+     * stays one while it is worked even if its last child is unlinked. Deriving it
+     * would also make the clustering query — which must exclude major incidents
+     * from its candidates — depend on a join it otherwise does not need.
+     */
+    {
+      table: "mits_ticket",
+      column: "major_incident",
+      definition: "INTEGER NOT NULL DEFAULT 0",
+    },
   ];
 
   for (const { table, column, definition } of additions) {

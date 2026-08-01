@@ -1,25 +1,32 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
+  ArrowRightIcon,
   CheckCircle2Icon,
+  LightbulbIcon,
   Loader2Icon,
   PaperclipIcon,
   SendIcon,
   XIcon,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  suggestFaqs,
+  type DeflectionHit,
+} from "@/lib/services/ai/deflection";
 import { formatFileSize } from "@/types/mits";
 import { cn } from "@/lib/utils";
 import {
   INTAKE_CATEGORIES,
   type IntakeCategory,
   type MITSTicketDraft,
+  type PortalFaq,
 } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -52,10 +59,17 @@ export function ChatIntake({
   onSubmit,
   /** Greeting name. Empty renders the neutral form of the heading. */
   greetingName = "",
+  /**
+   * FAQ entries to match against while typing. Empty switches the whole
+   * suggestion area off — which is what an instance with the feature disabled or
+   * with no articles passes.
+   */
+  faqs = [],
 }: {
   schemaId: string;
   onSubmit: (draft: MITSTicketDraft) => Promise<void>;
   greetingName?: string;
+  faqs?: PortalFaq[];
 }) {
   const reduceMotion = useReducedMotion();
 
@@ -94,6 +108,29 @@ export function ChatIntake({
   const titleOk = title.trim().length >= MIN_TITLE;
   const descriptionOk = description.trim().length >= MIN_DESCRIPTION;
   const canSend = titleOk && descriptionOk && !sending;
+
+  /*
+   * FAQ suggestions, recomputed after a pause in typing.
+   *
+   * The matching is a set intersection over a few dozen entries, so debouncing is
+   * not about cost — it is about not shuffling links underneath somebody
+   * mid-sentence. 500 ms is long enough that the area only changes when they stop
+   * to think.
+   *
+   * Held in state rather than derived during render for exactly that reason:
+   * deriving would update on every keystroke and undo the debounce.
+   */
+  const [hits, setHits] = useState<DeflectionHit[]>([]);
+  const [dismissedHints, setDismissedHints] = useState(false);
+
+  useEffect(() => {
+    if (faqs.length === 0 || dismissedHints) return;
+
+    const timer = window.setTimeout(() => {
+      setHits(suggestFaqs(`${title} ${description}`, faqs));
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [title, description, faqs, dismissedHints]);
 
   const handleSend = async () => {
     if (!canSend) return;
@@ -319,6 +356,71 @@ export function ChatIntake({
       </div>
 
       {notice && <p className="text-xs text-destructive">{notice}</p>}
+
+      {/*
+        Under the composer, never over it. No dialog, no modal, no "sind Sie
+        sicher" — a link and a way to make it go away. The brief was
+        "vollkommen unaufdringlich", and the test of that is whether somebody who
+        ignores it can finish what they were doing without touching it.
+      */}
+      <AnimatePresence initial={false}>
+        {hits.length > 0 && !sending && (
+          <motion.aside
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
+            transition={ENTRANCE}
+            aria-label="Vorschläge zur Selbsthilfe"
+            className="grid gap-2 rounded-2xl border border-border bg-surface-elevated px-4 py-3"
+          >
+            <div className="flex items-start gap-2">
+              <LightbulbIcon
+                className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                strokeWidth={1.5}
+                aria-hidden
+              />
+              <span className="flex-1 text-xs text-muted-foreground">
+                Hilft das schon weiter?
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label="Vorschläge ausblenden"
+                onClick={() => {
+                  // Stays gone for this visit. Somebody who closed it has
+                  // answered the question, and re-offering on the next keystroke
+                  // is the nagging the feature is supposed to avoid.
+                  setDismissedHints(true);
+                  setHits([]);
+                }}
+                className="size-6 shrink-0 rounded-full p-0 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              >
+                <XIcon className="size-3" strokeWidth={1.5} />
+              </Button>
+            </div>
+
+            <ul className="grid gap-1">
+              {hits.map((hit) => (
+                <li key={hit.id}>
+                  {/* A new tab, deliberately: the half-written ticket stays where
+                      it is. Reading the article and losing the text would be the
+                      one way this feature could cost somebody something. */}
+                  <a
+                    href={`/customer/faq/${hit.id}`}
+                    target="_blank"
+                    rel="noopener"
+                    className="inline-flex items-center gap-1.5 rounded-lg text-sm text-primary underline-offset-4 hover:underline"
+                  >
+                    {hit.question}
+                    <ArrowRightIcon className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </motion.aside>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

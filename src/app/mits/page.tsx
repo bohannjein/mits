@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { FilterIcon, FilterXIcon, ServerIcon } from "lucide-react";
 
+import { IncidentBanner } from "@/components/dashboard/incident-banner";
 import { PresenceList } from "@/components/dashboard/presence-list";
 import { StatsTiles } from "@/components/dashboard/stats-tiles";
 import { AppHeader } from "@/components/layout/app-header";
@@ -28,6 +29,7 @@ import { requireRole } from "@/lib/auth/session";
 import { getFeatureFlags } from "@/lib/features";
 import { listLocations, ticketCountsByLocation } from "@/lib/locations";
 import { listPresence } from "@/lib/presence";
+import { detectClusters } from "@/lib/services/ai/clustering";
 import {
   jumpToTicketNumber,
   parseTicketQuery,
@@ -110,6 +112,14 @@ export default async function AgentQueuePage({
   const locations = listLocations();
   const { opened, closed } = todayCounts();
 
+  /*
+   * Awaited, unlike the counts above: the banner belongs at the top of the page
+   * and streaming it in afterwards would push the queue down under the agent's
+   * cursor. The grouping itself is synchronous arithmetic — the await is only
+   * there for the optional headline, which falls back rather than blocking.
+   */
+  const clusters = await detectClusters();
+
   return (
     <>
       <AppHeader />
@@ -148,6 +158,22 @@ export default async function AgentQueuePage({
 
           <div className="grid gap-8 lg:grid-cols-[1fr_20rem] lg:items-start">
             <div className="grid min-w-0 gap-4">
+              {/*
+                Above the tabs, because it is about the queue as a whole rather
+                than about the tab somebody happens to be in — and because an
+                outage is the one thing worth seeing before the ticket list.
+                Renders nothing at all when the feature is off or no group
+                reaches the configured threshold.
+              */}
+              {clusters.map((cluster) => (
+                <IncidentBanner
+                  key={cluster.key}
+                  title={cluster.title}
+                  keywords={cluster.keywords}
+                  members={cluster.members}
+                />
+              ))}
+
               <QueueTabs scope={scope} view={view} counts={counts} />
 
               {/* The filter block that used to sit here is gone. It occupied the

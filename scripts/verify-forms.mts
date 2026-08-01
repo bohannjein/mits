@@ -24,6 +24,14 @@ import {
 } from "../src/lib/mock-schemas";
 import { pieSlice, sharePercent } from "../src/lib/chart";
 import {
+  clusterTickets,
+  related,
+  similarity,
+  tokenize,
+} from "../src/lib/services/ai/similarity";
+import { suggestFaqs } from "../src/lib/services/ai/deflection";
+import { isRoutingHint, normaliseTags } from "../src/lib/services/ai/tags";
+import {
   fieldsBesidesOpening,
   isSyntheticOpening,
   openingFieldName,
@@ -150,8 +158,14 @@ import {
   MITSOrganizationSchema,
   expiryState,
   normaliseCIAttributes,
+  AISettingsSchema,
+  AI_FEATURES,
+  AI_FEATURE_META,
   DEFAULT_MAIL_SETTINGS,
   INTAKE_CATEGORIES,
+  isAIFeatureOn,
+  isAIModelReady,
+  providerNeedsKey,
   isMailInboundConfigured,
   organizationIdForEmail,
   parseDurationMinutes,
@@ -2723,6 +2737,232 @@ console.log("opening message");
       attachments: [],
     }).success,
   );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   The AI opt-in gates.
+
+   The rule the whole module is built around: nothing reaches a model unless an
+   administrator turned it on. A default that drifted to `true`, or a gate that
+   forgot to consult the master switch, would be an outbound request from an
+   instance nobody configured — and nothing on screen would say so.
+   ────────────────────────────────────────────────────────────────────────── */
+console.log("ai gates");
+{
+  const base = AISettingsSchema.parse({});
+
+  check("all four features start off", AI_FEATURES.every((f) => base[f] === false));
+  check("the default provider is local", base.provider === "ollama");
+  check("Ollama needs no key", !providerNeedsKey("ollama"));
+  check("OpenAI does", providerNeedsKey("openai"));
+  check("Anthropic does", providerNeedsKey("anthropic"));
+  check(
+    "every feature has admin copy",
+    AI_FEATURES.every((f) => Boolean(AI_FEATURE_META[f].label)),
+  );
+
+  const ready = { ...base, enabled: true, textModel: "llama3.1" };
+  check("a local model is ready", isAIModelReady(ready));
+  check("…but not with the master switch off", !isAIModelReady({ ...ready, enabled: false }));
+  check("…and not without a model name", !isAIModelReady({ ...ready, textModel: "" }));
+  // Fail closed. A cloud provider with no key produces an unauthenticated request
+  // and a 401 somewhere the admin is not looking.
+  check(
+    "a cloud provider without a key is not ready",
+    !isAIModelReady({ ...ready, provider: "openai", textModel: "gpt-4o-mini" }),
+  );
+  check(
+    "…and is once the key is there",
+    isAIModelReady({
+      ...ready,
+      provider: "openai",
+      textModel: "gpt-4o-mini",
+      apiKey: "sk-test",
+    }),
+  );
+
+  check("a switched-off feature stays off", !isAIFeatureOn(ready, "summary"));
+  check(
+    "…and on once switched on",
+    isAIFeatureOn({ ...ready, summary: true }, "summary"),
+  );
+  check(
+    "the master switch overrides a switched-on feature",
+    !isAIFeatureOn({ ...ready, enabled: false, summary: true }, "summary"),
+  );
+  /*
+   * The two model-free features are the point of the `needsModel` flag: an
+   * instance with no GPU and no API key can still spot an outage and still offer
+   * FAQ links.
+   */
+  check(
+    "clustering works without a model",
+    isAIFeatureOn({ ...base, enabled: true, clustering: true }, "clustering"),
+  );
+  check(
+    "deflection works without a model",
+    isAIFeatureOn({ ...base, enabled: true, deflection: true }, "deflection"),
+  );
+  check(
+    "the summary does not",
+    !isAIFeatureOn({ ...base, enabled: true, summary: true }, "summary"),
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Outage detection.
+
+   Arithmetic, so it is checkable — which is why it is arithmetic. Both failure
+   directions are expensive: inventing an outage re-statuses other people's
+   tickets as waiting on something unrelated, missing one leaves twelve customers
+   each getting their own answer to the same question.
+   ────────────────────────────────────────────────────────────────────────── */
+console.log("incident clustering");
+{
+  check("stopwords are dropped", !tokenize("Ich habe ein Problem").includes("problem"));
+  check("short tokens are dropped", !tokenize("PC ist aus").includes("ist"));
+  check("umlauts survive", tokenize("Drucker gestört").includes("gestört"));
+  check(
+    "punctuation splits",
+    tokenize("Fehler: 0x83 bei outlook.exe").includes("outlook"),
+  );
+
+  const set = (text: string) => new Set(tokenize(text));
+  check("identical text scores 1", similarity(set("Drucker offline"), set("Drucker offline")) === 1);
+  // Two empty sets score 0, not 1: no shared words is no evidence, and the
+  // identity reading would cluster every content-free ticket together.
+  check("two empty sets score 0", similarity(new Set(), new Set()) === 0);
+  check(
+    "unrelated text scores low",
+    similarity(set("Drucker Etage drei offline"), set("Urlaubsantrag Genehmigung")) < 0.1,
+  );
+
+  /*
+   * The rule Jaccard alone could not express. Those three real-looking titles
+   * score 0.67, 0.25 and 0.20 against each other, because every writer picks a
+   * different verb and each unshared word costs a third of a three-token set.
+   * One substantive shared word is what they actually have in common.
+   */
+  check(
+    "one substantive shared word binds",
+    related(set("Outlook startet nicht mehr"), set("Outlook lässt sich nicht mehr starten")),
+  );
+  check(
+    "a short shared token does not, on its own",
+    !related(set("VPN Verbindung bricht ab"), set("VPN Zertifikat erneuern lassen bitte")),
+    JSON.stringify([...set("VPN Verbindung bricht ab")]),
+  );
+  // Stated as a check so nobody later reads the feature as semantic: the spec's
+  // own example pairs "Outlook offline" with "E-Mail geht nicht", which share no
+  // vocabulary at all. Catching that needs embeddings — refused, and documented.
+  check(
+    "paraphrases without shared words are not detected",
+    !related(set("Outlook offline"), set("E-Mail geht nicht")),
+  );
+
+  const outage = [
+    { id: "a", text: "Outlook startet nicht mehr" },
+    { id: "b", text: "Outlook geht nicht, startet einfach nicht" },
+    { id: "c", text: "Outlook lässt sich nicht mehr starten" },
+    { id: "d", text: "Neuer Monitor für das Büro bestellen" },
+  ];
+
+  const groups = clusterTickets(outage, { minSize: 3 });
+  check("the three Outlook tickets group", groups.length === 1, JSON.stringify(groups));
+  check("…all three of them", groups[0]?.ids.length === 3);
+  check("…and the order request stays out", !groups[0]?.ids.includes("d"));
+  check(
+    "the shared word becomes the headline",
+    groups[0]?.keywords.includes("outlook"),
+    JSON.stringify(groups[0]?.keywords),
+  );
+
+  // The threshold is what stops two unrelated tickets from becoming an outage.
+  check(
+    "two tickets are not an outage when three are required",
+    clusterTickets(outage.slice(0, 2), { minSize: 3 }).length === 0,
+  );
+  check(
+    "…and are when two are",
+    clusterTickets(outage.slice(0, 2), { minSize: 2 }).length === 1,
+  );
+  check(
+    "a queue of unrelated tickets clusters nothing",
+    clusterTickets(
+      [
+        { id: "a", text: "Drucker Etage drei offline" },
+        { id: "b", text: "Urlaubsantrag genehmigen lassen" },
+        { id: "c", text: "Neues Headset bestellen bitte" },
+      ],
+      { minSize: 2 },
+    ).length === 0,
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Self-service suggestions and tag cleanup.
+   ────────────────────────────────────────────────────────────────────────── */
+console.log("deflection and tags");
+{
+  const faqs = [
+    {
+      id: "pw",
+      question: "Wie setze ich mein M365-Passwort zurück?",
+      answer:
+        "Über das Selbstbedienungsportal lässt sich das Passwort jederzeit selbst zurücksetzen.",
+      category: "",
+      order_index: 0,
+      attachments: [],
+    },
+    {
+      id: "drucker",
+      question: "Ein Netzlaufwerk ist nicht verbunden.",
+      answer: "Bitte ab- und neu anmelden, Laufwerke werden bei der Anmeldung verbunden.",
+      category: "",
+      order_index: 1,
+      attachments: [],
+    },
+  ];
+
+  const hit = suggestFaqs("Ich möchte mein M365-Passwort zurücksetzen", faqs);
+  check("a matching article is offered", hit[0]?.id === "pw", JSON.stringify(hit));
+
+  /*
+   * The threshold is the whole feature. A wrong suggestion under somebody's
+   * half-typed problem says the system misunderstood them, and two of those and
+   * they stop reading the area. A miss costs nothing.
+   */
+  check(
+    "an unrelated problem gets nothing",
+    suggestFaqs("Mein Monitor flackert seit heute Morgen stark", faqs).length === 0,
+  );
+  check(
+    "a fragment gets nothing",
+    suggestFaqs("Passwort", faqs).length === 0,
+  );
+  check("an empty query gets nothing", suggestFaqs("", faqs).length === 0);
+  check(
+    "at most two are offered",
+    suggestFaqs("Passwort zurücksetzen M365 Netzlaufwerk Anmeldung verbunden", faqs)
+      .length <= 2,
+  );
+
+  /*
+   * Tag normalisation matters because a model produces `VPN`, `vpn` and
+   * `VPN-Zugang` across three tickets about one thing — and three spellings of a
+   * label group nothing at all.
+   */
+  check(
+    "case is folded",
+    normaliseTags(["VPN", "vpn"]).length === 1,
+    JSON.stringify(normaliseTags(["VPN", "vpn"])),
+  );
+  check("a leading hash is dropped", normaliseTags(["#Drucker"])[0] === "drucker");
+  check("spaces become hyphens", normaliseTags(["Kein Zugang"])[0] === "kein-zugang");
+  check("no more than three survive", normaliseTags(["a1", "b2", "c3", "d4"]).length === 3);
+  check("one-character tags are dropped", normaliseTags(["a"]).length === 0);
+  check("a routing hint is recognised", isRoutingHint("passt-eher:hardware-order"));
+  check("an ordinary tag is not", !isRoutingHint("drucker"));
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

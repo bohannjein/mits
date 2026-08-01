@@ -30,6 +30,7 @@ import {
   type MITSLocation,
   type MITSTicket,
   type MITSTicketDraft,
+  type PortalFaq,
   type TicketSource,
 } from "@/types/mits";
 import {
@@ -103,6 +104,8 @@ export function TriModalContainer({
   fieldOptions = { locations: [], users: [] },
   /** First name for the composer's greeting. Empty renders the neutral wording. */
   greetingName = "",
+  /** FAQ entries for the self-service hints. Empty switches the area off. */
+  faqs = [],
 }: {
   quickTicketSchema: MITSFormSchema;
   catalogSchemas: MITSFormSchema[];
@@ -110,6 +113,7 @@ export function TriModalContainer({
   locations?: MITSLocation[];
   fieldOptions?: FormFieldOptions;
   greetingName?: string;
+  faqs?: PortalFaq[];
 }) {
   const router = useRouter();
   // Both tabs' AI proposal and the wizard resolve ids against the same list.
@@ -292,6 +296,7 @@ export function TriModalContainer({
                 schemaId={quickTicketSchema.id}
                 onSubmit={handleSubmit}
                 greetingName={greetingName}
+                faqs={faqs}
               />
             </TabPanel>
           </TabsContent>

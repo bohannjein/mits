@@ -285,6 +285,35 @@ nach S3, und Textbausteine kennen keine Kategorien-Filterung im `/`-Menü.
 - **Bubble-Seiten hängen am Sprecher.** Die Spiegelung für die Kundensicht war
   gebaut und ist wieder raus — zwei Layouts für einen Verlauf.
 
+## Danach: KI-Assistenz
+
+Vier Funktionen, alle standardmäßig aus. Was beim Weiterbauen zuerst schiefgeht:
+
+- **Nie eine Modellanfrage ohne `isAIFeatureOn`.** Der Aufrufer prüft, nicht der
+  Provider. `completeJson` weigert sich nur, wenn es *nicht kann* (kein Schlüssel,
+  kein Modell) — „abgeschaltet“ ist eine Einstellung, „falsch konfiguriert“ ein
+  Fehler, den jemand sehen muss.
+- **Neues Feature = Eintrag in `AI_FEATURES` **und** `AI_FEATURE_META`.** Der
+  Offline-Check erzwingt beide; `needsModel` entscheidet, ob es ohne Provider
+  läuft.
+- **`clusterTickets` nutzt `related`, nicht `similarity`.** Die Jaccard-Zahl allein
+  ist bei Zwei-Wort-Titeln zu streng — drei echte Meldungen derselben Störung
+  liegen bei 0,25. Ein geteiltes Wort ab fünf Zeichen genügt zusätzlich, und die
+  Absicherung ist `clusterMinTickets`, nicht die Schwelle.
+- **Paraphrasen gruppieren nicht.** Steht als Check in `npm test`, damit niemand
+  die Funktion für semantisch hält.
+- **Alle JSON-Schemata: alle Felder `required`, `additionalProperties: false`.**
+  OpenAIs `strict` lehnt optionale Schlüssel ab, und ein Modell lässt sonst genau
+  das Feld weg, das ihm schwerfiel.
+- **Neuer Status heißt: `TICKET_STATUS_LABELS`, `STATUS_RANK`,
+  `OPEN_TICKET_STATUSES` und die Style-Map in `open-tickets-panel.tsx`.**
+  `waiting_major` hat alle vier gebraucht; die letzte war ein Typfehler, die
+  ersten drei wären still falsch gewesen.
+- **`promoteToMajorIncident` prüft die Tickets in der Transaktion neu.** Zwischen
+  Banner-Render und Klick kann eines geschlossen oder schon adoptiert sein.
+- **Die Sammelantwort verschickt keine Mail.** Zwanzig Nachrichten in derselben
+  Sekunde aus einer Störung sind ein Mailserver-Problem.
+
 ## Verifikation für jeden Part
 
 ```bash

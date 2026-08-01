@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { AlertTriangleIcon, TagIcon } from "lucide-react";
 
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
@@ -25,6 +26,13 @@ import { formatDateTime } from "@/lib/format";
 import { getSystemTimezone } from "@/lib/system-settings";
 import { listAuditFor } from "@/lib/audit";
 import { listCommentsFor } from "@/lib/ticket-comments";
+import { getAISettings } from "@/lib/ai-settings";
+import { parkedChildren } from "@/lib/services/ai/clustering";
+import {
+  ROUTING_TAG_PREFIX,
+  isRoutingHint,
+} from "@/lib/services/ai/tags";
+import { SUMMARY_MIN_MESSAGES } from "@/lib/services/ai/summary";
 import { listLinksFor } from "@/lib/ticket-links";
 import { getTicketFor, markTicketRead } from "@/lib/tickets";
 import { getUserProfile } from "@/lib/user-profile";
@@ -41,6 +49,7 @@ import {
   TICKET_STATUS_LABELS,
   fillCannedResponse,
   formatTicketNumber,
+  isAIFeatureOn,
   isElevatedPriority,
 } from "@/types/mits";
 
@@ -106,6 +115,12 @@ export default async function AgentTicketPage({
   const reporterName =
     findUser(ticket.created_by)?.name ?? ticket.created_by_email;
   const opening = openingMessageFor(ticket, schema, reporterName);
+
+  // Read once and passed down: `listCommentsFor` is the thread *and* the input to
+  // the "is this long enough to summarise" question, and calling it twice would
+  // run the visibility-filtered query twice per render.
+  const comments = listCommentsFor(id, user);
+  const aiSettings = getAISettings();
   const openingField = openingFieldName(ticket.payload, schema);
 
   const fields = fieldsBesidesOpening(
@@ -177,6 +192,12 @@ export default async function AgentTicketPage({
                   {formatDateTime(ticket.created_at, getSystemTimezone())}
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {ticket.major_incident && (
+                    <Badge className="h-auto rounded-full bg-bubble-internal-accent/15 px-2.5 py-0.5 text-xs font-normal text-bubble-internal-accent">
+                      <AlertTriangleIcon className="size-3" strokeWidth={1.5} />
+                      Hauptstörung
+                    </Badge>
+                  )}
                   <Badge
                     variant="secondary"
                     className="h-auto rounded-full px-2.5 py-0.5 text-xs font-normal"
@@ -193,6 +214,24 @@ export default async function AgentTicketPage({
                   >
                     {TICKET_PRIORITY_LABELS[ticket.priority]}
                   </Badge>
+                  {/*
+                    Machine-written labels, marked as such by the icon rather than
+                    by a word: an agent has to be able to tell at a glance which
+                    badges a person chose. A routing hint reads differently from a
+                    topic, so it gets its own wording.
+                  */}
+                  {ticket.tags.map((tag) => (
+                    <Badge
+                      key={tag}
+                      variant="outline"
+                      className="h-auto rounded-full px-2.5 py-0.5 text-xs font-normal text-muted-foreground"
+                    >
+                      <TagIcon className="size-3" strokeWidth={1.5} />
+                      {isRoutingHint(tag)
+                        ? `Passt eher: ${tag.slice(ROUTING_TAG_PREFIX.length)}`
+                        : tag}
+                    </Badge>
+                  ))}
                 </div>
               </>
             }
@@ -204,7 +243,7 @@ export default async function AgentTicketPage({
                 // a list by a date it shares with the ticket row invites a tie.
                 comments={[
                   ...(opening ? [opening] : []),
-                  ...listCommentsFor(id, user),
+                  ...comments,
                 ]}
                 isAgent
                 // Title and blurb only. The macro's actions stay on the server —
@@ -254,6 +293,24 @@ export default async function AgentTicketPage({
                 }
                 timezone={getSystemTimezone()}
                 assets={assets}
+                // Only past the point where reading the thread is slower than
+                // reading a summary of it — and only when an admin turned it on.
+                summarisable={
+                  isAIFeatureOn(aiSettings, "summary") &&
+                  comments.length >= SUMMARY_MIN_MESSAGES
+                }
+                majorIncident={
+                  ticket.major_incident
+                    ? {
+                        children: parkedChildren(id),
+                        // `resolved` and `closed` both count: the outage is over
+                        // either way, and the children are still parked.
+                        resolved:
+                          ticket.status === "resolved" ||
+                          ticket.status === "closed",
+                      }
+                    : null
+                }
                 worklog={
                   flags.feature_time_tracking
                     ? {

@@ -50,6 +50,8 @@ interface TicketRow {
   priority: string;
   assigned_to: string | null;
   created_at: string;
+  tags?: string | null;
+  major_incident?: number | null;
   /** From the LEFT JOIN on `user`. Null when unassigned or the account is gone. */
   assigned_to_name?: string | null;
   /*
@@ -81,6 +83,10 @@ function rowToTicket(row: TicketRow): MITSTicket {
     created_by_email: row.created_by_email,
     assigned_to: row.assigned_to,
     assigned_to_name: row.assigned_to_name ?? null,
+    // Defaulted rather than trusted: a row written before the column existed has
+    // no JSON in it, and a hand-edited one may have something that is not an array.
+    tags: safeTags(row.tags),
+    major_incident: row.major_incident === 1,
     // The empty string is the SQL "no activity for this reader" sentinel — see the
     // MAX(...) expression in `searchTickets`. Passing it to `z.coerce.date()` would
     // produce an Invalid Date, which renders as "NaN" rather than as nothing.
@@ -218,11 +224,12 @@ export function createTicket(
   const insert = db.prepare(
     `INSERT INTO mits_ticket
        (id, ticket_number, location_id, created_by, created_by_email, source,
-        form_schema_id, title, payload, status, priority, assigned_to, created_at)
+        form_schema_id, title, payload, status, priority, assigned_to, created_at,
+        tags, major_incident)
      VALUES
        (@id, @ticket_number, @location_id, @created_by, @created_by_email, @source,
         @form_schema_id, @title, @payload, @status, @priority, @assigned_to,
-        @created_at)`,
+        @created_at, '[]', 0)`,
   );
 
   // One transaction: a payload referencing a foreign or already-used attachment
@@ -299,7 +306,7 @@ const TICKET_COLUMNS = `
   mits_ticket.created_by, mits_ticket.created_by_email, mits_ticket.source,
   mits_ticket.form_schema_id, mits_ticket.title, mits_ticket.payload,
   mits_ticket.status, mits_ticket.priority, mits_ticket.assigned_to,
-  mits_ticket.created_at,
+  mits_ticket.created_at, mits_ticket.tags, mits_ticket.major_incident,
   COALESCE(NULLIF(owner.name, ''), owner.email) AS assigned_to_name
 `;
 
@@ -755,6 +762,25 @@ export function setTicketPriority(
   }
 
   return requireTicket(ticketId);
+}
+
+/**
+ * Parse the stored tag array, defensively.
+ *
+ * The column holds JSON written by the routing service. Anything that is not an
+ * array of strings comes back empty rather than throwing — a malformed value in
+ * one row must not take down the listing that contains it.
+ */
+function safeTags(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => typeof entry === "string")
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 /** Read back after a write, so the caller always gets the persisted row. */
