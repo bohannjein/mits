@@ -450,6 +450,35 @@
     background-size: 4rem 4rem;
     mask-image: radial-gradient(60rem 40rem at 50% 0%, black, transparent 75%);
   }
+  /*
+     A narrower scrollbar for panes that scroll inside the layout — the ticket
+     conversation, the metadata column. Two declarations rather than a plugin:
+     Tailwind v4 ships no `scrollbar-*` utilities, and `scrollbar-width` is the
+     standard property every current browser understands.
+
+     The colour is a token pair, so the track disappears into the surface it sits
+     on instead of being a grey bar in the dark theme. Firefox takes the shorthand;
+     WebKit needs the pseudo-elements, and gets them below.
+  */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 9999px;
+  }
+  .scrollbar-thin:hover::-webkit-scrollbar-thumb {
+    background-color: var(--muted-foreground);
+  }
+
   /* Section label. No longer stencilled mono caps — Google sets these as a
      small, tight sans label. */
   .label-industrial {

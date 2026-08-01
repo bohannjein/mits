@@ -4,7 +4,9 @@ import { MapPinIcon } from "lucide-react";
 
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
-import { TicketThread } from "@/components/tickets/ticket-thread";
+import { TicketComposer } from "@/components/tickets/ticket-composer";
+import { TicketFrame } from "@/components/tickets/ticket-frame";
+import { TicketMessages } from "@/components/tickets/ticket-messages";
 import {
   Accordion,
   AccordionContent,
@@ -33,16 +35,16 @@ export const metadata: Metadata = {
 /* ──────────────────────────────────────────────────────────────────────────
    The reporter's view of their own ticket: a messenger, and nothing else.
 
-   Deliberately not the two-column `TicketDetail` the agent page shares. What was
-   in that second column — priority, assignee, the structured answers pinned open
+   The same `TicketFrame` the agent page uses, without the sidebar. What was in
+   that second column — priority, assignee, the structured answers pinned open
    beside the conversation — is either none of the reporter's business or a second
    copy of what they already wrote. A person checking on their ticket wants to know
    whether anybody answered; everything competing with that is noise.
 
    So: one centred column, a slim head, the conversation. The answers survive as a
-   collapsed accordion below the head, because they are the reporter's own data and
-   occasionally worth re-reading — closed by default, and without the field that is
-   now the opening bubble.
+   collapsed accordion inside the head, because they are the reporter's own data
+   and occasionally worth re-reading — closed by default, and without the field
+   that is now the opening bubble.
 
    `listCommentsFor` never hands a reporter an internal note; the filter is in the
    SQL, not in this page.
@@ -90,80 +92,104 @@ export default async function CustomerTicketPage({
     <>
       <AppHeader />
       {/*
-        `overflow-hidden` on the frame: the conversation scrolls inside its column,
-        the page does not. Without it the browser shows one scrollbar for
-        everything and the composer walks off the bottom of a long thread.
+        The same frame the agent view uses, minus the sidebar: static head,
+        scrolling conversation, fixed reply box. Symmetric on purpose — a reporter
+        and an agent looking at the same ticket should be looking at the same
+        shape, so "scroll up to the third message" means the same thing in both.
       */}
-      <main className="flex min-h-0 flex-1 flex-col items-center overflow-hidden px-6 py-8">
-        <div className="flex min-h-0 w-full max-w-3xl flex-1 flex-col">
-          <header className="shrink-0">
-            <BackLink href="/customer/tickets" label="Zurück zu meinen Tickets" />
-            <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="font-mono text-sm text-muted-foreground">
-                {formatTicketNumber(ticket.ticket_number)}
-              </span>
-              <h1 className="text-2xl font-normal tracking-tight sm:text-3xl">
-                {ticket.title}
-              </h1>
-            </div>
-            {/*
-              Status and site only. No priority badge: a reporter cannot set it and
-              seeing "Niedrig" on the problem stopping their day reads as a verdict
-              rather than as scheduling.
-            */}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Badge variant="secondary" className="h-auto rounded-full px-3 py-1">
-                {TICKET_STATUS_LABELS[ticket.status]}
-              </Badge>
-              {location && (
-                <Badge
-                  variant="outline"
-                  className="h-auto rounded-full px-3 py-1 font-normal"
-                >
-                  <MapPinIcon className="size-3" strokeWidth={1.5} />
-                  {location.name}
-                </Badge>
-              )}
-            </div>
+      <main className="flex flex-1 flex-col items-center px-6 py-8 lg:min-h-0 lg:overflow-hidden">
+        <div className="flex w-full max-w-3xl flex-1 flex-col lg:min-h-0">
+          <TicketFrame
+            header={
+              <>
+                <BackLink
+                  href="/customer/tickets"
+                  label="Zurück zu meinen Tickets"
+                />
+                <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <span className="font-mono text-sm text-muted-foreground">
+                    {formatTicketNumber(ticket.ticket_number)}
+                  </span>
+                  <h1 className="text-xl font-normal tracking-tight sm:text-2xl">
+                    {ticket.title}
+                  </h1>
+                </div>
 
-            {fields.length > 0 && (
-              <Accordion type="single" collapsible className="mt-4">
-                <AccordionItem
-                  value="fields"
-                  className="rounded-2xl border border-border px-4"
-                >
-                  <AccordionTrigger className="py-3 text-sm hover:no-underline">
-                    Meine Angaben
-                  </AccordionTrigger>
-                  <AccordionContent className="pb-4">
-                    <dl className="grid gap-3">
-                      {fields.map((field) => (
-                        <div key={field.name} className="grid gap-0.5">
-                          <dt className="text-xs text-muted-foreground">
-                            {field.label}
-                          </dt>
-                          <dd className="text-sm break-words whitespace-pre-wrap">
-                            {field.text}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            )}
-          </header>
+                {/*
+                  Status and site only. No priority badge: a reporter cannot set it
+                  and seeing "Niedrig" on the problem stopping their day reads as a
+                  verdict rather than as scheduling.
+                */}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant="secondary"
+                    className="h-auto rounded-full px-3 py-1"
+                  >
+                    {TICKET_STATUS_LABELS[ticket.status]}
+                  </Badge>
+                  {location && (
+                    <Badge
+                      variant="outline"
+                      className="h-auto rounded-full px-3 py-1 font-normal"
+                    >
+                      <MapPinIcon className="size-3" strokeWidth={1.5} />
+                      {location.name}
+                    </Badge>
+                  )}
+                </div>
 
-          <div className="mt-6 flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
-            <TicketThread
-              ticketId={ticket.id}
-              comments={[
-                ...(opening ? [opening] : []),
-                ...listCommentsFor(id, user),
-              ]}
-              isAgent={false}
-            />
-          </div>
+                {/*
+                  Collapsed, and inside the static head rather than above the
+                  thread: the reporter's own answers are worth re-reading
+                  occasionally and are not what they came for.
+                */}
+                {fields.length > 0 && (
+                  <Accordion type="single" collapsible className="mt-3">
+                    <AccordionItem
+                      value="fields"
+                      className="rounded-2xl border border-border px-4"
+                    >
+                      <AccordionTrigger className="py-2.5 text-sm hover:no-underline">
+                        Meine Angaben
+                      </AccordionTrigger>
+                      <AccordionContent className="pb-4">
+                        <dl className="grid gap-3">
+                          {fields.map((field) => (
+                            <div key={field.name} className="grid gap-0.5">
+                              <dt className="text-xs text-muted-foreground">
+                                {field.label}
+                              </dt>
+                              <dd className="text-sm break-words whitespace-pre-wrap">
+                                {field.text}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+                )}
+              </>
+            }
+            messages={
+              <TicketMessages
+                comments={[
+                  ...(opening ? [opening] : []),
+                  ...listCommentsFor(id, user),
+                ]}
+                emptyText="Noch keine Antwort. Wir melden uns hier."
+              />
+            }
+            composer={
+              // `plain`, not the rich editor: a formatting toolbar is furniture on
+              // a page whose whole point is to be minimal.
+              <TicketComposer
+                ticketId={ticket.id}
+                isAgent={false}
+                variant="plain"
+              />
+            }
+          />
         </div>
       </main>
     </>

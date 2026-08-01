@@ -4,8 +4,9 @@ import { AlertTriangleIcon, TagIcon } from "lucide-react";
 
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
-import { SplitView } from "@/components/layout/split-view";
-import { TicketChat } from "@/components/tickets/ticket-chat";
+import { TicketComposer } from "@/components/tickets/ticket-composer";
+import { TicketFrame } from "@/components/tickets/ticket-frame";
+import { TicketMessages } from "@/components/tickets/ticket-messages";
 import { TicketSidebar } from "@/components/tickets/ticket-sidebar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -168,13 +169,13 @@ export default async function AgentTicketPage({
     <>
       <AppHeader />
       {/*
-        `overflow-hidden` on the page frame: the two columns scroll, the page does not.
-        Without it the outer main would grow and the browser would show one scrollbar for
-        everything, which is the arrangement this layout exists to avoid.
+        From `lg` up the page itself never scrolls — only the conversation and the
+        sidebar do. Below that the height is left alone; see the note in
+        `TicketFrame` for why a phone gets an ordinary scrolling page instead.
       */}
-      <main className="flex min-h-0 flex-1 flex-col items-center overflow-hidden px-6 py-6">
-        <div className="flex min-h-0 w-full max-w-7xl flex-1 flex-col">
-          <SplitView
+      <main className="flex flex-1 flex-col items-center px-6 py-6 lg:min-h-0 lg:overflow-hidden">
+        <div className="flex w-full max-w-7xl flex-1 flex-col lg:min-h-0">
+          <TicketFrame
             sidebarLabel="Details"
             header={
               <>
@@ -235,17 +236,20 @@ export default async function AgentTicketPage({
                 </div>
               </>
             }
-            main={
-              <TicketChat
-                ticketId={ticket.id}
+            messages={
+              <TicketMessages
                 // Prepended, not merged by timestamp: the opening message *is* the
                 // earliest thing by definition, and sorting a synthetic entry into
                 // a list by a date it shares with the ticket row invites a tie.
-                comments={[
-                  ...(opening ? [opening] : []),
-                  ...comments,
-                ]}
+                comments={[...(opening ? [opening] : []), ...comments]}
+                emptyText="Noch keine Beiträge. Die erste Antwort geht an den Melder."
+              />
+            }
+            composer={
+              <TicketComposer
+                ticketId={ticket.id}
                 isAgent
+                variant="rich"
                 // Title and blurb only. The macro's actions stay on the server —
                 // the browser posts an id and `runMacro` decides what that means.
                 macros={

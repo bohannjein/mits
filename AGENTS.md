@@ -141,6 +141,9 @@ src/
       form.tsx             RHF-Primitives (Ersatz für @shadcn/form)
       schema-form.tsx      <SchemaForm> — die einzige Formular-Komponente
     tickets/
+      ticket-frame.tsx          fixe Ticket-Seite: Kopf, scrollender Verlauf, Antwortzeile
+      ticket-messages.tsx       nur die Bubble-Liste, beide Ansichten
+      ticket-composer.tsx       nur die Antwortzeile, rich | plain
       tri-modal-container.tsx   Tabs: Schnellmeldung | Katalog | KI, POST /api/tickets
       chat-intake.tsx           Composer-Maske für die Schnellmeldung, Pills + Drop-Zone
       chat-bubble.tsx           eine Nachricht; tone = wer sprach, side = wo sie sitzt
@@ -667,6 +670,36 @@ curl -s -b <anwender-cookie> http://127.0.0.1:3112/customer | grep -E 'href="/(m
 Ausnahme sind admin-gepflegte Schnellzugriffe: `isSafeResourceHref` lässt Pfade ab `/` zu,
 ein Admin kann dort also bewusst auf einen Technikbereich zeigen. Das ist redaktioneller
 Inhalt, kein Navigationsdefekt.
+
+## Die Ticket-Seite ist eine App, kein Dokument
+
+`TicketFrame` — drei Regionen in der Chat-Spalte, und nur die mittlere scrollt:
+statischer Kopf, `flex-1 overflow-y-auto` Verlauf, statische Antwortzeile. Die
+Sidebar ist eine vierte Region mit eigenem Scrollbereich.
+
+- **`min-h-0` auf jedem Vorfahren zwischen Viewport und Scrollcontainer.** Das ist
+  der ganze Trick und das ganze Fehlerbild: ein Flex-Kind schrumpft von sich aus
+  nicht unter seinen Inhalt, also wächst ohne das die mittlere Region mit dem
+  Verlauf, die Spalte wächst mit, und die *Seite* bekommt den Scrollbalken. Sieht
+  aus wie ein funktionierendes Layout — bis jemand ein Ticket mit vierzig
+  Antworten öffnet.
+- **Die Höhe kommt aus der Flex-Kette, nicht aus `calc(100vh - 64px)`.** Der
+  `AppHeader` ist `flex-wrap`; unter `sm` nimmt die Suche eine eigene Zeile, der
+  Header ist dann höher als 64 px — und zwar auf genau den Schirmen, auf denen eine
+  aus dem Bild geschobene Antwortzeile nicht zurückscrollbar ist.
+- **Fixiert erst ab `lg`.** Darunter gibt es keine zweite Spalte und keine Höhe für
+  drei Regionen; dort scrollt die Seite normal und die Sidebar folgt dem Verlauf,
+  statt zu verschwinden.
+- **Die Antwortzeile ist Geschwister des Scrollcontainers, nicht sein Kind.** Vorher
+  hielt sie ein `sticky bottom-0` von innen fest — eine Uneinigkeit über den
+  Sticky-Kontext entfernt davon, mit dem Verlauf wegzuscrollen.
+- **Ein Composer für beide Ansichten**, `variant: "rich" | "plain"`. Vorher hatten
+  `TicketChat` und `TicketThread` je eine eigene Kopie der Send-Action, des
+  Clear-on-Success-Effekts und der Baustein-Einfügung — drei Dinge, die sich gleich
+  verhalten müssen und zwei Implementierungen hatten.
+- **`TicketFrame` ist nicht `SplitView`.** Letzteres ist ein Seitenkopf über zwei
+  scrollenden Spalten und bleibt für FAQ und CMDB. Zusammenlegen wäre ein Boolean,
+  der das DOM umbaut, mit drei Seiten am nicht genommenen Zweig.
 
 **Die zwei Detailansichten sind zwei Routen mit je eigenem Guard**, keine gemeinsame Seite
 mit `isAgent`-Bedingung. Gemeinsam ist nur `components/tickets/ticket-detail.tsx` — Kopf,
