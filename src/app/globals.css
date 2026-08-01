@@ -124,6 +124,26 @@
   --color-bubble-internal-border: var(--bubble-internal-border);
   --color-bubble-internal-accent: var(--bubble-internal-accent);
 
+  /* ── Data series ─────────────────────────────────────────────────────────
+     Five categorical colours plus a heat ramp, for the analytics panel and the
+     donut on the queue.
+
+     Tokens, not the literal hexes the brief listed (#6366f1, #10b981, #f43f5e,
+     #f59e0b, #06b6d4) — those are the *light* values and are what these resolve
+     to there. Recharts takes any CSS colour string, so a series is
+     `fill="var(--chart-1)"` and follows the theme for free; a hard-coded hex
+     would break rule 2 and would sit at the same lightness on #131314 as on
+     #ffffff, which is where a five-series chart stops being readable.
+
+     The dark values are lifted and slightly desaturated rather than reused: the
+     same indigo that reads as confident on white reads as a hole on near-black. */
+  --color-chart-6: var(--chart-6);
+  --color-heat-0: var(--heat-0);
+  --color-heat-1: var(--heat-1);
+  --color-heat-2: var(--heat-2);
+  --color-heat-3: var(--heat-3);
+  --color-heat-4: var(--heat-4);
+
   /* Material 3 shape scale, driven by the single --radius knob:
      8 / 10 / 12 / 16 / 24 / 28 / 32px. */
   --radius-sm: calc(var(--radius) - 4px);
@@ -219,13 +239,33 @@
   /* Key and ambient shadow tints for the elevation tokens. */
   --shadow-key: oklch(0 0 0 / 16%);
   --shadow-ambient: oklch(0 0 0 / 10%);
-  /* Status hues, reused by the Phase 4 board: open / in progress / closed /
-     escalated / on hold. */
-  --chart-1: oklch(0.623 0.188 260);
-  --chart-2: oklch(0.612 0.129 303);
-  --chart-3: oklch(0.55 0.14 150);
-  --chart-4: oklch(0.52 0.2 25);
-  --chart-5: oklch(0.657 0.144 20);
+  /*
+   * The categorical series palette: indigo, emerald, rose, amber, cyan, violet.
+   * #6366f1 · #10b981 · #f43f5e · #f59e0b · #06b6d4 · #8b5cf6 in oklch.
+   *
+   * Ordered so that neighbouring series are far apart in hue — a legend read
+   * top to bottom is also the order a stacked bar is drawn in, and two adjacent
+   * blues would be the one pair nobody can separate.
+   */
+  --chart-1: oklch(0.585 0.208 277);
+  --chart-2: oklch(0.696 0.149 163);
+  --chart-3: oklch(0.645 0.222 17);
+  --chart-4: oklch(0.769 0.163 70);
+  --chart-5: oklch(0.715 0.135 216);
+  --chart-6: oklch(0.606 0.226 292);
+  /*
+   * Heat ramp for the peak matrix, lightest to darkest.
+   *
+   * Sequential and single-hue on purpose: a rainbow ramp invents boundaries the
+   * data does not have, and the question a heatmap answers is "more or less",
+   * not "which category". `heat-0` is the empty cell and is a surface rather
+   * than a colour — an hour with no tickets is absence, not a low value.
+   */
+  --heat-0: oklch(0.955 0.006 250);
+  --heat-1: oklch(0.885 0.055 277);
+  --heat-2: oklch(0.79 0.105 277);
+  --heat-3: oklch(0.685 0.165 277);
+  --heat-4: oklch(0.585 0.208 277);
   /* 12px base — Material's medium shape. Drives the whole radius scale. */
   --radius: 0.75rem;
   --sidebar: oklch(0.962 0.006 250);
@@ -295,11 +335,25 @@
      if it is close to black. */
   --shadow-key: oklch(0 0 0 / 40%);
   --shadow-ambient: oklch(0 0 0 / 28%);
-  --chart-1: oklch(0.7 0.16 260);
-  --chart-2: oklch(0.7 0.13 303);
-  --chart-3: oklch(0.78 0.14 150);
-  --chart-4: oklch(0.68 0.19 22);
-  --chart-5: oklch(0.74 0.13 20);
+  /*
+   * The same six hues, lifted for a near-black ground.
+   *
+   * Not the light values reused: #6366f1 on #131314 has a contrast ratio around
+   * 3:1 and reads as a hole rather than as a series. Lightness goes up, chroma
+   * comes down slightly — a saturated colour on a dark surface vibrates.
+   */
+  --chart-1: oklch(0.7 0.16 277);
+  --chart-2: oklch(0.78 0.14 163);
+  --chart-3: oklch(0.72 0.17 17);
+  --chart-4: oklch(0.83 0.14 70);
+  --chart-5: oklch(0.79 0.12 216);
+  --chart-6: oklch(0.71 0.17 292);
+  /* Same ramp, inverted direction: on dark, "more" means brighter. */
+  --heat-0: oklch(0.26 0.004 285);
+  --heat-1: oklch(0.36 0.06 277);
+  --heat-2: oklch(0.48 0.11 277);
+  --heat-3: oklch(0.6 0.15 277);
+  --heat-4: oklch(0.72 0.17 277);
   --sidebar: oklch(0.16 0.003 285);
   --sidebar-foreground: oklch(0.915 0.002 285);
   --sidebar-primary: oklch(0.81 0.078 259);

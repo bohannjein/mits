@@ -32,16 +32,29 @@ export function QueueTabs({
   scope,
   view,
   counts,
+  actions,
 }: {
   scope: AgentScope;
   view: AgentView;
   /** Totals for the current scope, so the badges show where the work is. */
   counts: Record<AgentView, number>;
+  /**
+   * Pills that sit beside the scope switcher — links out of the queue, not views
+   * of it.
+   *
+   * Beside it, deliberately **not** inside. The switcher is a segmented control:
+   * exactly one of its options is active at all times, and dropping a link into
+   * that group would make "CMDB" look like a third thing the queue can be
+   * filtered to. Same row because they are the same rank of navigation, own
+   * container because they answer a different question.
+   */
+  actions?: React.ReactNode;
 }) {
   const views = viewsForScope(scope);
 
   return (
     <div className="grid gap-3">
+      <div className="flex flex-wrap items-center gap-2">
       {/* Segmented control. Two links styled as one control rather than a
           <fieldset> of radios: the state lives in the URL, so there is nothing to
           submit. */}
@@ -83,6 +96,9 @@ export function QueueTabs({
             </Link>
           );
         })}
+      </div>
+
+        {actions}
       </div>
 
       <nav

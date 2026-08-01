@@ -30,6 +30,16 @@ import {
   tokenize,
 } from "../src/lib/services/ai/similarity";
 import { suggestFaqs } from "../src/lib/services/ai/deflection";
+import {
+  MAX_BUCKETS,
+  autoGranularity,
+  bucketKey,
+  bucketLabel,
+  bucketsFor,
+  isoWeek,
+  resolveRange,
+} from "../src/lib/analytics/range";
+import { csvCell } from "../src/lib/analytics/export";
 import { isRoutingHint, normaliseTags } from "../src/lib/services/ai/tags";
 import {
   fieldsBesidesOpening,
@@ -2963,6 +2973,126 @@ console.log("deflection and tags");
   check("one-character tags are dropped", normaliseTags(["a"]).length === 0);
   check("a routing hint is recognised", isRoutingHint("passt-eher:hardware-order"));
   check("an ordinary tag is not", !isRoutingHint("drucker"));
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Analytics ranges and buckets.
+
+   The layer where a mistake produces a chart that *looks* fine. An off-by-one at
+   a bucket boundary drops a day, an ISO-week miscount puts two weeks under one
+   label, and nothing anywhere logs either.
+   ────────────────────────────────────────────────────────────────────────── */
+console.log("analytics ranges");
+{
+  // A Wednesday, mid-afternoon UTC.
+  const now = new Date("2026-08-05T14:30:00.000Z");
+
+  const today = resolveRange("today", now);
+  check("today starts at UTC midnight", today.from === "2026-08-05T00:00:00.000Z", today.from);
+  // The last millisecond, not the next midnight: `to` is compared with `<=`, and
+  // an exclusive-looking bound written inclusively double-counts a boundary row.
+  check("…and ends at the last millisecond", today.to === "2026-08-05T23:59:59.999Z", today.to);
+
+  const week = resolveRange("7d", now);
+  check("seven days means seven, not eight", week.from === "2026-07-30T00:00:00.000Z", week.from);
+  const month = resolveRange("30d", now);
+  check("thirty days likewise", month.from === "2026-07-07T00:00:00.000Z", month.from);
+  check("the year starts in January", resolveRange("year", now).from === "2026-01-01T00:00:00.000Z");
+
+  const all = resolveRange("all", now, { earliest: "2025-03-17T08:12:00.000Z" });
+  check("all-time reaches the first ticket", all.from === "2025-03-17T00:00:00.000Z", all.from);
+  // An empty instance would otherwise ask for fifty-five years of buckets.
+  check(
+    "…and falls back on an empty instance",
+    resolveRange("all", now, { earliest: null }).from === "2026-07-06T00:00:00.000Z",
+  );
+
+  const custom = resolveRange("custom", now, { from: "2026-07-01", to: "2026-07-31" });
+  check("a custom range is honoured", custom.from === "2026-07-01T00:00:00.000Z");
+  check("…inclusive to the end of the last day", custom.to === "2026-07-31T23:59:59.999Z");
+  // Swapped bounds are a slip, not an empty result.
+  check(
+    "reversed bounds are swapped, not obeyed",
+    resolveRange("custom", now, { from: "2026-07-31", to: "2026-07-01" }).from ===
+      "2026-07-01T00:00:00.000Z",
+  );
+  check(
+    "an unreadable date falls back rather than throwing",
+    resolveRange("custom", now, { from: "gestern", to: "" }).from ===
+      "2026-07-07T00:00:00.000Z",
+  );
+  // A tail of empty buckets after today reads as a collapse in volume.
+  check(
+    "a range ending in the future is clipped to today",
+    resolveRange("custom", now, { from: "2026-08-01", to: "2026-12-31" }).to ===
+      "2026-08-05T23:59:59.999Z",
+  );
+
+  check("two days of data is hourly", autoGranularity(Date.parse("2026-08-04T00:00:00Z"), Date.parse("2026-08-05T00:00:00Z")) === "hour");
+  check("a month is daily", autoGranularity(Date.parse("2026-07-05T00:00:00Z"), Date.parse("2026-08-05T00:00:00Z")) === "day");
+  check("a year is weekly", autoGranularity(Date.parse("2025-08-05T00:00:00Z"), Date.parse("2026-08-05T00:00:00Z")) === "week");
+  check("three years is monthly", autoGranularity(Date.parse("2023-08-05T00:00:00Z"), Date.parse("2026-08-05T00:00:00Z")) === "month");
+
+  /*
+   * A manual granularity that would blow the ceiling falls back. "Hourly over
+   * three years" is 26 000 points and a frozen browser, and refusing with an
+   * error would be a worse answer than drawing the chart somebody meant.
+   */
+  check(
+    "an impossible manual granularity is overruled",
+    resolveRange("custom", now, {
+      from: "2023-01-01",
+      to: "2026-08-05",
+      granularity: "hour",
+    }).granularity === "month",
+  );
+  check(
+    "a sensible one is kept",
+    resolveRange("30d", now, { granularity: "week" }).granularity === "week",
+  );
+
+  // The bucket key and the SQL `GROUP BY` have to agree exactly, or every bucket
+  // comes back zero — a chart that renders perfectly and is entirely wrong.
+  check("an hour key keeps the hour", bucketKey("2026-08-05T14:30:00.000Z", "hour") === "2026-08-05T14:00");
+  check("a day key is the date", bucketKey("2026-08-05T14:30:00.000Z", "day") === "2026-08-05");
+  check("a month key is the month", bucketKey("2026-08-05T14:30:00.000Z", "month") === "2026-08");
+  // Monday-first, matching ISO-8601 and the SQLite expression.
+  check("a week key is that week's Monday", bucketKey("2026-08-05T14:30:00.000Z", "week") === "2026-08-03", bucketKey("2026-08-05T14:30:00.000Z", "week"));
+  check("…including on a Sunday", bucketKey("2026-08-09T23:00:00.000Z", "week") === "2026-08-03", bucketKey("2026-08-09T23:00:00.000Z", "week"));
+
+  const buckets = bucketsFor(resolveRange("7d", now, { granularity: "day" }));
+  check("seven days produce seven buckets", buckets.length === 7, String(buckets.length));
+  check("…starting at the first day", buckets[0] === "2026-07-30");
+  check("…and ending today", buckets[6] === "2026-08-05");
+  check("no range exceeds the bucket ceiling", bucketsFor(resolveRange("all", now, { earliest: "2015-01-01T00:00:00Z", granularity: "hour" })).length <= MAX_BUCKETS);
+
+  /*
+   * The Thursday rule, not "day of year over seven". The first week of a year is
+   * the one containing its first Thursday, so early January often belongs to week
+   * 52 or 53 of the year before — exactly when somebody is comparing to December.
+   */
+  check("an ISO week is counted by Thursdays", isoWeek("2026-01-05") === 2, String(isoWeek("2026-01-05")));
+  check("…and the first week can start in December", isoWeek("2025-12-29") === 1, String(isoWeek("2025-12-29")));
+
+  check("an hour tick reads as a clock", bucketLabel("2026-08-05T14:00", "hour") === "14:00");
+  check("a day tick is day and month", bucketLabel("2026-08-05", "day") === "05.08.");
+  check("a month tick names the month", bucketLabel("2026-08", "month") === "Aug 2026");
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   CSV escaping.
+
+   A ticket title with a semicolon in it shifts every column to its right, and
+   the file opens without complaint.
+   ────────────────────────────────────────────────────────────────────────── */
+console.log("analytics export");
+{
+  check("a plain value is untouched", csvCell("Drucker") === "Drucker");
+  check("a separator forces quotes", csvCell("Drucker; Etage 3") === '"Drucker; Etage 3"');
+  check("a quote is doubled", csvCell('Fehler "0x83"') === '"Fehler ""0x83"""');
+  check("a line break forces quotes", csvCell("Zeile eins\nZeile zwei") === '"Zeile eins\nZeile zwei"');
+  check("a number passes through", csvCell(42) === "42");
+  check("null is an empty cell", csvCell(null) === "");
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

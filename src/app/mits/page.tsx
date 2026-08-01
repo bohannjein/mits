@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { FilterIcon, FilterXIcon, ServerIcon } from "lucide-react";
+import {
+  BarChart3Icon,
+  FilterIcon,
+  FilterXIcon,
+  ServerIcon,
+} from "lucide-react";
 
 import { IncidentBanner } from "@/components/dashboard/incident-banner";
 import { PresenceList } from "@/components/dashboard/presence-list";
@@ -137,21 +142,6 @@ export default async function AgentQueuePage({
               </p>
             </div>
 
-            {/* Inside /mits, so no area-switch gate applies — a agent who may see
-                this page may see the CMDB. Hidden with the module, not merely disabled:
-                a link into a 404 is a worse answer than no link. */}
-            {flags.feature_cmdb && (
-              <Button
-                asChild
-                size="sm"
-                className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
-              >
-                <Link href="/mits/cmdb">
-                  <ServerIcon strokeWidth={1.5} />
-                  CMDB
-                </Link>
-              </Button>
-            )}
           </div>
 
           <Separator className="my-8 bg-border" />
@@ -174,7 +164,47 @@ export default async function AgentQueuePage({
                 />
               ))}
 
-              <QueueTabs scope={scope} view={view} counts={counts} />
+              {/*
+                The two links out of the queue sit beside the scope switcher, in
+                its row but not in its group — see the note on `actions`. Both are
+                inside /mits, so no area gate applies: whoever may see this page
+                may see both. A reporter never gets here at all — the guard sends
+                them to /customer and the user menu shows them no route in.
+              */}
+              <QueueTabs
+                scope={scope}
+                view={view}
+                counts={counts}
+                actions={
+                  <>
+                    <Button
+                      asChild
+                      size="sm"
+                      className="h-11 rounded-full border border-border bg-card px-4 text-foreground hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <Link href="/mits/analytics">
+                        <BarChart3Icon strokeWidth={1.5} />
+                        Statistiken
+                      </Link>
+                    </Button>
+
+                    {/* Hidden with the module, not merely disabled: a link into a
+                        404 is a worse answer than no link. */}
+                    {flags.feature_cmdb && (
+                      <Button
+                        asChild
+                        size="sm"
+                        className="h-11 rounded-full border border-border bg-card px-4 text-foreground hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <Link href="/mits/cmdb">
+                          <ServerIcon strokeWidth={1.5} />
+                          CMDB
+                        </Link>
+                      </Button>
+                    )}
+                  </>
+                }
+              />
 
               {/* The filter block that used to sit here is gone. It occupied the
                   screen permanently for an occasional operation and pushed the

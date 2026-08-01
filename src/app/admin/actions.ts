@@ -21,6 +21,7 @@ import {
 } from "@/lib/forms/schema-to-zod";
 import { listCannedResponses, setCannedResponses } from "@/lib/canned-responses";
 import { setMacros } from "@/lib/macros";
+import { setAnalyticsSettings } from "@/lib/analytics/settings";
 import { verifyS3 } from "@/lib/services/s3";
 import { getS3Settings, setS3Settings } from "@/lib/services/storage";
 import { LocationError, getLocation, replaceLocations } from "@/lib/locations";
@@ -71,6 +72,8 @@ import {
 } from "@/lib/users";
 import {
   AIProvider,
+  ANALYTICS_WIDGETS,
+  AnalyticsSettingsSchema,
   AI_FEATURES,
   AI_FEATURE_META,
   CannedResponseSchema,
@@ -689,6 +692,45 @@ export async function sendTestMailAction(
   }
 
   return { ok: true, message: `Test-Mail an ${actor.email} versendet.` };
+}
+
+/* ── Analytics ──────────────────────────────────────────────────────────── */
+
+export async function saveAnalyticsSettingsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  /*
+   * Built from the widget list rather than field by field. A widget added later
+   * is then one entry in `ANALYTICS_WIDGETS` instead of a line here that somebody
+   * forgets — and a forgotten line reads as `false`, which silently hides the new
+   * widget on every instance.
+   */
+  const widgets = Object.fromEntries(
+    ANALYTICS_WIDGETS.map((widget) => [widget, formData.get(widget) === "on"]),
+  );
+
+  const saved = setAnalyticsSettings(
+    AnalyticsSettingsSchema.parse({
+      ...widgets,
+      defaultRefreshSeconds: formData.get("defaultRefreshSeconds"),
+    }),
+  );
+
+  revalidatePath("/admin/settings/analytics");
+  revalidatePath("/mits/analytics");
+
+  const on = ANALYTICS_WIDGETS.filter((widget) => saved[widget]).length;
+
+  return {
+    ok: true,
+    message:
+      on === 0
+        ? "Gespeichert. Es ist keine Kachel eingeschaltet — das Panel zeigt nur die Kennzahlen."
+        : `Gespeichert. ${on} von ${ANALYTICS_WIDGETS.length} Kacheln aktiv.`,
+  };
 }
 
 /* ── AI settings ────────────────────────────────────────────────────────── */

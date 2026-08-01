@@ -67,6 +67,7 @@ Diese Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
 | Frontend | Next.js 16 (App Router), React 19, TypeScript, `src/`-Layout, Alias `@/*` |
 | Styling | Tailwind v4 (CSS-Variablen, keine `tailwind.config.ts`) + shadcn/ui + Lucide |
 | Motion | `framer-motion` — Spring-Physics, kein `duration`-Easing |
+| Charts | `recharts` — Farben als CSS-Variablen, Animation zentral in `chart-kit.tsx` |
 | Forms | `react-hook-form` + `zod`, eigener JSON-Schema-Renderer (Phase 2) |
 | State | TanStack Query (Server-State) · Zustand (UI-State) |
 | Auth | Better Auth 1.6 (E-Mail/Passwort), Rollen `user` < `agent` < `admin` |
@@ -182,6 +183,10 @@ src/
     services/ai/routing.ts     Tags + Routing-Hinweis, blockiert nichts
     services/ai/tags.ts        Tag-Normalisierung (kein server-only!)
     services/ai/deflection.ts  FAQ-Treffer, lexikalisch, rein
+    analytics/range.ts         Zeiträume, Granularität, Buckets (rein, offline geprüft)
+    analytics/queries.ts       acht Aggregationen über Ticket, Kommentar und Audit
+    analytics/export.ts        CSV-Serialisierung mit RFC-4180-Escaping (rein)
+    analytics/settings.ts      Widget-Schalter und Default-Intervall
     worklogs.ts             erfasste Zeit, Summe immer als SUM() gelesen
     macros.ts               Makro-Store + Runner über die normalen Mutatoren
     notifications.ts        Feed für die Einblendungen, Sichtbarkeit je Abfrage neu
@@ -619,11 +624,14 @@ Maschinenaufruf bekommt also JSON statt eines Redirects auf die Anmeldung.
 /mits/                  Agenten: Live-Queue mit Tabs, Präsenz + Statistik als Spalte
 /mits/tickets/[id]      Agenten-Detailansicht mit Workflow-Panel
 /mits/cmdb/…            Bestand, Lizenzen, Objekt-Detailansicht (Agenten)
+/mits/analytics         Statistiken (Agenten), Anwender gesperrt
 /admin/…                Administration
 /admin/macros           Makros
 /admin/settings/storage Dateispeicher (Platte oder S3)
+/admin/settings/analytics Widget-Schalter und Default-Intervall
 /admin/mail             Postfach-Abruf + Defender-Regel
 /api/notifications      Feed für die Einblendungen, `?since=` (jede Rolle)
+/api/analytics          Kennzahlen als JSON oder `?format=csv` (Agenten)
 /api/mail/poll          Postfach abrufen, Service-Token **oder** Admin-Sitzung
 /api/v1/cmdb/…          REST-Schnittstelle, Token **oder** Agenten-Sitzung
 ```
@@ -686,6 +694,57 @@ in der SQL-Klausel gesetzt, bevor irgendein Filter greift. Ein Query-Parameter d
 Weiter offen und **nicht** Teil der fünf Parts: echtes OCR für gescannte Dokumente per
 Tesseract — bräuchte `pytesseract` plus `tesseract-ocr-deu` im Backend-Image und sprengt
 damit das Vier-Pakete-Limit.
+
+## Statistiken
+
+`/mits/analytics`, Agenten und Administration. Gesteuert unter
+`/admin/settings/analytics`: Default-Intervall plus acht Widget-Schalter, alle an.
+
+**Anwender kommen nicht rein — an drei Stellen.** `requireRole("agent")` auf der
+Seite, `requireApiRole("agent")` auf `/api/analytics`, und kein Link: der
+Statistik-Knopf sitzt in `/mits`, wohin das Benutzermenü einem `user` ohnehin
+keinen Weg zeigt. Die Seite zu verstecken und die Route offen zu lassen wäre
+sinnlos — die Zahlen liegen in der Route.
+
+**Das Panel ist eine Client-Komponente mit einem Endpunkt**, anders als jede
+andere Liste in MITS. Grund ist der Auto-Refresh: eine sich neu ladende Seite
+würde bei jedem Tick alle Charts neu mounten, und genau das harte Springen soll
+weg. Über TanStack Query landen neue Zahlen in *denselben* Chart-Instanzen und
+recharts morpht. `placeholderData` hält die alten Daten stehen, während die
+neuen kommen — sonst leert jeder Filterwechsel neun Karten und füllt sie wieder.
+
+**Serien enthalten jeden Bucket, auch die leeren.** Zwei Gründe, beide wichtig:
+ein Chart nur aus Buckets mit Daten zieht eine gerade Linie über ein
+ticketfreies Wochenende, und recharts kann nur zwischen Arrays gleicher Form
+interpolieren — bei wechselnder Länge bleibt ihm nur Neuzeichnen.
+
+**Alles UTC.** Zeitstempel sind ISO-Strings und werden als Strings verglichen, also
+muss eine Bucket-Grenze UTC-Mitternacht sein. Die Anzeige-Zeitzone ist eine
+*Render*-Einstellung und greift hier absichtlich nicht durch; das Panel sagt es
+einmal, statt jede Grenze zweimal im Jahr still zu verschieben.
+
+**Lösungszeit und Erstreaktion kommen aus `mits_audit_log` beziehungsweise
+`mits_ticket_comment`,** nicht aus einer Spalte. Eine Spalte wäre eine zweite
+Wahrheit. Die Folge steht im Panel: ein vor Einführung der Historie geschlossenes
+Ticket zählt nicht mit, die Datenbasis ist kleiner als die Ticketzahl.
+
+**Median *und* Mittel.** Sie widersprechen sich hier auf eine Art, die zählt: ein
+über Weihnachten offenes Ticket verschiebt das Mittel um Tage und den Median gar
+nicht.
+
+**Gelöst-je-Agent hängt am Akteur im Audit-Log**, nicht an `assigned_to` — wer
+geklickt hat, hat es getan, und ein Ticket wechselt vor dem Abschluss auch mal
+zweimal den Besitzer.
+
+**Die Heatmap ist ein CSS-Grid, kein recharts-Chart.** recharts hat keine
+Heatmap, und eine aus einem Scatter mit quadratischen Shapes zu bauen kämpft
+gegen die Bibliothek für ein schlechteres Ergebnis als 168 gestylte Zellen.
+
+**Chart-Farben sind Tokens.** `--chart-1..6` und `--heat-0..4`, je Theme eigene
+Werte — recharts nimmt `var(--chart-1)` direkt als `fill`. Die im Auftrag
+genannten Hex-Werte sind die Light-Werte und stehen genau dort. Auf Dark sind sie
+angehoben und leicht entsättigt: dasselbe Indigo, das auf Weiß souverän wirkt,
+ist auf Beinahe-Schwarz ein Loch.
 
 ## KI-Assistenz: opt-in, sonst gar nicht
 

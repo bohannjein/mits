@@ -789,6 +789,126 @@ export function normaliseS3Prefix(value: string): string {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Analytics.
+
+   Seven widgets, each its own switch, plus the instance's default refresh
+   interval. Stored as one row in `mits_setting` like every other admin-managed
+   block.
+
+   All seven default to **on**: unlike the AI features, nothing here leaves the
+   instance or costs anything beyond a few indexed reads, and a panel that arrives
+   empty reads as broken rather than as opt-in. The switches exist so an instance
+   can hide a widget whose data it does not trust — a fresh install has no audit
+   history, so its resolution times are honest but thin.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const ANALYTICS_WIDGETS = [
+  "topCreators",
+  "creatorTopics",
+  "resolvedPerAgent",
+  "resolutionTime",
+  "firstResponse",
+  "inflowVsResolved",
+  "peakHeatmap",
+  "distribution",
+] as const;
+export type AnalyticsWidget = (typeof ANALYTICS_WIDGETS)[number];
+
+export const ANALYTICS_WIDGET_META: Record<
+  AnalyticsWidget,
+  { label: string; description: string }
+> = {
+  topCreators: {
+    label: "Top Ticket-Ersteller",
+    description: "Wer im Zeitraum die meisten Tickets aufgegeben hat.",
+  },
+  creatorTopics: {
+    label: "Themen pro Anwender",
+    description:
+      "Welche Kategorien die häufigsten Melder einreichen — zeigt wiederkehrende Probleme an einem Arbeitsplatz.",
+  },
+  resolvedPerAgent: {
+    label: "Gelöste Tickets pro Agent",
+    description: "Abgeschlossene Tickets je Agentin und Agent im Zeitraum.",
+  },
+  resolutionTime: {
+    label: "Durchschnittliche Lösungszeit",
+    description:
+      "Median und Mittel von der Erstellung bis zum Abschluss. Zählt nur Tickets, deren Abschluss in der Historie steht.",
+  },
+  firstResponse: {
+    label: "Erstreaktionszeit",
+    description:
+      "Zeit bis zur ersten öffentlichen Antwort eines Agenten. Interne Notizen zählen nicht.",
+  },
+  inflowVsResolved: {
+    label: "Eingang gegen Erledigt",
+    description: "Zwei Linien im Zeitverlauf — zeigt, ob ein Rückstand wächst.",
+  },
+  peakHeatmap: {
+    label: "Peak-Zeiten",
+    description: "Wochentag gegen Uhrzeit, für die Schichtplanung.",
+  },
+  distribution: {
+    label: "Verteilung",
+    description: "Tickets nach Status, Priorität und Formular.",
+  },
+};
+
+/**
+ * Refresh intervals offered, in seconds. `0` is manual.
+ *
+ * A fixed set rather than a free number, for the same reason `REFRESH_INTERVALS`
+ * is one: the value drives a timer that costs an aggregation per tick per open
+ * tab, and "every second" typed into a box is a load problem nobody would connect
+ * back to this field.
+ */
+export const ANALYTICS_REFRESH_CHOICES = [0, 5, 15, 30, 60, 300] as const;
+export type AnalyticsRefresh = (typeof ANALYTICS_REFRESH_CHOICES)[number];
+
+export const ANALYTICS_REFRESH_LABELS: Record<AnalyticsRefresh, string> = {
+  0: "Aus (manuell)",
+  5: "Alle 5 Sekunden",
+  15: "Alle 15 Sekunden",
+  30: "Alle 30 Sekunden",
+  60: "Jede Minute",
+  300: "Alle 5 Minuten",
+};
+
+export const isAnalyticsRefresh = (value: unknown): value is AnalyticsRefresh =>
+  typeof value === "number" &&
+  (ANALYTICS_REFRESH_CHOICES as readonly number[]).includes(value);
+
+/** Parse a form field or a query parameter, falling back rather than throwing. */
+export function toAnalyticsRefresh(
+  value: unknown,
+  fallback: AnalyticsRefresh = 0,
+): AnalyticsRefresh {
+  const parsed = Number(value);
+  return isAnalyticsRefresh(parsed) ? parsed : fallback;
+}
+
+export const AnalyticsSettingsSchema = z.object({
+  /** Instance default. An agent may override it live in the panel. */
+  defaultRefreshSeconds: z
+    .unknown()
+    .transform((value) => toAnalyticsRefresh(value, 0))
+    .default(0),
+  topCreators: z.boolean().default(true),
+  creatorTopics: z.boolean().default(true),
+  resolvedPerAgent: z.boolean().default(true),
+  resolutionTime: z.boolean().default(true),
+  firstResponse: z.boolean().default(true),
+  inflowVsResolved: z.boolean().default(true),
+  peakHeatmap: z.boolean().default(true),
+  distribution: z.boolean().default(true),
+});
+export type AnalyticsSettings = z.infer<typeof AnalyticsSettingsSchema>;
+
+export const DEFAULT_ANALYTICS_SETTINGS: AnalyticsSettings =
+  AnalyticsSettingsSchema.parse({});
+
+/* ──────────────────────────────────────────────────────────────────────────
    Audit trail.
 
    What happened to a ticket, in a table nothing ever updates. The actions are a

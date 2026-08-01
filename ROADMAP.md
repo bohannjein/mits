@@ -314,6 +314,26 @@ Vier Funktionen, alle standardmäßig aus. Was beim Weiterbauen zuerst schiefgeh
 - **Die Sammelantwort verschickt keine Mail.** Zwanzig Nachrichten in derselben
   Sekunde aus einer Störung sind ein Mailserver-Problem.
 
+## Danach: Statistik-Panel
+
+- **Serien immer über `bucketsFor` füllen, nie aus den Zeilen ableiten.** Sonst
+  zieht der Chart eine gerade Linie über ein leeres Wochenende — und recharts
+  kann nur zwischen Arrays gleicher Länge morphen, sonst springt es.
+- **`bucketKey` und `bucketExpression` müssen exakt dasselbe liefern.** Weichen
+  sie ab, sind alle Buckets null: ein Chart, das perfekt rendert und komplett
+  falsch ist.
+- **Alles UTC.** Die Anzeige-Zeitzone greift hier absichtlich nicht durch.
+- **Neues Widget = Eintrag in `ANALYTICS_WIDGETS` und `ANALYTICS_WIDGET_META`,
+  ein Zweig in `collectAnalytics` und einer im Panel.** Die Admin-Maske baut sich
+  aus der Liste, die Save-Action auch — deshalb gibt es dort keine Zeile zu
+  vergessen.
+- **Chartfarben nur als `var(--chart-N)`.** recharts reicht `fill` unverändert an
+  SVG durch, also funktioniert das; ein Literal bräche Regel 2 und läge in beiden
+  Themes auf derselben Helligkeit.
+- **recharts 3 kennt kein `activeIndex` auf `Pie` mehr.** Das Hover-Wachsen läuft
+  über `activeShape`, das die Bibliothek selbst auslöst; eine Verknüpfung aus
+  eigenem State geht nur noch über `fillOpacity` je `Cell`.
+
 ## Verifikation für jeden Part
 
 ```bash
