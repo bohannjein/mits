@@ -156,12 +156,19 @@ export function TicketComposer({
   return (
     <form
       className={cn(
-        "grid gap-3 rounded-2xl border px-4 py-3 transition-colors",
-        // Same surface the internal bubble uses, so the composer previews where
-        // the note is about to land instead of inventing a second amber.
+        /*
+         * No border in the ordinary state: the frame already draws a rule
+         * above this region, and a second outline twelve pixels below it reads
+         * as a rendering fault. `bg-card` on the column's `bg-background` is
+         * what makes it an inset field instead.
+         *
+         * An internal note keeps its dashed amber — that is the one state
+         * where the box has to announce itself.
+         */
+        "grid gap-3 rounded-2xl px-4 py-3 transition-colors",
         internal
-          ? "border-dashed border-bubble-internal-border bg-bubble-internal"
-          : "border-border bg-card",
+          ? "border border-dashed border-bubble-internal-border bg-bubble-internal"
+          : "bg-card",
       )}
     >
       <input type="hidden" name="ticketId" value={ticketId} />

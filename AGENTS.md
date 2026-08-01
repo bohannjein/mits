@@ -700,6 +700,26 @@ Sidebar ist eine vierte Region mit eigenem Scrollbereich.
 - **`TicketFrame` ist nicht `SplitView`.** Letzteres ist ein Seitenkopf über zwei
   scrollenden Spalten und bleibt für FAQ und CMDB. Zusammenlegen wäre ein Boolean,
   der das DOM umbaut, mit drei Seiten am nicht genommenen Zweig.
+- **`body` ist `h-full`, nicht `min-h-full`.** Die Kette braucht irgendwo oben eine
+  *definite* Höhe zum Aufteilen; `min-height: 100%` ist keine. Die Regionen mit
+  `min-h-0` bemaßen sich damit weiter nach ihrem Inhalt, und die Seite scrollte
+  trotz allem als Ganzes. Gewöhnliche Seiten merken davon nichts: deren `main`
+  behält `min-height: auto`, wächst über den Viewport hinaus und bekommt den
+  normalen Fensterscrollbalken samt Innenabstand. Nur wer `min-h-0` ausdrücklich
+  gesetzt hat, ist begrenzt — und das sind genau die sechs App-Shell-Seiten.
+- **Der Kopf ist auf `38vh` gedeckelt und scrollt darüber hinaus selbst.** `shrink-0`
+  schützt den Kopf vor einem langen Verlauf, aber nichts schützte den Verlauf vor
+  einem langen Kopf: die Agentenansicht hängt jedes maschinell gesetzte Tag dorthin,
+  die Melderansicht ein aufklappbares „Meine Angaben“. Der Verlauf ist das einzige
+  `flex-1` der Kette, also ging dieses Wachstum vollständig von ihm ab. `vh` und
+  nicht `%`, weil ein prozentualer `max-height` eine aufgelöste Elternhöhe braucht —
+  in einer Zeile mit Auto-Höhe wird `max-h-[40%]` zu `none` und deckelt nichts.
+- **Die Chat-Spalte ist `bg-background`, nicht `bg-card`.** Die Melder-Bubble *ist*
+  `--card`; auf einer kartenfarbenen Spalte verschwand jede eingehende Nachricht in
+  ihrem Untergrund. Die Spalte ist die Hülle, Bubbles und Antwortzeile das Erhabene
+  darauf. Aus demselben Grund hat die Antwortzeile im Normalzustand keinen eigenen
+  Rahmen mehr — der Frame zeichnet schon eine Linie darüber, und zwei Linien zwölf
+  Pixel auseinander lesen sich als Renderfehler.
 
 **Die zwei Detailansichten sind zwei Routen mit je eigenem Guard**, keine gemeinsame Seite
 mit `isAgent`-Bedingung. Gemeinsam ist nur `components/tickets/ticket-detail.tsx` — Kopf,
@@ -723,9 +743,25 @@ die Sitzung neu aufbauen, sonst sieht ein frisch befördeter Techniker weiter `/
 **Ticket-Tabellen scrollen nie seitwärts, und zeigen 50 Zeilen.** Beides hängt
 zusammen: eine horizontal scrollende Tabelle versteckt Status und Alter hinter
 einer Geste, die mit der Maus niemand macht, und ein flaches `LIMIT 500` versteckt
-alles ab dem fünfhundertsten Ticket, ohne es zu sagen. Stattdessen `table-fixed`
-mit deklarierten Breiten, gekürzter Titel und `hidden … table-cell` für die
+alles ab dem fünfhundertsten Ticket, ohne es zu sagen. Stattdessen eine
+**absorbierende Spalte**, gekürzter Titel und `hidden … table-cell` für die
 Kontextspalten auf schmalen Schirmen — und `TicketPager` darunter.
+
+**`table-fixed` mit Breite pro Spalte war der erste Versuch und hat die Seite
+zerlegt.** Die Breiten summierten sich auf rund 1070 px, während die Hauptspalte der
+Queue neben der Sidebar etwa 930 px hat — also wurde die einzige Spalte ohne
+deklarierte Breite, der Titel, auf null gequetscht. Sein Link war damit ein
+Klickziel ohne Fläche („man kann Tickets nicht mehr öffnen“), und das
+`overflow-hidden` schnitt den Rest zu einem Haufen zusammen („UI-Elemente
+überlappen“). Feste Breiten bräuchten Zahlen, die bei jeder Fensterbreite passen,
+und die gibt es nicht.
+
+Der Ersatz ist automatisches Layout: jede Spalte misst sich an ihrem Inhalt, die
+Titelzelle trägt `w-full max-w-0 truncate` und nimmt den Rest. Sie fordert die volle
+Restbreite an und bekommt gleichzeitig gesagt, ihr Maximum sei null — also gibt der
+Browser ihr den Schlupf und kürzt den Inhalt, statt die Tabelle zu verbreitern.
+Kappungen von Adresse, Bearbeiter und Standort sitzen auf einem inneren `<span>`:
+ein `max-width` auf einem `<td>` ist im automatischen Layout nur ein Vorschlag.
 
 - **`countSearchTickets` und `searchTickets` teilen sich `ticketWhere`.** Nicht aus
   Ordnungsliebe: die erste Klausel darin ist die Scope-Klausel, und zwei Kopien
@@ -742,6 +778,19 @@ Kontextspalten auf schmalen Schirmen — und `TicketPager` darunter.
 - **`Table` hat ein `containerClassName` bekommen.** Das `overflow-x-auto` des
   Primitives ist hart verdrahtet und wird mit keinem Prop gemerged; ohne den Zusatz
   konnte ein Aufrufer nicht sagen, dass er nicht scrollen will. Default unverändert.
+- **Die Sidebar-Spalte der Queue existiert nur, wenn etwas darin steht.** Ein fest
+  deklariertes `1fr 20rem` reservierte auf einer Instanz mit beiden
+  Sidebar-Modulen aus 320 px Nichts — und nahm die einer Tabelle weg, die genau
+  deshalb nicht seitwärts scrollen soll.
+
+**Der `AppHeader` ist `max-w-7xl`, so breit wie die breiteste Seite darunter.** Bei
+`max-w-6xl` war er 128 px schmaler als Queue, Statistiken und beide
+Ticketansichten; auf einem breiten Schirm saß das Logo sichtbar eingerückt gegenüber
+der Überschrift darunter. Schmalere Seiten zentrieren sich darin, was eine
+Kopfleiste tun soll — der Defekt war nur, dass der Header der *schmalere* von
+beiden war. Zwei Bedienelemente derselben Ordnung in einer Zeile sind exakt gleich
+hoch: der Zuständigkeits-Switcher der Queue trägt `h-11` wie die Pillen daneben,
+sonst misst er sich aus `p-1` plus `h-9` plus Rahmen auf zwei Pixel mehr.
 
 **Scope-Regel für alles, was Tickets listet:** Die Sichtbarkeit kommt aus der Rolle und wird
 in der SQL-Klausel gesetzt, bevor irgendein Filter greift. Ein Query-Parameter darf

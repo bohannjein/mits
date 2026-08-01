@@ -124,8 +124,14 @@ export default async function CIDetailPage({
   return (
     <>
       <AppHeader />
-      <main className="flex min-h-0 flex-1 flex-col items-center overflow-hidden px-6 py-8">
-        <div className="flex min-h-0 w-full max-w-7xl flex-1 flex-col">
+      {/*
+        Bounded from `lg` up only. Below that SplitView stacks the sidebar under
+        the content instead of making it a column, and that stack lives outside
+        both inner scroll zones — clipping it on a phone would put it out of
+        reach entirely. There the page scrolls the way a page does.
+      */}
+      <main className="flex flex-1 flex-col items-center px-6 py-8 lg:min-h-0 lg:overflow-hidden">
+        <div className="flex w-full max-w-7xl flex-1 flex-col lg:min-h-0">
           <SplitView
             sidebarLabel="Kontext"
             header={

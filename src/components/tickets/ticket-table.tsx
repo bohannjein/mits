@@ -55,10 +55,19 @@ import {
    **It never scrolls sideways.** A horizontally scrolling table hides its right
    half behind a gesture nobody makes with a mouse — the status and the age end up
    off-screen on a laptop, which are the two things somebody scanning a queue is
-   looking for. Everything fits instead: `table-fixed` with declared widths, the
-   title truncated, and the columns that are context rather than content dropped
-   at narrow widths. The full title is still in the row's `title` attribute and in
-   the link itself.
+   looking for.
+
+   Everything fits instead, and the mechanism is one absorbing column: automatic
+   layout sizes each column to its content, the title cell is `w-full max-w-0` so
+   it takes the slack and truncates, and the columns that are context rather than
+   content drop out at narrow widths. The full title stays in the `title`
+   attribute and in the link.
+
+   A previous attempt used `table-fixed` with a width per column. It does not work:
+   the widths summed wider than the column the table sits in, so the title was
+   squeezed to nothing, its link became a zero-area click target, and the rest was
+   clipped into a pile. Fixed layout needs numbers that fit at every window width,
+   and there are none.
 
    The labels come from types/mits.ts rather than living here, so a new status
    cannot render as a blank cell in one table and a label in another.
@@ -124,39 +133,49 @@ export function TicketTable({
   return (
     <div className="rounded-2xl border border-border bg-card shadow-elev-1">
       {/*
-        `overflow-hidden` rather than the primitive's `overflow-x-auto`: with
-        `table-fixed` there is nothing to scroll to, and leaving the container
-        scrollable would let a long unbroken word push a phantom scrollbar in.
+        Automatic layout, **not** `table-fixed`.
+
+        `table-fixed` with a declared width per column was the first attempt and it
+        broke the page: the widths summed to about 1070 px while the queue's main
+        column is roughly 930 px next to the sidebar, so the one column without a
+        declared width — the title — was squeezed to zero. Its link became a click
+        target with no area, and `overflow-hidden` quietly clipped the rest into a
+        pile.
+
+        Automatic layout sizes each column to its content and gives the rest to the
+        title cell, which is marked `w-full max-w-0` below so it absorbs the slack
+        and truncates instead of growing. Nothing can overflow, so the container
+        stays `overflow-hidden`.
       */}
-      <Table containerClassName="overflow-hidden" className="table-fixed">
+      <Table containerClassName="overflow-hidden">
         <TableHeader>
           <TableRow>
             {/*
-              Widths are declared once, here, because `table-fixed` takes them
-              from the first row and ignores everything the cells ask for. The
-              title column is the only one without one — it absorbs whatever is
-              left, which is what keeps the rest from being squeezed.
+              No widths. Every column but the title sizes itself to its content —
+              a sixteen-digit number and a status badge are each as wide as they
+              are — and the title takes whatever is left.
 
               `hidden … table-cell` drops the context columns on narrow screens
               rather than shrinking them into unreadability. What survives at every
               width is number, title, status and age: enough to find a ticket and
-              know whether it needs attention.
+              know whether it needs attention. Those breakpoints are also what keep
+              the content-sized columns from eating the title on a laptop.
             */}
-            {header("number", "w-40")}
-            {header("title")}
+            {header("number")}
+            {header("title", "w-full")}
             {showLocation && (
-              <TableHead className="hidden w-24 lg:table-cell">Standort</TableHead>
+              <TableHead className="hidden lg:table-cell">Standort</TableHead>
             )}
-            {showOwner && header("reporter", "hidden w-48 xl:table-cell")}
-            {showOwner && header("owner", "hidden w-40 lg:table-cell")}
-            {header("priority", "hidden w-28 sm:table-cell")}
-            {header("status", "w-36")}
+            {showOwner && header("reporter", "hidden xl:table-cell")}
+            {showOwner && header("owner", "hidden lg:table-cell")}
+            {header("priority", "hidden sm:table-cell")}
+            {header("status")}
             {showTime && (
-              <TableHead className="hidden w-24 text-right xl:table-cell">
+              <TableHead className="hidden text-right xl:table-cell">
                 Zeit
               </TableHead>
             )}
-            {header("age", "w-28")}
+            {header("age")}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -186,20 +205,22 @@ export function TicketTable({
                     {formatTicketNumber(ticket.ticket_number)}
                   </span>
                 </TableCell>
+                {/*
+                  `w-full max-w-0` is what makes automatic layout truncate instead
+                  of grow: the cell asks for all the remaining width and is then
+                  told its maximum is zero, so the browser hands it the slack and
+                  clips the content rather than widening the table. The link stays
+                  a full-width block, which is the row-height click target.
+                */}
                 <TableCell
                   className={cn(
-                    "font-medium",
+                    "w-full max-w-0 truncate font-medium",
                     // Weight *and* the dot, not an accent hue alone: colour is the
                     // one signal a red-green colour blind reader loses, and "which
                     // of these is new" is the entire point of the row.
                     ticket.unread && "font-semibold",
                   )}
                 >
-                  {/*
-                    `block truncate` needs the cell to have a width to truncate
-                    against, which `table-fixed` gives it. The full text stays
-                    available as the tooltip and to a screen reader.
-                  */}
                   <Link
                     href={`${detailBase}/${ticket.id}`}
                     title={ticket.title}
@@ -212,26 +233,38 @@ export function TicketTable({
                   )}
                 </TableCell>
                 {showLocation && (
-                  <TableCell className="hidden truncate text-xs text-muted-foreground lg:table-cell">
+                  <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
                     {/* A ticket can outlive its branch — see lib/locations.ts. */}
-                    {location?.code || location?.name || "—"}
+                    <span className="block max-w-24 truncate">
+                      {location?.code || location?.name || "—"}
+                    </span>
                   </TableCell>
                 )}
                 {showOwner && (
-                  <TableCell
-                    className="hidden truncate text-xs xl:table-cell"
-                    title={ticket.created_by_email}
-                  >
-                    {ticket.created_by_email}
+                  <TableCell className="hidden text-xs xl:table-cell">
+                    {/*
+                      Capped on an inner span, not on the cell: in automatic layout
+                      a `max-width` on a `<td>` is advisory, and a long address
+                      would still widen the column — taking the space back out of
+                      the title.
+                    */}
+                    <span
+                      className="block max-w-44 truncate"
+                      title={ticket.created_by_email}
+                    >
+                      {ticket.created_by_email}
+                    </span>
                   </TableCell>
                 )}
                 {showOwner && (
-                  <TableCell className="hidden truncate text-xs lg:table-cell">
-                    {ticket.assigned_to_name ?? (
-                      <span className="text-muted-foreground">
-                        Nicht zugewiesen
-                      </span>
-                    )}
+                  <TableCell className="hidden text-xs lg:table-cell">
+                    <span className="block max-w-32 truncate">
+                      {ticket.assigned_to_name ?? (
+                        <span className="text-muted-foreground">
+                          Nicht zugewiesen
+                        </span>
+                      )}
+                    </span>
                   </TableCell>
                 )}
                 <TableCell className="hidden sm:table-cell">
@@ -245,11 +278,7 @@ export function TicketTable({
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge
-                    variant="secondary"
-                    className="max-w-full truncate rounded-full"
-                    title={TICKET_STATUS_LABELS[ticket.status]}
-                  >
+                  <Badge variant="secondary" className="rounded-full">
                     {TICKET_STATUS_LABELS[ticket.status]}
                   </Badge>
                 </TableCell>
@@ -330,7 +359,9 @@ function SortableHead({
         // Hover moves the background and leaves the label at full contrast; the
         // arrow's opacity is the only thing that dims, and it is decoration.
         className={cn(
-          "-mx-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+          // No negative margin: the container clips, so a control that pokes
+          // outside its cell loses its left edge in the first column.
+          "inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
           active && "font-semibold",
         )}
       >

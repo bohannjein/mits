@@ -52,7 +52,25 @@ export default async function RootLayout({
       className={`dark ${robotoSans.variable} ${robotoMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="flex min-h-full flex-col">
+      {/*
+        `h-full`, not `min-h-full`.
+
+        Six pages — both ticket detail views, the three CMDB views and the FAQ
+        reader — are app shells: they bound a region with `min-h-0` and let the
+        conversation or the columns inside it scroll. That only works if some
+        ancestor has a *definite* height to divide up. `min-height: 100%` is not
+        one: the body still grows to fit its content, so `flex-1` had no fixed
+        leftover to hand out, the bounded region silently sized itself to its
+        content, and the whole page scrolled after all. It looked like the layout
+        working right up until a ticket had enough replies to prove it did not.
+
+        Ordinary pages are unaffected. Their `main` keeps the default
+        `min-height: auto`, so it still refuses to shrink below its content, grows
+        past the viewport and gives the window its usual scrollbar — padding and
+        all. Only a `main` that explicitly opted into `min-h-0` is bounded, and
+        those are exactly the six that want to be.
+      */}
+      <body className="flex h-full flex-col">
         <ThemeProvider>
           <TimezoneProvider timezone={timezone}>
             {/*

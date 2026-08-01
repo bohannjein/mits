@@ -55,48 +55,56 @@ export function QueueTabs({
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-center gap-2">
-      {/* Segmented control. Two links styled as one control rather than a
+        {/*
+          Segmented control. Two links styled as one control rather than a
           <fieldset> of radios: the state lives in the URL, so there is nothing to
-          submit. */}
-      <div
-        role="group"
-        aria-label="Zuständigkeit"
-        className="inline-flex w-fit gap-1 rounded-full border border-border bg-card p-1"
-      >
-        {AGENT_SCOPES.map((candidate) => {
-          const Icon = SCOPE_ICONS[candidate];
-          const isActive = candidate === scope;
+          submit.
 
-          /*
-           * Switching scope always lands on that scope's first tab — Eingang in the
-           * pool, Offen in "Mein Bereich".
-           *
-           * Carrying the current view across looked tidy and read as nothing
-           * happening: the tab bar stayed on "Offen" and only the list changed, so
-           * the switch gave no feedback that it had worked. Starting at the front
-           * also matches what each scope is for — the pool is triaged from its
-           * inbox, one's own area from what is still open.
-           */
-          const target = viewsForScope(candidate)[0];
+          `h-11` on the group as well as on the action pills beside it. Without it
+          the switcher measures its own padding — 4 + 36 + 4 plus the border — and
+          comes out two pixels taller than the buttons in the same row, which
+          `items-center` then turns into a one-pixel offset on both edges. Two
+          controls of the same rank on one line have to be the same height.
+        */}
+        <div
+          role="group"
+          aria-label="Zuständigkeit"
+          className="inline-flex h-11 w-fit items-center gap-1 rounded-full border border-border bg-card p-1"
+        >
+          {AGENT_SCOPES.map((candidate) => {
+            const Icon = SCOPE_ICONS[candidate];
+            const isActive = candidate === scope;
 
-          return (
-            <Link
-              key={candidate}
-              href={`/mits?scope=${candidate}&view=${target}`}
-              aria-current={isActive ? "true" : undefined}
-              className={cn(
-                "inline-flex h-9 items-center gap-2 rounded-full px-3.5 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-inverse-surface text-inverse-surface-foreground"
-                  : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground",
-              )}
-            >
-              <Icon className="size-4" strokeWidth={1.5} aria-hidden />
-              {AGENT_SCOPE_LABELS[candidate]}
-            </Link>
-          );
-        })}
-      </div>
+            /*
+             * Switching scope always lands on that scope's first tab — Eingang in
+             * the pool, Offen in "Mein Bereich".
+             *
+             * Carrying the current view across looked tidy and read as nothing
+             * happening: the tab bar stayed on "Offen" and only the list changed,
+             * so the switch gave no feedback that it had worked. Starting at the
+             * front also matches what each scope is for — the pool is triaged from
+             * its inbox, one's own area from what is still open.
+             */
+            const target = viewsForScope(candidate)[0];
+
+            return (
+              <Link
+                key={candidate}
+                href={`/mits?scope=${candidate}&view=${target}`}
+                aria-current={isActive ? "true" : undefined}
+                className={cn(
+                  "inline-flex h-9 items-center gap-2 rounded-full px-3.5 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-inverse-surface text-inverse-surface-foreground"
+                    : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground",
+                )}
+              >
+                <Icon className="size-4" strokeWidth={1.5} aria-hidden />
+                {AGENT_SCOPE_LABELS[candidate]}
+              </Link>
+            );
+          })}
+        </div>
 
         {actions}
       </div>

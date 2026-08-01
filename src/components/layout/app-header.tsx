@@ -58,10 +58,25 @@ export async function AppHeader() {
     isFeatureEnabled("feature_toast_notifications");
 
   return (
-    <header className="border-b border-border bg-card">
+    /*
+     * `shrink-0` because the body is a flex column with a definite height: without
+     * it the header is a shrinkable item, and on a page taller than the viewport
+     * the flex algorithm has it as the only candidate to take the overflow out of.
+     * Its own `min-height: auto` happens to save it today — that is not something
+     * to rely on for the one element present on every page.
+     */
+    <header className="shrink-0 border-b border-border bg-card">
       {trackPresence && <PresenceHeartbeat />}
       {watchNotifications && <NotificationWatcher />}
-      <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-3">
+      {/*
+        `max-w-7xl`, matching the widest page shell below it. At `max-w-6xl` the
+        header was 128 px narrower than the queue, the analytics panel and both
+        ticket views, so on a wide screen the logo sat visibly inset from the
+        heading underneath it and the user menu from the sidebar. Narrower pages
+        centre inside it, which is what a chrome bar is supposed to do — the defect
+        was only ever the header being the *narrower* of the two.
+      */}
+      <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-6 py-3">
         {/* Straight to the signed-in user's own area instead of through the `/`
             dispatcher: a reporter clicking the logo lands in their portal without
             a redirect hop that briefly resolves a staff route. */}

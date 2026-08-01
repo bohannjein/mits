@@ -64,12 +64,38 @@ export function TicketFrame({
 
   return (
     <div className="flex w-full flex-1 flex-col gap-6 lg:min-h-0 lg:flex-row">
-      {/* The chat column. `lg:min-w-0` as well as `lg:min-h-0`: a wide code block
-          or a mailed-in table inside a bubble would otherwise stretch the column
-          instead of scrolling inside itself. */}
-      <div className="flex flex-col rounded-2xl border border-border bg-card p-4 lg:min-h-0 lg:min-w-0 lg:flex-1 lg:overflow-hidden">
+      {/*
+        The chat column. `lg:min-w-0` as well as `lg:min-h-0`: a wide code block
+        or a mailed-in table inside a bubble would otherwise stretch the column
+        instead of scrolling inside itself.
+
+        `bg-background`, not `bg-card`. The reporter's bubble *is* `--card`, so a
+        card-coloured column made every incoming message invisible on the surface
+        it sits on. The column is the shell; the bubbles and the reply box are
+        what is raised on it.
+      */}
+      <div className="flex flex-col rounded-2xl border border-border bg-background p-4 lg:min-h-0 lg:min-w-0 lg:flex-1 lg:overflow-hidden">
+        {/*
+          The title block is capped at 38vh and scrolls past that.
+
+          `shrink-0` protects the head from a long thread, but nothing protected
+          the thread from a long head: the agent view puts every machine-written
+          tag up here and the reporter view an expandable list of their own
+          answers, and either can grow taller than the column. The messages region
+          is the only `flex-1` in the chain, so all of that growth came out of it —
+          expand "Meine Angaben" on a laptop and the conversation collapsed to a
+          sliver between the head and the reply box.
+
+          A viewport unit rather than a percentage: a percentage max-height needs a
+          parent with a resolved height, and this row's height is its content —
+          `max-h-[40%]` there computes to `none` and caps nothing at all.
+        */}
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border pb-4">
-          <div className="min-w-0 flex-1">{header}</div>
+          {/* The cap is on the title block, not on the row — the toggle beside it
+              has to stay put rather than scroll out of its own header. */}
+          <div className="scrollbar-thin min-w-0 flex-1 lg:max-h-[38vh] lg:overflow-y-auto">
+            {header}
+          </div>
 
           {/*
             The toggle sits in the chat header rather than beside the sidebar, so

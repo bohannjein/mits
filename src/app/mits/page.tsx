@@ -136,6 +136,9 @@ export default async function AgentQueuePage({
   const locations = listLocations();
   const { opened, closed } = todayCounts();
 
+  const showAside =
+    flags.feature_stats_heatmap || flags.feature_presence_sidebar;
+
   /*
    * Awaited, unlike the counts above: the banner belongs at the top of the page
    * and streaming it in afterwards would push the queue down under the agent's
@@ -149,26 +152,36 @@ export default async function AgentQueuePage({
       <AppHeader />
       <main className="flex flex-1 flex-col items-center px-6 py-10">
         <div className="w-full max-w-7xl">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
-                Queue
-              </h1>
-              <p className="mt-2 text-muted-foreground">
-                {/* `total`, not `tickets.length` — the latter is now the page
-                    size, and a queue of two hundred reporting "50 Tickets" is a
-                    number somebody would act on. */}
-                {AGENT_SCOPE_LABELS[scope]} · {AGENT_VIEW_LABELS[view]} —{" "}
-                {total} {total === 1 ? "Ticket" : "Tickets"}, angemeldet als{" "}
-                {user.email}.
-              </p>
-            </div>
-
+          <div>
+            <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
+              Queue
+            </h1>
+            <p className="mt-2 text-muted-foreground">
+              {/* `total`, not `tickets.length` — the latter is now the page size,
+                  and a queue of two hundred reporting "50 Tickets" is a number
+                  somebody would act on. */}
+              {AGENT_SCOPE_LABELS[scope]} · {AGENT_VIEW_LABELS[view]} —{" "}
+              {total} {total === 1 ? "Ticket" : "Tickets"}, angemeldet als{" "}
+              {user.email}.
+            </p>
           </div>
 
           <Separator className="my-8 bg-border" />
 
-          <div className="grid gap-8 lg:grid-cols-[1fr_20rem] lg:items-start">
+          {/*
+            The sidebar column exists only when something goes in it. Declaring
+            `1fr 20rem` unconditionally reserved 320 px of nothing on an instance
+            with both sidebar modules switched off, and took that width straight
+            out of the ticket table — the one element on the page that has to fit
+            without scrolling sideways.
+          */}
+          <div
+            className={
+              showAside
+                ? "grid gap-8 lg:grid-cols-[1fr_20rem] lg:items-start"
+                : "grid gap-8"
+            }
+          >
             <div className="grid min-w-0 gap-4">
               {/*
                 Above the tabs, because it is about the queue as a whole rather
@@ -267,20 +280,22 @@ export default async function AgentQueuePage({
               )}
             </div>
 
-            <aside className="grid gap-6">
-              {flags.feature_stats_heatmap && (
-                <StatsTiles
-                  opened={opened}
-                  closed={closed}
-                  locations={locations}
-                  counts={ticketCountsByLocation()}
-                  showHeatmap={flags.feature_stats_heatmap}
-                />
-              )}
-              {flags.feature_presence_sidebar && (
-                <PresenceList people={listPresence()} />
-              )}
-            </aside>
+            {showAside && (
+              <aside className="grid gap-6">
+                {flags.feature_stats_heatmap && (
+                  <StatsTiles
+                    opened={opened}
+                    closed={closed}
+                    locations={locations}
+                    counts={ticketCountsByLocation()}
+                    showHeatmap={flags.feature_stats_heatmap}
+                  />
+                )}
+                {flags.feature_presence_sidebar && (
+                  <PresenceList people={listPresence()} />
+                )}
+              </aside>
+            )}
           </div>
         </div>
       </main>
