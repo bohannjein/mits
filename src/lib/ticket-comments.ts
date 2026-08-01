@@ -16,6 +16,7 @@ import {
   TicketCommentSchema,
   type CommentBodyFormat,
   type CommentVisibility,
+  type MITSTicket,
   type TicketComment,
 } from "@/types/mits";
 
@@ -81,6 +82,69 @@ export function listCommentsFor(
         .all(ticketId) as CommentRow[]);
 
   return rows.map(rowToComment);
+}
+
+/**
+ * A short string that changes whenever this reader's view of the thread does.
+ *
+ * What the live poll on the ticket page compares. Two counts and a timestamp
+ * rather than the comments themselves: the point of the poll is to answer "is
+ * there anything new" every few seconds, and shipping every body to answer it
+ * would send the whole conversation down the wire once a tick.
+ *
+ * **Built from the same visibility rule as the listing**, by counting through
+ * `visibility` the same way. A fingerprint that moved when an internal note was
+ * written would refresh a reporter's page for something they will never be shown
+ * — and repeated, that is a side channel telling them roughly when staff are
+ * talking about their ticket.
+ *
+ * The count is in it as well as the newest timestamp because a deletion changes
+ * neither the maximum nor anything else a reader would notice otherwise.
+ */
+function commentFingerprint(ticketId: string, user: SessionUser): string {
+  const scope = canViewBoard(user.role) ? "" : "AND visibility = 'public'";
+
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS count, MAX(created_at) AS latest
+         FROM mits_ticket_comment
+        WHERE ${ALIVE} AND ticket_id = ? ${scope}`,
+    )
+    .get(ticketId) as { count: number; latest: string | null };
+
+  return `${row.count}:${row.latest ?? ""}`;
+}
+
+/**
+ * Everything on the ticket page that a poll should notice, as one string.
+ *
+ * Called from **both** sides of the live loop — the page renders it into
+ * `TicketLive` as the starting value, and `/api/tickets/[id]/activity` returns it
+ * on every tick. One function rather than one expression in each place: the two
+ * are compared for equality, so a difference in how they are built is not a
+ * cosmetic inconsistency but a page that either never refreshes or refreshes
+ * forever, and neither failure names its cause.
+ *
+ * The ticket half is the fields that are actually on screen rather than an
+ * `updated_at` column, so a write that changes nothing visible does not drag
+ * every open tab through a re-render.
+ */
+export function ticketActivityFingerprint(
+  ticket: Pick<
+    MITSTicket,
+    "id" | "status" | "priority" | "assigned_to" | "major_incident" | "tags"
+  >,
+  user: SessionUser,
+): string {
+  const state = [
+    ticket.status,
+    ticket.priority,
+    ticket.assigned_to ?? "",
+    ticket.major_incident ? "1" : "0",
+    ticket.tags.join(","),
+  ].join("|");
+
+  return `${commentFingerprint(ticket.id, user)}|${state}`;
 }
 
 /**

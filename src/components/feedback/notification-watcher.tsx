@@ -37,6 +37,33 @@ interface FeedItem {
  */
 const POLL_MS = 20_000;
 
+/*
+ * Event keys already shown, at module scope rather than in a ref.
+ *
+ * `AppHeader` is rendered by each page, so every navigation unmounts this
+ * component and mounts a fresh one — and TanStack hands the new instance the
+ * cached `["notifications"]` result straight away. With the cursor living only in
+ * a ref, that cache hit replayed the last batch as toasts on arrival at the next
+ * page: click through to the ticket a notification pointed at, and it announced
+ * itself again on the page it had just taken you to.
+ *
+ * A module-level set survives the remount, which is the point — it is scoped to
+ * the tab, and a tab is exactly how long "I have already seen this" holds.
+ * Bounded, because a long shift on one tab would otherwise grow it without limit.
+ */
+const shown = new Set<string>();
+const MAX_REMEMBERED = 200;
+
+function remember(key: string): boolean {
+  if (shown.has(key)) return false;
+  if (shown.size >= MAX_REMEMBERED) {
+    // Oldest first — insertion order is guaranteed for a Set.
+    shown.delete(shown.values().next().value as string);
+  }
+  shown.add(key);
+  return true;
+}
+
 export function NotificationWatcher() {
   // Mount time, so the first poll never replays the backlog. Somebody opening a
   // page should not be greeted by four toasts about things from before lunch.
@@ -71,6 +98,7 @@ export function NotificationWatcher() {
     if (!data || data.length === 0) return;
 
     for (const item of data) {
+      if (!remember(item.key)) continue;
       toast({
         key: item.key,
         kind: item.kind,

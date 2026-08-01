@@ -106,7 +106,6 @@ export async function assignTicketAction(
   revalidatePath(`/customer/tickets/${ticketId}`);
   revalidatePath(`/mits/tickets/${ticketId}`);
   revalidatePath("/mits");
-  revalidatePath("/mits");
 
   return {
     ok: true,
@@ -128,7 +127,6 @@ export async function setTicketStatusAction(
   setTicketStatus(ticketId, status.data, auth.user);
   revalidatePath(`/customer/tickets/${ticketId}`);
   revalidatePath(`/mits/tickets/${ticketId}`);
-  revalidatePath("/mits");
   revalidatePath("/mits");
 
   return { ok: true, message: "Status geändert." };

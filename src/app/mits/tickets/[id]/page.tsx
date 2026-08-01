@@ -6,6 +6,7 @@ import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
 import { TicketComposer } from "@/components/tickets/ticket-composer";
 import { TicketFrame } from "@/components/tickets/ticket-frame";
+import { TicketLive } from "@/components/tickets/ticket-live";
 import { TicketMessages } from "@/components/tickets/ticket-messages";
 import { TicketSidebar } from "@/components/tickets/ticket-sidebar";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +27,10 @@ import { getLocation } from "@/lib/locations";
 import { formatDateTime } from "@/lib/format";
 import { getSystemTimezone } from "@/lib/system-settings";
 import { listAuditFor } from "@/lib/audit";
-import { listCommentsFor } from "@/lib/ticket-comments";
+import {
+  listCommentsFor,
+  ticketActivityFingerprint,
+} from "@/lib/ticket-comments";
 import { getAISettings } from "@/lib/ai-settings";
 import { parkedChildren } from "@/lib/services/ai/clustering";
 import {
@@ -175,6 +179,12 @@ export default async function AgentTicketPage({
       */}
       <main className="flex flex-1 flex-col items-center px-6 py-6 lg:min-h-0 lg:overflow-hidden">
         <div className="flex w-full max-w-7xl flex-1 flex-col lg:min-h-0">
+          {/* Renders nothing. Polls for new replies and status changes and swaps
+              the RSC payload in when there are any — see ticket-live.tsx. */}
+          <TicketLive
+            ticketId={ticket.id}
+            fingerprint={ticketActivityFingerprint(ticket, user)}
+          />
           <TicketFrame
             sidebarLabel="Details"
             header={

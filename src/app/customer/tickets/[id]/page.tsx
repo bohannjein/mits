@@ -6,6 +6,7 @@ import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
 import { TicketComposer } from "@/components/tickets/ticket-composer";
 import { TicketFrame } from "@/components/tickets/ticket-frame";
+import { TicketLive } from "@/components/tickets/ticket-live";
 import { TicketMessages } from "@/components/tickets/ticket-messages";
 import {
   Accordion,
@@ -18,7 +19,10 @@ import { requireUser } from "@/lib/auth/session";
 import { getFormSchema } from "@/lib/form-schemas";
 import { resolveFields } from "@/lib/forms/schema-to-zod";
 import { getLocation } from "@/lib/locations";
-import { listCommentsFor } from "@/lib/ticket-comments";
+import {
+  listCommentsFor,
+  ticketActivityFingerprint,
+} from "@/lib/ticket-comments";
 import {
   fieldsBesidesOpening,
   openingFieldName,
@@ -99,6 +103,13 @@ export default async function CustomerTicketPage({
       */}
       <main className="flex flex-1 flex-col items-center px-6 py-8 lg:min-h-0 lg:overflow-hidden">
         <div className="flex w-full max-w-3xl flex-1 flex-col lg:min-h-0">
+          {/* The reporter's half of the live loop. An answer from the desk lands
+              in the thread within seconds instead of on the next page load — the
+              one thing somebody watching their own ticket is waiting for. */}
+          <TicketLive
+            ticketId={ticket.id}
+            fingerprint={ticketActivityFingerprint(ticket, user)}
+          />
           <TicketFrame
             header={
               <>

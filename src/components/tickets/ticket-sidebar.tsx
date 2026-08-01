@@ -12,7 +12,12 @@ import {
   TriangleAlertIcon,
   UserCheckIcon,
 } from "lucide-react";
-import { useActionState, useRef } from "react";
+import {
+  startTransition,
+  useActionState,
+  useEffect,
+  useState,
+} from "react";
 
 import {
   assignTicketAction,
@@ -20,6 +25,7 @@ import {
   setTicketStatusAction,
   softDeleteTicketAction,
 } from "@/app/actions/tickets";
+import { useToast } from "@/components/feedback/toast";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,6 +61,33 @@ import {
   type AuditEntry,
   type MITSUserProfile,
 } from "@/types/mits";
+
+/**
+ * Fire a Server Action with fields built here rather than read out of the DOM.
+ *
+ * The dispatch returned by `useActionState` takes the same `FormData` a `<form>`
+ * would have posted, so the action signature is untouched — what changes is where
+ * the values come from. Read from the DOM they are one render behind whatever was
+ * just clicked; built here they are the click itself.
+ *
+ * Wrapped in `startTransition` because this is called from an event handler rather
+ * than from a form submission: without it React warns, and the `pending` flag that
+ * disables the controls never turns on.
+ */
+/** What the three workflow actions answer with. */
+type ActionFeedback =
+  | { ok: true; message: string }
+  | { ok: false; error: string }
+  | null;
+
+function dispatch(
+  action: (payload: FormData) => void,
+  fields: Record<string, string>,
+): void {
+  const data = new FormData();
+  for (const [name, value] of Object.entries(fields)) data.set(name, value);
+  startTransition(() => action(data));
+}
 
 /* ──────────────────────────────────────────────────────────────────────────
    Ticket metadata sidebar.
@@ -132,6 +165,8 @@ export function TicketSidebar({
     .filter((line): line is string => Boolean(line))
     .join("\n");
 
+  const { toast } = useToast();
+
   const [statusResult, statusAction, changingStatus] = useActionState(
     setTicketStatusAction,
     null,
@@ -149,13 +184,83 @@ export function TicketSidebar({
     null,
   );
 
-  const statusForm = useRef<HTMLFormElement>(null);
-  const priorityForm = useRef<HTMLFormElement>(null);
-  const assignForm = useRef<HTMLFormElement>(null);
+  /*
+   * The three dropdowns apply on change, and getting that right is less obvious
+   * than it looks.
+   *
+   * The first version rendered each select inside its own `<form>` and called
+   * `form.requestSubmit()` from `onValueChange`. That is broken, and broken in the
+   * way that is hardest to see: `requestSubmit` runs synchronously inside the
+   * handler, *before* React has committed the render that writes the new value
+   * into the hidden native `<select>` Radix keeps for form participation. So the
+   * form posted the **previous** value every time — pick "In Bearbeitung" on an
+   * open ticket and the server dutifully set it to "Offen" again. The control
+   * snapped back, the action reported success, and nothing in the UI said why.
+   *
+   * There is no form now. The value is React state, and the action is dispatched
+   * with a `FormData` built by hand — so what gets sent is exactly what was
+   * clicked, with no DOM round-trip in between to be early for.
+   */
+  const [status, setStatus] = useState<MITSTicket["status"]>(ticket.status);
+  const [priority, setPriority] = useState<MITSTicket["priority"]>(
+    ticket.priority,
+  );
+  const [assignee, setAssignee] = useState(ticket.assigned_to ?? UNASSIGNED);
+
+  /*
+   * The server has the last word.
+   *
+   * On success the page revalidates and the prop arrives with the new value, so
+   * this is a no-op. On rejection the prop is unchanged while the local state
+   * holds the refused choice — `result` in the dependency list is what snaps the
+   * control back, so the select never shows a value the ticket does not have.
+   */
+  useEffect(() => {
+    setStatus(ticket.status);
+    setPriority(ticket.priority);
+    setAssignee(ticket.assigned_to ?? UNASSIGNED);
+  }, [ticket.status, ticket.priority, ticket.assigned_to, statusResult, priorityResult, assignResult]);
 
   const busy = changingStatus || changingPriority || assigning;
-  const result = statusResult ?? priorityResult ?? assignResult;
   const mine = ticket.assigned_to === currentUserId;
+
+  /*
+   * The feedback of the action that ran **last**, not of the first one that ever
+   * ran.
+   *
+   * This was `statusResult ?? priorityResult ?? assignResult`, which is wrong the
+   * moment two of them are used in one sitting: once a status change has left a
+   * result behind, that result masks every later one, so a rejected reassignment
+   * showed "Status geändert." in green. Each action writes into one slot instead,
+   * and the newest write wins.
+   */
+  const [feedback, setFeedback] = useState<ActionFeedback>(null);
+  useEffect(() => {
+    if (statusResult) setFeedback(statusResult);
+  }, [statusResult]);
+  useEffect(() => {
+    if (priorityResult) setFeedback(priorityResult);
+  }, [priorityResult]);
+  useEffect(() => {
+    if (assignResult) setFeedback(assignResult);
+  }, [assignResult]);
+
+  const result = feedback;
+
+  /*
+   * A confirmation also goes to the toast stack, not only to the alert below the
+   * controls.
+   *
+   * These sections collapse and the sidebar scrolls independently, so the alert is
+   * regularly off-screen at the moment it appears — an agent who changed a status
+   * from a scrolled-down sidebar got no feedback at all. The alert stays for the
+   * error case, where being next to the control that refused is the point.
+   */
+  useEffect(() => {
+    if (feedback?.ok) {
+      toast({ kind: "system", tone: "success", title: feedback.message });
+    }
+  }, [feedback, toast]);
 
   const sections: SidebarSection[] = [
     {
@@ -163,115 +268,128 @@ export function TicketSidebar({
       title: "Status & Zuweisung",
       content: (
         <div className="grid gap-4">
-          <form ref={statusForm} action={statusAction} className="grid gap-1.5">
-                      <input type="hidden" name="ticketId" value={ticket.id} />
-                      <Label htmlFor="sb-status" className="text-xs text-muted-foreground">
-                        Status
-                      </Label>
-                      <Select
-                        name="status"
-                        defaultValue={ticket.status}
-                        disabled={busy}
-                        // Submitting from the change handler is what makes it apply without
-                        // a button; the hidden native select Radix renders carries the value.
-                        onValueChange={() => statusForm.current?.requestSubmit()}
-                      >
-                        <SelectTrigger id="sb-status" className="h-10 w-full rounded-xl">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {TicketStatus.options.map((status) => (
-                            <SelectItem key={status} value={status}>
-                              {TICKET_STATUS_LABELS[status]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </form>
-          
-                    <form ref={priorityForm} action={priorityAction} className="grid gap-1.5">
-                      <input type="hidden" name="ticketId" value={ticket.id} />
-                      <Label htmlFor="sb-priority" className="text-xs text-muted-foreground">
-                        Priorität
-                      </Label>
-                      <Select
-                        name="priority"
-                        defaultValue={ticket.priority}
-                        disabled={busy}
-                        onValueChange={() => priorityForm.current?.requestSubmit()}
-                      >
-                        <SelectTrigger id="sb-priority" className="h-10 w-full rounded-xl">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {TicketPriorityValues.map((priority) => (
-                            <SelectItem key={priority} value={priority}>
-                              {TICKET_PRIORITY_LABELS[priority]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </form>
-          
-                    <form ref={assignForm} action={assignAction} className="grid gap-1.5">
-                      <input type="hidden" name="ticketId" value={ticket.id} />
-                      <Label htmlFor="sb-assignee" className="text-xs text-muted-foreground">
-                        Zuweisung
-                      </Label>
-                      <Select
-                        name="assigneeId"
-                        defaultValue={ticket.assigned_to ?? UNASSIGNED}
-                        disabled={busy}
-                        onValueChange={() => assignForm.current?.requestSubmit()}
-                      >
-                        <SelectTrigger id="sb-assignee" className="h-10 w-full rounded-xl">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={UNASSIGNED}>Nicht zugewiesen</SelectItem>
-                          {agents.map((agent) => (
-                            <SelectItem key={agent.id} value={agent.id}>
-                              {agent.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </form>
-          
-                    {/* Self-assign stays a button: it is the common case and should not
-                        require finding your own name in a list. */}
-                    <form action={assignAction}>
-                      <input type="hidden" name="ticketId" value={ticket.id} />
-                      <input type="hidden" name="assigneeId" value={currentUserId} />
-                      <Button
-                        type="submit"
-                        className="h-9 w-full rounded-full bg-inverse-surface px-4 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
-                        disabled={busy || mine}
-                      >
-                        {assigning ? (
-                          <Loader2Icon className="animate-spin" />
-                        ) : (
-                          <UserCheckIcon strokeWidth={1.5} />
-                        )}
-                        {mine ? "Dir zugewiesen" : "Mir zuweisen"}
-                      </Button>
-                    </form>
-          
-                    {result && (
-                      <Alert
-                        variant={result.ok ? "default" : "destructive"}
-                        className="rounded-xl border-border px-3 py-2"
-                      >
-                        {result.ok ? (
-                          <CheckCircle2Icon strokeWidth={1.5} />
-                        ) : (
-                          <TriangleAlertIcon strokeWidth={1.5} />
-                        )}
-                        <AlertDescription className="text-xs">
-                          {result.ok ? result.message : result.error}
-                        </AlertDescription>
-                      </Alert>
-                    )}
+          <div className="grid gap-1.5">
+            <Label htmlFor="sb-status" className="text-xs text-muted-foreground">
+              Status
+            </Label>
+            <Select
+              value={status}
+              disabled={busy}
+              onValueChange={(next) => {
+                const chosen = next as MITSTicket["status"];
+                setStatus(chosen);
+                dispatch(statusAction, { ticketId: ticket.id, status: chosen });
+              }}
+            >
+              <SelectTrigger id="sb-status" className="h-10 w-full rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TicketStatus.options.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {TICKET_STATUS_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="sb-priority" className="text-xs text-muted-foreground">
+              Priorität
+            </Label>
+            <Select
+              value={priority}
+              disabled={busy}
+              onValueChange={(next) => {
+                const chosen = next as MITSTicket["priority"];
+                setPriority(chosen);
+                dispatch(priorityAction, {
+                  ticketId: ticket.id,
+                  priority: chosen,
+                });
+              }}
+            >
+              <SelectTrigger id="sb-priority" className="h-10 w-full rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TicketPriorityValues.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {TICKET_PRIORITY_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="sb-assignee" className="text-xs text-muted-foreground">
+              Zuweisung
+            </Label>
+            <Select
+              value={assignee}
+              disabled={busy}
+              onValueChange={(next) => {
+                setAssignee(next);
+                dispatch(assignAction, {
+                  ticketId: ticket.id,
+                  assigneeId: next,
+                });
+              }}
+            >
+              <SelectTrigger id="sb-assignee" className="h-10 w-full rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UNASSIGNED}>Nicht zugewiesen</SelectItem>
+                {agents.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Self-assign stays a button: it is the common case and should not
+              require finding your own name in a list. Same dispatch, so it goes
+              through the same pending state as the dropdown above it. */}
+          <Button
+            type="button"
+            onClick={() => {
+              setAssignee(currentUserId);
+              dispatch(assignAction, {
+                ticketId: ticket.id,
+                assigneeId: currentUserId,
+              });
+            }}
+            className="h-9 w-full rounded-full bg-inverse-surface px-4 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+            disabled={busy || mine}
+          >
+            {assigning ? (
+              <Loader2Icon className="animate-spin" />
+            ) : (
+              <UserCheckIcon strokeWidth={1.5} />
+            )}
+            {mine ? "Dir zugewiesen" : "Mir zuweisen"}
+          </Button>
+
+          {result && (
+            <Alert
+              variant={result.ok ? "default" : "destructive"}
+              className="rounded-xl border-border px-3 py-2"
+            >
+              {result.ok ? (
+                <CheckCircle2Icon strokeWidth={1.5} />
+              ) : (
+                <TriangleAlertIcon strokeWidth={1.5} />
+              )}
+              <AlertDescription className="text-xs">
+                {result.ok ? result.message : result.error}
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
       ),
     },

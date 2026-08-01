@@ -142,6 +142,7 @@ src/
       schema-form.tsx      <SchemaForm> — die einzige Formular-Komponente
     tickets/
       ticket-frame.tsx          fixe Ticket-Seite: Kopf, scrollender Verlauf, Antwortzeile
+      ticket-live.tsx           Poller: Fingerabdruck vergleichen, router.refresh()
       ticket-messages.tsx       nur die Bubble-Liste, beide Ansichten
       ticket-composer.tsx       nur die Antwortzeile, rich | plain
       tri-modal-container.tsx   Tabs: Schnellmeldung | Katalog | KI, POST /api/tickets
@@ -635,6 +636,7 @@ Maschinenaufruf bekommt also JSON statt eines Redirects auf die Anmeldung.
 /admin/settings/analytics Widget-Schalter und Default-Intervall
 /admin/mail             Postfach-Abruf + Defender-Regel
 /api/notifications      Feed für die Einblendungen, `?since=` (jede Rolle)
+/api/tickets/[id]/activity  Fingerabdruck für den Live-Verlauf, alle 8 s
 /api/analytics          Kennzahlen als JSON oder `?format=csv` (Agenten)
 /api/mail/poll          Postfach abrufen, Service-Token **oder** Admin-Sitzung
 /api/v1/cmdb/…          REST-Schnittstelle, Token **oder** Agenten-Sitzung
@@ -720,6 +722,69 @@ Sidebar ist eine vierte Region mit eigenem Scrollbereich.
   darauf. Aus demselben Grund hat die Antwortzeile im Normalzustand keinen eigenen
   Rahmen mehr — der Frame zeichnet schon eine Linie darüber, und zwei Linien zwölf
   Pixel auseinander lesen sich als Renderfehler.
+
+### Der Verlauf ist live
+
+`TicketLive` pollt `GET /api/tickets/[id]/activity` alle 8 s und ruft bei
+Änderung `router.refresh()`. Vorher war der Verlauf so statisch wie jede andere
+serverseitig gerenderte Liste — sichtbar wurde eine Antwort erst, wenn
+`AutoRefresh` vorbeikam, und das ist per Default alle **drei Minuten** und nie
+schneller als eine. Eine korrekte Seite und ein kaputter Chat.
+
+- **Gepollt wird ein Fingerabdruck, nicht die Nachrichten.** Neunundneunzig von
+  hundert Ticks kosten damit einen indizierten `COUNT`, keine Kopie der
+  Konversation. Wichtiger: es bleibt bei **einer** Stelle, die entscheidet, was
+  jemand sehen darf. Kommentare hier auszuliefern hieße, die Regel für interne
+  Notizen in eine zweite Datei zu schreiben.
+- **`ticketActivityFingerprint` wird von beiden Seiten aufgerufen** — die Seite
+  gibt ihn als Startwert an den Client, die Route liefert ihn bei jedem Tick.
+  Verglichen wird auf Gleichheit, ein Unterschied im Aufbau wäre also keine
+  Unsauberkeit, sondern eine Seite, die entweder nie oder endlos aktualisiert.
+- **Im Fingerabdruck steht auch der Ticketzustand**, und zwar die sichtbaren
+  Felder statt `updated_at`: sonst sähen zwei Agenten auf einem Ticket die
+  Antworten des anderen live und dessen Statuswechsel gar nicht — und ein
+  Schreibvorgang, den niemand sieht, zöge trotzdem jeden offenen Tab durch ein
+  Re-Render.
+- **Die Sichtbarkeitsregel steckt im Fingerabdruck.** Er bewegt sich für einen
+  Melder nicht, wenn eine interne Notiz geschrieben wird — sonst wäre die
+  Aktualisierung ein Seitenkanal, der ungefähr verrät, wann das Team über sein
+  Ticket spricht.
+- **`router.refresh()`, kein Reload.** Eine halb getippte Antwort überlebt die
+  Nachricht, die währenddessen ankommt. Nirgends sonst zählt das mehr.
+- **8 s sind nicht `AutoRefresh`.** Letzteres ist ein Seitenintervall in Minuten
+  pro Konto; das hier ist die Konversation. Konfigurierbar zu machen hieße,
+  jemanden einzuladen, fünf Minuten einzustellen und den Chat für kaputt zu
+  halten.
+
+### Zwei Fehler, die wie „geht nicht“ aussahen
+
+**Die Workflow-Dropdowns schickten den vorherigen Wert.** Sie lagen je in einem
+`<form>` und riefen `requestSubmit()` aus `onValueChange` — das läuft **synchron**,
+bevor React den neuen Wert in das versteckte native `<select>` geschrieben hat,
+das Radix für die Formularteilnahme hält. „In Bearbeitung“ auf einem offenen
+Ticket setzte also wieder „Offen“. Es gibt jetzt kein Formular mehr: der Wert ist
+React-State, die `FormData` wird von Hand gebaut, `startTransition` umschließt den
+Dispatch. Ohne die Transition warnt React und `pending` schaltet nie um.
+
+**`statusResult ?? priorityResult ?? assignResult` maskierte spätere Ergebnisse.**
+Sobald eine Statusänderung ein Ergebnis hinterlassen hatte, verdeckte es jedes
+folgende — eine abgelehnte Zuweisung meldete grün „Status geändert.“. Jede Aktion
+schreibt jetzt in denselben Slot, der jüngste Schreibvorgang gewinnt. Erfolg geht
+zusätzlich als Toast raus: die Sidebar scrollt eigenständig, die Meldung stand
+regelmäßig außerhalb des Bildes. Der Alert bleibt für den Fehlerfall, weil er dort
+neben dem Bedienelement stehen soll, das abgelehnt hat.
+
+**Der `NotificationWatcher` wiederholte sich beim Remount.** `AppHeader` wird pro
+Seite gerendert, jede Navigation baut ihn also neu auf — und TanStack reicht der
+neuen Instanz sofort das gecachte `["notifications"]`-Ergebnis. Mit dem Cursor nur
+im Ref meldete sich eine Benachrichtigung genau auf der Seite noch einmal, auf die
+sie gerade geführt hatte. Die gezeigten Keys liegen deshalb in einem
+`Set` auf Modulebene: das überlebt den Remount und ist auf den Tab begrenzt, was
+genau die Lebensdauer von „habe ich schon gesehen“ ist.
+
+**Die drei Notification-Abfragen schließen den Aufrufer selbst aus**
+(`c.author_id <> ?`, `created_by <> ?`, `a.actor_id <> ?`). Mit einem einzigen
+Testkonto erscheint deshalb nie ein Toast — das ist Absicht und kein Defekt.
 
 **Die zwei Detailansichten sind zwei Routen mit je eigenem Guard**, keine gemeinsame Seite
 mit `isAgent`-Bedingung. Gemeinsam ist nur `components/tickets/ticket-detail.tsx` — Kopf,
