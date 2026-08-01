@@ -4,11 +4,25 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({
+  className,
+  containerClassName,
+  ...props
+}: React.ComponentProps<"table"> & {
+  /**
+   * Overrides the scroll container's classes.
+   *
+   * Added to the shipped primitive because the container's `overflow-x-auto` is
+   * hard-coded and not merged with any prop, so a caller that must *not* scroll
+   * sideways — the ticket lists — had no way to say so. The default is unchanged;
+   * only a caller that passes this gets something else.
+   */
+  containerClassName?: string
+}) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className={cn("relative w-full overflow-x-auto", containerClassName)}
     >
       <table
         data-slot="table"

@@ -176,7 +176,13 @@ export function sortHref(
   const query = new URLSearchParams();
 
   for (const [name, value] of Object.entries(params)) {
-    if (name === "sort" || name === "dir") continue;
+    /*
+     * `page` is dropped, not carried. Re-sorting reorders the whole result, so
+     * page four of the new order has nothing to do with page four of the old one —
+     * staying put would land the reader on rows they have no reason to expect,
+     * and on a short list it would land them past the end.
+     */
+    if (name === "sort" || name === "dir" || name === "page") continue;
     const values = Array.isArray(value) ? value : value === undefined ? [] : [value];
     for (const entry of values) {
       if (entry !== "") query.append(name, entry);

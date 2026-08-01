@@ -6,6 +6,7 @@ import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
 import { TicketFilters } from "@/components/tickets/ticket-filters";
 import { TicketSearch } from "@/components/tickets/ticket-search";
+import { TicketPager } from "@/components/tickets/ticket-pager";
 import { TicketTable } from "@/components/tickets/ticket-table";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -18,7 +19,14 @@ import {
   type RawSearchParams,
 } from "@/lib/ticket-query";
 import { parseTicketSort } from "@/lib/ticket-sort";
-import { searchTickets } from "@/lib/tickets";
+import {
+  TICKETS_PER_PAGE,
+  countSearchTickets,
+  pageCount,
+  pageOffset,
+  searchTickets,
+  toPage,
+} from "@/lib/tickets";
 
 export const metadata: Metadata = {
   title: "Meine Tickets — MITS",
@@ -60,7 +68,13 @@ export default async function MyTicketsPage({
    * column headers. `ownOnly` is already set by `parseTicketQuery` above, and the
    * role clause narrows on top of it, so the scope is unchanged.
    */
-  const tickets = searchTickets({ ...filter, sort }, user);
+  // Same order as the queue: count, clamp the page, then fetch that slice.
+  const total = countSearchTickets({ ...filter, sort }, user);
+  const page = Math.min(toPage(params.page), pageCount(total));
+  const tickets = searchTickets(
+    { ...filter, sort, limit: TICKETS_PER_PAGE, offset: pageOffset(page, total) },
+    user,
+  );
 
   const locations = listLocations();
 
@@ -76,9 +90,10 @@ export default async function MyTicketsPage({
                 Meine Tickets
               </h1>
               <p className="mt-2 text-muted-foreground">
+                {/* The total, not the page size — see the note on the queue. */}
                 {hasQuery
-                  ? `${tickets.length} ${tickets.length === 1 ? "Treffer" : "Treffer"} für die aktuelle Auswahl.`
-                  : `Alles, was du gemeldet hast — ${tickets.length} ${tickets.length === 1 ? "Eintrag" : "Einträge"}.`}
+                  ? `${total} Treffer für die aktuelle Auswahl.`
+                  : `Alles, was du gemeldet hast — ${total} ${total === 1 ? "Eintrag" : "Einträge"}.`}
               </p>
             </div>
             <Button
@@ -106,18 +121,28 @@ export default async function MyTicketsPage({
             </div>
           )}
 
-          {hasQuery && tickets.length === 0 ? (
+          {hasQuery && total === 0 ? (
             <p className="rounded-2xl border border-border p-6 text-sm text-muted-foreground">
               Kein Ticket passt zu dieser Auswahl.
             </p>
           ) : (
-            <TicketTable
-              tickets={tickets}
-              locations={locations}
-              sort={sort}
-              sortBasePath="/customer/tickets"
-              searchParams={params}
-            />
+            <div className="grid gap-4">
+              <TicketTable
+                tickets={tickets}
+                locations={locations}
+                sort={sort}
+                sortBasePath="/customer/tickets"
+                searchParams={params}
+              />
+              <TicketPager
+                basePath="/customer/tickets"
+                searchParams={params}
+                page={page}
+                pageCount={pageCount(total)}
+                total={total}
+                perPage={TICKETS_PER_PAGE}
+              />
+            </div>
           )}
         </div>
       </main>

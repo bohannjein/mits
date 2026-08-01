@@ -175,6 +175,7 @@ src/
     icons.ts                erlaubte Lucide-Icons für schema.icon
     utils.ts                cn()
     ticket-sort.ts          Sortier-Whitelist + ORDER BY + Header-Links (kein server-only!)
+    ticket-paging.ts        Seitengröße, Clamping, Seitenfenster (kein server-only!)
     ticket-opening.ts       Erstnachricht aus dem Payload ableiten (rein, offline geprüft)
     services/ai/provider.ts    Ollama | OpenAI | Anthropic über fetch, JSON erzwungen
     services/ai/similarity.ts  Ticket-Gruppierung, rein und ohne Modell
@@ -685,6 +686,29 @@ eine Queue mit den falschen Tickets sieht aus wie eine funktionierende Queue.
 **Rollenwechsel greifen verzögert.** Eine per SQL oder im Admin-Desk geänderte Rolle wirkt
 erst nach Ablauf des Session-Cookie-Caches (60 s) oder nach einer Neuanmeldung. Beim Testen
 die Sitzung neu aufbauen, sonst sieht ein frisch befördeter Techniker weiter `/forbidden`.
+
+**Ticket-Tabellen scrollen nie seitwärts, und zeigen 50 Zeilen.** Beides hängt
+zusammen: eine horizontal scrollende Tabelle versteckt Status und Alter hinter
+einer Geste, die mit der Maus niemand macht, und ein flaches `LIMIT 500` versteckt
+alles ab dem fünfhundertsten Ticket, ohne es zu sagen. Stattdessen `table-fixed`
+mit deklarierten Breiten, gekürzter Titel und `hidden … table-cell` für die
+Kontextspalten auf schmalen Schirmen — und `TicketPager` darunter.
+
+- **`countSearchTickets` und `searchTickets` teilen sich `ticketWhere`.** Nicht aus
+  Ordnungsliebe: die erste Klausel darin ist die Scope-Klausel, und zwei Kopien
+  wären zwei Orte, an denen „ein Melder sieht nur seine eigenen“ auseinanderläuft.
+  Eine Gesamtzahl, die Zeilen mitzählt, die die Liste verweigert, ist eine Auskunft
+  darüber, wie viele fremde Tickets existieren.
+- **Erst zählen, dann `pageOffset`.** Wer auf Seite vier steht und filtert, bekommt
+  die letzte existierende Seite; ein ungeklemmter Offset liefert eine leere
+  Tabelle, und die liest sich als „kein Ticket passt“.
+- **Sortieren wirft `page` weg.** Seite vier der neuen Reihenfolge hat mit Seite
+  vier der alten nichts zu tun.
+- **Zähler in den Überschriften nutzen `total`, nicht `tickets.length`** — letzteres
+  ist jetzt die Seitengröße.
+- **`Table` hat ein `containerClassName` bekommen.** Das `overflow-x-auto` des
+  Primitives ist hart verdrahtet und wird mit keinem Prop gemerged; ohne den Zusatz
+  konnte ein Aufrufer nicht sagen, dass er nicht scrollen will. Default unverändert.
 
 **Scope-Regel für alles, was Tickets listet:** Die Sichtbarkeit kommt aus der Rolle und wird
 in der SQL-Klausel gesetzt, bevor irgendein Filter greift. Ein Query-Parameter darf

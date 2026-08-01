@@ -52,6 +52,14 @@ import {
    contains their own tickets, so the reporter and owner columns would be a column
    of their own address and a column they cannot act on.
 
+   **It never scrolls sideways.** A horizontally scrolling table hides its right
+   half behind a gesture nobody makes with a mouse — the status and the age end up
+   off-screen on a laptop, which are the two things somebody scanning a queue is
+   looking for. Everything fits instead: `table-fixed` with declared widths, the
+   title truncated, and the columns that are context rather than content dropped
+   at narrow widths. The full title is still in the row's `title` attribute and in
+   the link itself.
+
    The labels come from types/mits.ts rather than living here, so a new status
    cannot render as a blank cell in one table and a label in another.
    ────────────────────────────────────────────────────────────────────────── */
@@ -114,19 +122,41 @@ export function TicketTable({
   );
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-elev-1">
-      <Table>
+    <div className="rounded-2xl border border-border bg-card shadow-elev-1">
+      {/*
+        `overflow-hidden` rather than the primitive's `overflow-x-auto`: with
+        `table-fixed` there is nothing to scroll to, and leaving the container
+        scrollable would let a long unbroken word push a phantom scrollbar in.
+      */}
+      <Table containerClassName="overflow-hidden" className="table-fixed">
         <TableHeader>
           <TableRow>
-            {header("number")}
+            {/*
+              Widths are declared once, here, because `table-fixed` takes them
+              from the first row and ignores everything the cells ask for. The
+              title column is the only one without one — it absorbs whatever is
+              left, which is what keeps the rest from being squeezed.
+
+              `hidden … table-cell` drops the context columns on narrow screens
+              rather than shrinking them into unreadability. What survives at every
+              width is number, title, status and age: enough to find a ticket and
+              know whether it needs attention.
+            */}
+            {header("number", "w-40")}
             {header("title")}
-            {showLocation && <TableHead>Standort</TableHead>}
-            {showOwner && header("reporter")}
-            {showOwner && header("owner")}
-            {header("priority")}
-            {header("status")}
-            {showTime && <TableHead className="text-right">Zeit</TableHead>}
-            {header("age")}
+            {showLocation && (
+              <TableHead className="hidden w-24 lg:table-cell">Standort</TableHead>
+            )}
+            {showOwner && header("reporter", "hidden w-48 xl:table-cell")}
+            {showOwner && header("owner", "hidden w-40 lg:table-cell")}
+            {header("priority", "hidden w-28 sm:table-cell")}
+            {header("status", "w-36")}
+            {showTime && (
+              <TableHead className="hidden w-24 text-right xl:table-cell">
+                Zeit
+              </TableHead>
+            )}
+            {header("age", "w-28")}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -165,9 +195,15 @@ export function TicketTable({
                     ticket.unread && "font-semibold",
                   )}
                 >
+                  {/*
+                    `block truncate` needs the cell to have a width to truncate
+                    against, which `table-fixed` gives it. The full text stays
+                    available as the tooltip and to a screen reader.
+                  */}
                   <Link
                     href={`${detailBase}/${ticket.id}`}
-                    className="underline-offset-4 hover:underline"
+                    title={ticket.title}
+                    className="block truncate underline-offset-4 hover:underline"
                   >
                     {ticket.title}
                   </Link>
@@ -176,18 +212,21 @@ export function TicketTable({
                   )}
                 </TableCell>
                 {showLocation && (
-                  <TableCell className="text-xs text-muted-foreground">
+                  <TableCell className="hidden truncate text-xs text-muted-foreground lg:table-cell">
                     {/* A ticket can outlive its branch — see lib/locations.ts. */}
                     {location?.code || location?.name || "—"}
                   </TableCell>
                 )}
                 {showOwner && (
-                  <TableCell className="text-xs">
+                  <TableCell
+                    className="hidden truncate text-xs xl:table-cell"
+                    title={ticket.created_by_email}
+                  >
                     {ticket.created_by_email}
                   </TableCell>
                 )}
                 {showOwner && (
-                  <TableCell className="text-xs whitespace-nowrap">
+                  <TableCell className="hidden truncate text-xs lg:table-cell">
                     {ticket.assigned_to_name ?? (
                       <span className="text-muted-foreground">
                         Nicht zugewiesen
@@ -195,7 +234,7 @@ export function TicketTable({
                     )}
                   </TableCell>
                 )}
-                <TableCell>
+                <TableCell className="hidden sm:table-cell">
                   <Badge
                     variant={
                       isElevatedPriority(ticket.priority) ? "default" : "outline"
@@ -206,12 +245,16 @@ export function TicketTable({
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="secondary" className="rounded-full">
+                  <Badge
+                    variant="secondary"
+                    className="max-w-full truncate rounded-full"
+                    title={TICKET_STATUS_LABELS[ticket.status]}
+                  >
                     {TICKET_STATUS_LABELS[ticket.status]}
                   </Badge>
                 </TableCell>
                 {showTime && (
-                  <TableCell className="text-right text-xs whitespace-nowrap tabular-nums">
+                  <TableCell className="hidden text-right text-xs whitespace-nowrap tabular-nums xl:table-cell">
                     {ticket.logged_minutes > 0 ? (
                       <span className="inline-flex items-center gap-1.5">
                         <ClockIcon

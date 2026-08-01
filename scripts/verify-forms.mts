@@ -40,6 +40,13 @@ import {
   resolveRange,
 } from "../src/lib/analytics/range";
 import { csvCell } from "../src/lib/analytics/export";
+import {
+  TICKETS_PER_PAGE,
+  pageCount,
+  pageOffset,
+  pagesToShow,
+  toPage,
+} from "../src/lib/ticket-paging";
 import { isRoutingHint, normaliseTags } from "../src/lib/services/ai/tags";
 import {
   fieldsBesidesOpening,
@@ -3093,6 +3100,82 @@ console.log("analytics export");
   check("a line break forces quotes", csvCell("Zeile eins\nZeile zwei") === '"Zeile eins\nZeile zwei"');
   check("a number passes through", csvCell(42) === "42");
   check("null is an empty cell", csvCell(null) === "");
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Paging.
+
+   The arithmetic is small and every mistake in it is quiet: an unclamped page
+   produces an empty table that reads as "no tickets match", and a negative offset
+   is a SQLite error on a page somebody bookmarked.
+   ────────────────────────────────────────────────────────────────────────── */
+console.log("ticket paging");
+{
+  check("fifty per page", TICKETS_PER_PAGE === 50);
+
+  check("a missing page is the first", toPage(undefined) === 1);
+  check("a page number reads", toPage("3") === 3);
+  // Every one of these would otherwise reach `OFFSET` as a negative or a NaN.
+  check("zero is refused", toPage("0") === 1);
+  check("a negative is refused", toPage("-4") === 1);
+  check("prose is refused", toPage("letzte") === 1);
+  check("a fraction is refused", toPage("2.5") === 1);
+  check("an array takes its first entry", toPage(["2", "9"]) === 2);
+
+  // An empty list still has a page one; a pager that reported zero pages would
+  // divide by it somewhere.
+  check("an empty list has one page", pageCount(0) === 1);
+  check("fifty fit on one page", pageCount(50) === 1);
+  check("fifty-one need two", pageCount(51) === 2);
+  check("two hundred need four", pageCount(200) === 4);
+
+  check("page one starts at zero", pageOffset(1, 200) === 0);
+  check("page three skips a hundred", pageOffset(3, 200) === 100);
+  /*
+   * The clamp. An agent on page four whose filter just narrowed the list to two
+   * pages gets the last page that exists — an out-of-range offset would hand them
+   * an empty table, which reads as "nothing matches".
+   */
+  check("a page past the end clamps to the last", pageOffset(9, 120) === 100);
+  check("page zero clamps to the first", pageOffset(0, 120) === 0);
+  check("an empty list has no offset", pageOffset(5, 0) === 0);
+
+  /*
+   * Re-sorting reorders everything, so page four of the new order has nothing to
+   * do with page four of the old one. Carrying it would land somebody on rows
+   * they have no reason to expect, or past the end of a short list.
+   */
+  const href = sortHref(
+    "/mits",
+    { scope: "mine", page: "4", sort: "age", dir: "desc" },
+    { key: "age", dir: "desc" },
+    "title",
+  );
+  check("sorting drops the page", !href.includes("page="), href);
+  check("…and keeps the scope", href.includes("scope=mine"));
+
+  // The pager's own links keep everything except the page.
+  check(
+    "the window keeps first and last",
+    pagesToShow(5, 20)[0] === 1 && pagesToShow(5, 20).at(-1) === 20,
+  );
+  check(
+    "…and gaps become an ellipsis",
+    pagesToShow(10, 20).includes(null),
+    JSON.stringify(pagesToShow(10, 20)),
+  );
+  // A single missing page renders as itself: an ellipsis hiding exactly one
+  // number is longer than the number.
+  check(
+    "a one-page gap is filled, not elided",
+    !pagesToShow(4, 8).includes(null),
+    JSON.stringify(pagesToShow(4, 8)),
+  );
+  check("a short list needs no gaps", !pagesToShow(2, 4).includes(null));
+  check(
+    "every entry is a real page",
+    pagesToShow(7, 15).every((entry) => entry === null || (entry >= 1 && entry <= 15)),
+  );
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

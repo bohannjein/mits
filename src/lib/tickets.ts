@@ -15,6 +15,7 @@ import {
   orderByFor,
   type TicketSort,
 } from "@/lib/ticket-sort";
+import { TICKETS_PER_PAGE } from "@/lib/ticket-paging";
 import {
   AttachmentMetaSchema,
   DEFAULT_TICKET_PRIORITY,
@@ -28,6 +29,9 @@ import {
 
 // Re-exported so `lib/agent-views.ts` builds its presets from one place.
 export { OPEN_TICKET_STATUSES };
+// …and the paging helpers alongside the store that honours them, so a page does
+// not have to know that they live in a separate, server-free module.
+export { TICKETS_PER_PAGE, pageCount, pageOffset, toPage } from "@/lib/ticket-paging";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Ticket persistence and access rules.
@@ -414,6 +418,17 @@ export interface TicketFilter {
    * different order than the header claims.
    */
   sort?: TicketSort;
+
+  /**
+   * Paging. Defaults to the first page of `TICKETS_PER_PAGE`.
+   *
+   * Set through `pageOffset` rather than by hand at the call sites: the page
+   * number arrives from a query string, and an offset computed from an unclamped
+   * one is either a negative `OFFSET` — a SQLite error — or a jump past the end
+   * that renders as an empty list with no explanation.
+   */
+  limit?: number;
+  offset?: number;
 }
 
 /** Sentinel the filter form uses; a real id can never collide with it. */
@@ -433,6 +448,113 @@ export const UNASSIGNED_FILTER = "__unassigned";
  * leak across foreign ones, and the scope clause is not the right place to carry
  * that distinction.
  */
+/**
+ * The WHERE clause and its parameters for a filter.
+ *
+ * Extracted so `searchTickets` and `countSearchTickets` cannot disagree. That is
+ * not tidiness: the first clause this builds is the **scope** clause, and two
+ * copies of it would be two places for "a reporter sees only their own tickets"
+ * to drift. A pager whose total counted rows the list refuses to show would be a
+ * disclosure — the number alone tells you how many foreign tickets exist.
+ */
+function ticketWhere(
+  filter: TicketFilter,
+  user: SessionUser,
+): { where: string; params: unknown[] } {
+  const staff = canViewBoard(user.role);
+
+  // Seeded, not appended: an empty filter would otherwise produce no WHERE at all
+  // and return deleted tickets.
+  const clauses: string[] = [ALIVE];
+  const whereParams: unknown[] = [];
+
+  if (!staff || filter.ownOnly) {
+    clauses.push("mits_ticket.created_by = ?");
+    whereParams.push(user.id);
+  }
+
+  const q = filter.q?.trim();
+  if (q) {
+    // LIKE with escaped wildcards: a query containing % or _ should match those
+    // characters, not turn into a pattern.
+    const pattern = `%${q.replace(/[\%_]/g, (c) => `\${c}`)}%`;
+    clauses.push(
+      "(mits_ticket.title LIKE ? ESCAPE '\' OR mits_ticket.created_by_email LIKE ? ESCAPE '\')",
+    );
+    whereParams.push(pattern, pattern);
+  }
+
+  if (filter.locationId) {
+    clauses.push("mits_ticket.location_id = ?");
+    whereParams.push(filter.locationId);
+  }
+  if (filter.status) {
+    clauses.push("mits_ticket.status = ?");
+    whereParams.push(filter.status);
+  }
+  if (filter.priority) {
+    clauses.push("mits_ticket.priority = ?");
+    whereParams.push(filter.priority);
+  }
+  if (filter.assignedTo === UNASSIGNED_FILTER || filter.unassignedOnly) {
+    clauses.push("mits_ticket.assigned_to IS NULL");
+  } else if (filter.assignedTo) {
+    clauses.push("mits_ticket.assigned_to = ?");
+    whereParams.push(filter.assignedTo);
+  }
+
+  // An empty array would render `IN ()`, which is a syntax error in SQLite — and
+  // semantically it should match nothing, not everything, so it is skipped rather
+  // than treated as "no filter".
+  if (filter.statusIn && filter.statusIn.length > 0) {
+    clauses.push(
+      `mits_ticket.status IN (${filter.statusIn.map(() => "?").join(", ")})`,
+    );
+    whereParams.push(...filter.statusIn);
+  }
+  if (filter.priorityIn && filter.priorityIn.length > 0) {
+    clauses.push(
+      `mits_ticket.priority IN (${filter.priorityIn.map(() => "?").join(", ")})`,
+    );
+    whereParams.push(...filter.priorityIn);
+  }
+  // `created_at` is an ISO string, so a date prefix comparison sorts correctly.
+  // `to` gets a time suffix rather than `<=` on the bare date, which would
+  // exclude everything that happened during the chosen day.
+  if (filter.from) {
+    clauses.push("mits_ticket.created_at >= ?");
+    whereParams.push(`${filter.from}T00:00:00.000Z`);
+  }
+  if (filter.to) {
+    clauses.push("mits_ticket.created_at <= ?");
+    whereParams.push(`${filter.to}T23:59:59.999Z`);
+  }
+
+  return { where: `WHERE ${clauses.join(" AND ")}`, params: whereParams };
+}
+
+/**
+ * How many rows this filter matches, for the pager.
+ *
+ * A second query rather than a window function beside the rows: SQLite would
+ * happily compute `COUNT(*) OVER ()`, and it would then be attached to a row —
+ * which does not exist on an empty page. A pager on page four of a list that just
+ * shrank to two pages has to be able to say so.
+ *
+ * No `LIMIT`, and no read-state expressions: the count needs the same WHERE and
+ * none of the per-user columns.
+ */
+export function countSearchTickets(
+  filter: TicketFilter,
+  user: SessionUser,
+): number {
+  const { where, params } = ticketWhere(filter, user);
+  const row = db
+    .prepare(`SELECT COUNT(*) AS n FROM mits_ticket ${where}`)
+    .get(...params) as { n: number };
+  return row.n;
+}
+
 export function searchTickets(
   filter: TicketFilter,
   user: SessionUser,
@@ -449,10 +571,6 @@ export function searchTickets(
    * is added later.
    */
   const selectParams: unknown[] = [];
-  // Seeded, not appended: an empty filter would otherwise produce no WHERE at all
-  // and return deleted tickets.
-  const clauses: string[] = [ALIVE];
-  const whereParams: unknown[] = [];
 
   /*
    * The newest event on this ticket that this reader did not cause.
@@ -516,78 +634,28 @@ export function searchTickets(
     ...selectParams.slice(0, 2), // activity, third branch
   ];
 
-  if (!staff || filter.ownOnly) {
-    clauses.push("mits_ticket.created_by = ?");
-    whereParams.push(user.id);
-  }
-
-  const q = filter.q?.trim();
-  if (q) {
-    // LIKE with escaped wildcards: a query containing % or _ should match those
-    // characters, not turn into a pattern.
-    const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-    clauses.push(
-      "(mits_ticket.title LIKE ? ESCAPE '\\' OR mits_ticket.created_by_email LIKE ? ESCAPE '\\')",
-    );
-    whereParams.push(pattern, pattern);
-  }
-
-  if (filter.locationId) {
-    clauses.push("mits_ticket.location_id = ?");
-    whereParams.push(filter.locationId);
-  }
-  if (filter.status) {
-    clauses.push("mits_ticket.status = ?");
-    whereParams.push(filter.status);
-  }
-  if (filter.priority) {
-    clauses.push("mits_ticket.priority = ?");
-    whereParams.push(filter.priority);
-  }
-  if (filter.assignedTo === UNASSIGNED_FILTER || filter.unassignedOnly) {
-    clauses.push("mits_ticket.assigned_to IS NULL");
-  } else if (filter.assignedTo) {
-    clauses.push("mits_ticket.assigned_to = ?");
-    whereParams.push(filter.assignedTo);
-  }
-
-  // An empty array would render `IN ()`, which is a syntax error in SQLite — and
-  // semantically it should match nothing, not everything, so it is skipped rather
-  // than treated as "no filter".
-  if (filter.statusIn && filter.statusIn.length > 0) {
-    clauses.push(
-      `mits_ticket.status IN (${filter.statusIn.map(() => "?").join(", ")})`,
-    );
-    whereParams.push(...filter.statusIn);
-  }
-  if (filter.priorityIn && filter.priorityIn.length > 0) {
-    clauses.push(
-      `mits_ticket.priority IN (${filter.priorityIn.map(() => "?").join(", ")})`,
-    );
-    whereParams.push(...filter.priorityIn);
-  }
-  // `created_at` is an ISO string, so a date prefix comparison sorts correctly.
-  // `to` gets a time suffix rather than `<=` on the bare date, which would
-  // exclude everything that happened during the chosen day.
-  if (filter.from) {
-    clauses.push("mits_ticket.created_at >= ?");
-    whereParams.push(`${filter.from}T00:00:00.000Z`);
-  }
-  if (filter.to) {
-    clauses.push("mits_ticket.created_at <= ?");
-    whereParams.push(`${filter.to}T23:59:59.999Z`);
-  }
-
-  const where = `WHERE ${clauses.join(" AND ")}`;
+  const { where, params: whereParams } = ticketWhere(filter, user);
   // Never interpolated from the request: `orderByFor` only accepts a key that
   // `parseTicketSort` validated against a fixed list. `ORDER BY` cannot be bound
   // as a parameter, so the whitelist is the whole defence.
   const orderBy = orderByFor(filter.sort ?? DEFAULT_TICKET_SORT);
 
+  /*
+   * One page at a time.
+   *
+   * `LIMIT`/`OFFSET` rather than the old flat `LIMIT 500`, which silently hid
+   * everything past the five hundredth row — a queue that looked complete and was
+   * not. Both are interpolated as integers rather than bound: they come from
+   * `pageOffset`, which clamps them, and mixing them into the parameter list would
+   * put two more positional binds after the WHERE for no benefit.
+   */
+  const limit = Math.max(1, Math.trunc(filter.limit ?? TICKETS_PER_PAGE));
+  const offset = Math.max(0, Math.trunc(filter.offset ?? 0));
+
   const rows = db
     .prepare(
       `SELECT ${TICKET_COLUMNS} ${extraColumns} ${TICKET_FROM} ${where}
-        ORDER BY ${orderBy} LIMIT 500`,
+        ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}`,
     )
     .all(...boundSelectParams, ...whereParams) as TicketRow[];
 

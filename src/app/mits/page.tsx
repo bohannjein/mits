@@ -13,6 +13,7 @@ import { StatsTiles } from "@/components/dashboard/stats-tiles";
 import { AppHeader } from "@/components/layout/app-header";
 import { QueueTabs } from "@/components/tickets/queue-tabs";
 import type { TicketFilterValues } from "@/components/tickets/ticket-filters";
+import { TicketPager } from "@/components/tickets/ticket-pager";
 import { TicketTable } from "@/components/tickets/ticket-table";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -41,7 +42,15 @@ import {
   type RawSearchParams,
 } from "@/lib/ticket-query";
 import { parseTicketSort } from "@/lib/ticket-sort";
-import { searchTickets, todayCounts } from "@/lib/tickets";
+import {
+  TICKETS_PER_PAGE,
+  countSearchTickets,
+  pageCount,
+  pageOffset,
+  searchTickets,
+  toPage,
+  todayCounts,
+} from "@/lib/tickets";
 import { TICKET_STATUS_LABELS, type TicketStatus } from "@/types/mits";
 
 export const metadata: Metadata = {
@@ -100,8 +109,18 @@ export default async function AgentQueuePage({
   // The tab's preset first, then the deep filters on top of it, then the sort.
   const { filter, values, activeCount } = parseTicketQuery(params);
   const sort = parseTicketSort(params.sort, params.dir);
+  const active = { ...filterFor(scope, view, user.id), ...filter, sort };
+
+  /*
+   * Counted before the page is fetched, because the offset depends on the total:
+   * an agent sitting on page four whose filter just narrowed the list to two
+   * pages gets the last page that exists rather than an empty table. `pageOffset`
+   * clamps; `page` stays what the URL said so the pager can highlight it.
+   */
+  const total = countSearchTickets(active, user);
+  const page = Math.min(toPage(params.page), pageCount(total));
   const tickets = searchTickets(
-    { ...filterFor(scope, view, user.id), ...filter, sort },
+    { ...active, limit: TICKETS_PER_PAGE, offset: pageOffset(page, total) },
     user,
   );
 
@@ -136,9 +155,12 @@ export default async function AgentQueuePage({
                 Queue
               </h1>
               <p className="mt-2 text-muted-foreground">
+                {/* `total`, not `tickets.length` — the latter is now the page
+                    size, and a queue of two hundred reporting "50 Tickets" is a
+                    number somebody would act on. */}
                 {AGENT_SCOPE_LABELS[scope]} · {AGENT_VIEW_LABELS[view]} —{" "}
-                {tickets.length} {tickets.length === 1 ? "Ticket" : "Tickets"},
-                angemeldet als {user.email}.
+                {total} {total === 1 ? "Ticket" : "Tickets"}, angemeldet als{" "}
+                {user.email}.
               </p>
             </div>
 
@@ -220,18 +242,28 @@ export default async function AgentQueuePage({
                   Keine Tickets in dieser Ansicht.
                 </p>
               ) : (
-                <TicketTable
-                  tickets={tickets}
-                  showOwner
-                  showTime={flags.feature_time_tracking}
-                  locations={locations}
-                  detailBase="/mits/tickets"
-                  sort={sort}
-                  sortBasePath="/mits"
-                  // Passed whole, so a sort click keeps the tab, the scope and any
-                  // deep filter that is already narrowing the list.
-                  searchParams={params}
-                />
+                <>
+                  <TicketTable
+                    tickets={tickets}
+                    showOwner
+                    showTime={flags.feature_time_tracking}
+                    locations={locations}
+                    detailBase="/mits/tickets"
+                    sort={sort}
+                    sortBasePath="/mits"
+                    // Passed whole, so a sort click keeps the tab, the scope and any
+                    // deep filter that is already narrowing the list.
+                    searchParams={params}
+                  />
+                  <TicketPager
+                    basePath="/mits"
+                    searchParams={params}
+                    page={page}
+                    pageCount={pageCount(total)}
+                    total={total}
+                    perPage={TICKETS_PER_PAGE}
+                  />
+                </>
               )}
             </div>
 
