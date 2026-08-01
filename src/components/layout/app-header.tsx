@@ -2,7 +2,9 @@ import Link from "next/link";
 
 import { UserMenu } from "@/components/auth/user-menu";
 import { MITSLogo } from "@/components/branding/mits-logo";
+import { ThemeToggle } from "@/components/branding/theme-toggle";
 import { PresenceHeartbeat } from "@/components/dashboard/presence-heartbeat";
+import { NotificationWatcher } from "@/components/feedback/notification-watcher";
 import { AutoRefresh } from "@/components/layout/auto-refresh";
 import { TicketSearch } from "@/components/tickets/ticket-search";
 import { TicketSearchDialog } from "@/components/tickets/ticket-search-dialog";
@@ -44,9 +46,21 @@ export async function AppHeader() {
     !user.mustChangePassword &&
     isFeatureEnabled("feature_presence_sidebar");
 
+  /*
+   * Same placement, same reason: one poller in the header rather than one per
+   * page. Not while the password gate is closed — that session may only reach the
+   * settings form, and a toast linking into a ticket it cannot open is an
+   * invitation to a redirect.
+   */
+  const watchNotifications =
+    user !== null &&
+    !user.mustChangePassword &&
+    isFeatureEnabled("feature_toast_notifications");
+
   return (
     <header className="border-b border-border bg-card">
       {trackPresence && <PresenceHeartbeat />}
+      {watchNotifications && <NotificationWatcher />}
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-3">
         {/* Straight to the signed-in user's own area instead of through the `/`
             dispatcher: a reporter clicking the logo lands in their portal without
@@ -80,6 +94,11 @@ export async function AppHeader() {
           />
         )}
 
+        {/*
+          Available to anonymous visitors too. The login page is a full-screen
+          surface in whichever theme is active, and somebody who cannot read dark
+          text on dark should not have to sign in first to fix it.
+        */}
         {user ? (
           <>
             {/*
@@ -95,10 +114,12 @@ export async function AppHeader() {
             {!user.mustChangePassword && (
               <AutoRefresh minutes={resolveRefreshMinutes(user)} />
             )}
+            <ThemeToggle />
             <UserMenu user={user} />
           </>
         ) : (
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <Button
               asChild
               variant="ghost"

@@ -29,7 +29,7 @@ const now = () => new Date().toISOString();
 
 function requireStaff(user: SessionUser): void {
   if (!canViewBoard(user.role)) {
-    throw new TrashError("Löschen und Wiederherstellen ist der Technik vorbehalten.");
+    throw new TrashError("Löschen und Wiederherstellen ist Agenten vorbehalten.");
   }
 }
 

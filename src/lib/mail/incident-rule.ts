@@ -29,7 +29,7 @@ import type { TicketPriority } from "@/types/mits";
 export interface IncidentRuleConfig {
   /**
    * The account that gets the ticket. Null when the admin has not nominated one — the
-   * ticket is then left unassigned rather than pushed at an arbitrary technician, and
+   * ticket is then left unassigned rather than pushed at an arbitrary agent, and
    * it shows up in the pool inbox where somebody will see it.
    */
   onCallUserId: string | null;

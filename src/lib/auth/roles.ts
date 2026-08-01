@@ -5,7 +5,7 @@
    pulling a database driver into the proxy bundle would break it.
    ────────────────────────────────────────────────────────────────────────── */
 
-export const MITS_ROLES = ["user", "technician", "admin"] as const;
+export const MITS_ROLES = ["user", "agent", "admin"] as const;
 export type MITSRole = (typeof MITS_ROLES)[number];
 
 export const DEFAULT_ROLE: MITSRole = "user";
@@ -13,8 +13,23 @@ export const DEFAULT_ROLE: MITSRole = "user";
 /** Ascending privilege. Every check goes through `hasAtLeast`, never through `===`. */
 const RANK: Record<MITSRole, number> = {
   user: 0,
-  technician: 1,
+  agent: 1,
   admin: 2,
+};
+
+/**
+ * Role values this build no longer writes but still has to read.
+ *
+ * The pre-rename name for `agent` was the German-flavoured `technician`. The column
+ * is migrated in `lib/db/sqlite.ts`, but the mapping stays here for the two cases
+ * the migration cannot cover: a database restored from a backup taken before it ran,
+ * and a session cookie minted by the previous build — Better Auth caches the role
+ * for 60 seconds. Without this, `toRole` would fall through to `user` and every
+ * agent on that instance would silently lose the queue, which looks exactly like a
+ * permissions bug and is nowhere near the code that caused it.
+ */
+export const LEGACY_ROLES: Record<string, MITSRole> = {
+  technician: "agent",
 };
 
 export function isRole(value: unknown): value is MITSRole {
@@ -23,22 +38,33 @@ export function isRole(value: unknown): value is MITSRole {
 
 /** Unknown or missing roles fall back to the lowest privilege, never the highest. */
 export function toRole(value: unknown): MITSRole {
-  return isRole(value) ? value : DEFAULT_ROLE;
+  if (isRole(value)) return value;
+  if (typeof value === "string" && value in LEGACY_ROLES) {
+    return LEGACY_ROLES[value];
+  }
+  return DEFAULT_ROLE;
 }
 
 export function hasAtLeast(role: unknown, required: MITSRole): boolean {
   return RANK[toRole(role)] >= RANK[required];
 }
 
-/** May open the technician board (own and foreign tickets). */
-export const canViewBoard = (role: unknown) => hasAtLeast(role, "technician");
+/** May open the agent queue (own and foreign tickets). */
+export const canViewBoard = (role: unknown) => hasAtLeast(role, "agent");
 
 /** May open the admin desk (settings, user management). */
 export const canAdminister = (role: unknown) => hasAtLeast(role, "admin");
 
 export const ROLE_LABELS: Record<MITSRole, string> = {
   user: "Benutzer",
-  technician: "Technik",
+  agent: "Agent",
+  admin: "Administration",
+};
+
+/** Plural, for headings and counts. */
+export const ROLE_LABELS_PLURAL: Record<MITSRole, string> = {
+  user: "Benutzer",
+  agent: "Agenten",
   admin: "Administration",
 };
 
@@ -61,7 +87,7 @@ export const PROTECTED_PREFIXES: {
   deniedPath?: string;
 }[] = [
   { prefix: "/admin", role: "admin" },
-  { prefix: "/mits", role: "technician", deniedPath: CUSTOMER_HOME },
+  { prefix: "/mits", role: "agent", deniedPath: CUSTOMER_HOME },
   { prefix: "/customer", role: "user" },
   // Own profile and password. Any signed-in role, but never anonymous.
   { prefix: "/settings", role: "user" },

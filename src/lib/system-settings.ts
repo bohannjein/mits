@@ -107,7 +107,7 @@ export function setSystemSettings(next: SystemSettings): SystemSettings {
    Per-agent refresh override.
 
    One `mits_setting` row per agent, keyed like the saved queue view. Staff only:
-   a technician watching an escalation wants a shorter interval than a reporter
+   a agent watching an escalation wants a shorter interval than a reporter
    glancing at their own ticket, and the reporter has no reason to be given a knob
    that costs the server requests.
 

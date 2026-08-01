@@ -11,19 +11,21 @@ import { useActionState, useEffect, useState } from "react";
 
 import { addCommentAction } from "@/app/actions/tickets";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { CommentBody } from "@/components/tickets/comment-body";
+import { ChatBubble, toneFor } from "@/components/tickets/chat-bubble";
 import { cn } from "@/lib/utils";
-import { useTimezone } from "@/components/providers/timezone-provider";
-import { formatDateTimeShort } from "@/lib/format";
 import type { TicketComment } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
-   The conversation on a ticket.
+   The conversation on a ticket, from the reporter's side.
+
+   Same bubbles as the agent view, **mirrored**: the reader's own messages sit on
+   the right. `ChatBubble` takes `side` separately from `tone` for exactly this —
+   the surface says who spoke, the alignment says who is looking, and a reporter
+   whose own words arrived on the left would be reading somebody else's inbox.
 
    Internal notes are visually distinct *and* filtered server-side — a plain user
    never receives them, so this component styling them differently is a courtesy
@@ -43,7 +45,6 @@ export function TicketThread({
   isAgent: boolean;
   cannedResponses?: { id: string; title: string; body: string }[];
 }) {
-  const timezone = useTimezone();
   const [internal, setInternal] = useState(false);
   const [body, setBody] = useState("");
   const [result, formAction, sending] = useActionState(addCommentAction, null);
@@ -69,52 +70,31 @@ export function TicketThread({
           Noch keine Beiträge.
         </p>
       ) : (
-        <ul className="grid gap-3">
-          {comments.map((comment) => (
-            <li
-              key={comment.id}
-              className={cn(
-                "rounded-2xl border px-5 py-4 shadow-elev-1",
-                comment.visibility === "internal"
-                  ? // Internal notes get the warning tint, not a colour of their own:
-                    // it already means "careful, not for everyone" everywhere else.
-                    "border-warning/40 bg-warning/5"
-                  : "border-border bg-card",
-              )}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium">{comment.author_name}</span>
-                {comment.author_is_agent && (
-                  <Badge
-                    variant="outline"
-                    className="h-auto rounded-full px-2 py-0.5 text-[11px] font-normal"
-                  >
-                    Team
-                  </Badge>
-                )}
-                {comment.visibility === "internal" && (
-                  <Badge className="h-auto rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-normal text-warning">
-                    <LockIcon className="size-3" strokeWidth={1.5} />
-                    Interne Notiz
-                  </Badge>
-                )}
-                <span className="ml-auto text-xs text-muted-foreground">
-                  {formatDateTimeShort(comment.created_at, timezone)}
-                </span>
-              </div>
-              {/* An agent reply is stored as sanitised HTML; a reporter's own is
-                  plain text. Both appear in this list, so both are rendered. */}
-              <CommentBody comment={comment} />
-            </li>
-          ))}
-        </ul>
+        <div className="grid gap-3">
+          {comments.map((comment) => {
+            const tone = toneFor(comment);
+            // Mirrored against the agent view: the reporter reads their own
+            // messages on the right. An internal note stays right because only
+            // staff ever sees this list with one in it.
+            return (
+              <ChatBubble
+                key={comment.id}
+                comment={comment}
+                tone={tone}
+                side={tone === "customer" ? "right" : "left"}
+              />
+            );
+          })}
+        </div>
       )}
 
       <form
         action={formAction}
         className={cn(
           "grid gap-3 rounded-2xl border px-4 py-4 transition-colors",
-          internal ? "border-warning/40 bg-warning/5" : "border-border bg-card",
+          internal
+            ? "border-dashed border-bubble-internal-border bg-bubble-internal"
+            : "border-border bg-card",
         )}
       >
         <input type="hidden" name="ticketId" value={ticketId} />
@@ -164,7 +144,7 @@ export function TicketThread({
           disabled={sending}
           placeholder={
             internal
-              ? "Nur für die Technik sichtbar."
+              ? "Nur für Agenten sichtbar."
               : "Geht an den Melder und löst eine Benachrichtigung aus."
           }
           className="rounded-xl"
@@ -188,7 +168,7 @@ export function TicketThread({
             </div>
           ) : (
             <span className="text-xs text-muted-foreground">
-              Ihre Antwort ist für die Technik sichtbar.
+              Ihre Antwort ist für die Agenten sichtbar.
             </span>
           )}
 
@@ -197,7 +177,7 @@ export function TicketThread({
             className={cn(
               "h-10 rounded-full px-5",
               internal
-                ? "bg-warning/15 text-warning hover:bg-warning/25"
+                ? "bg-bubble-internal-accent/15 text-bubble-internal-accent hover:bg-bubble-internal-accent/25 hover:text-bubble-internal-accent"
                 : "bg-inverse-surface text-inverse-surface-foreground hover:bg-inverse-surface-hover",
             )}
             disabled={sending || body.trim() === ""}

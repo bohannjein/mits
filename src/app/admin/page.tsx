@@ -6,6 +6,7 @@ import {
   HeadsetIcon,
   ClockIcon,
   DatabaseIcon,
+  HardDriveIcon,
   ShieldAlertIcon,
   UsersIcon,
   BrainIcon,
@@ -16,6 +17,7 @@ import {
   ServerIcon,
   ToggleRightIcon,
   WandSparklesIcon,
+  ZapIcon,
 } from "lucide-react";
 
 import { RegistrationSettingsForm } from "@/components/admin/registration-settings-form";
@@ -56,12 +58,12 @@ export default async function AdminPage() {
               <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">Admin-Desk</h1>
               <p className="mt-2 text-muted-foreground">
                 Registrierung, Module und Bestand dieser Instanz. Konten werden
-                getrennt gepflegt — Technik und Anwender in eigenen Masken.
+                getrennt gepflegt — Agenten und Anwender in eigenen Masken.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline" className="rounded-full">
-                {users.length} Konten · {staff} Technik
+                {users.length} Konten · {staff} Agenten
               </Badge>
               <Badge variant="outline" className="rounded-full">
                 {total} Tickets · {open} offen
@@ -97,6 +99,18 @@ export default async function AdminPage() {
                 </Link>
               </Button>
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
+                <Link href="/admin/macros">
+                  <ZapIcon strokeWidth={1.5} />
+                  Makros
+                </Link>
+              </Button>
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
+                <Link href="/admin/settings/storage">
+                  <HardDriveIcon strokeWidth={1.5} />
+                  Dateispeicher
+                </Link>
+              </Button>
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
                 <Link href="/admin/settings/email">
                   <MailIcon strokeWidth={1.5} />
                   E-Mail
@@ -129,7 +143,7 @@ export default async function AdminPage() {
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
                 <Link href="/admin/staff">
                   <HeadsetIcon />
-                  Technik &amp; Administration
+                  Agenten &amp; Administration
                 </Link>
               </Button>
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">

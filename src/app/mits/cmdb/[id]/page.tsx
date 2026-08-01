@@ -48,7 +48,7 @@ export const metadata: Metadata = {
    independently, so reading a long attribute list does not push the relation panel away.
 
    Tickets are resolved through `getTicketFor` per id rather than joined. The page is
-   already behind `requireRole("technician")`, so the scope is the same either way; going
+   already behind `requireRole("agent")`, so the scope is the same either way; going
    through the one function that knows the visibility rule means it stays that way if the
    page is ever opened wider.
    ────────────────────────────────────────────────────────────────────────── */
@@ -59,7 +59,7 @@ export default async function CIDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const user = await requireRole("technician", `/mits/cmdb/${id}`);
+  const user = await requireRole("agent", `/mits/cmdb/${id}`);
 
   if (!isFeatureEnabled("feature_cmdb")) notFound();
 

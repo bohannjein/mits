@@ -33,6 +33,7 @@ import {
   parseTicketQuery,
   type RawSearchParams,
 } from "@/lib/ticket-query";
+import { parseTicketSort } from "@/lib/ticket-sort";
 import { searchTickets, todayCounts } from "@/lib/tickets";
 import { TICKET_STATUS_LABELS, type TicketStatus } from "@/types/mits";
 
@@ -55,7 +56,7 @@ export default async function AgentQueuePage({
 }) {
   // Authoritative role gate. A reporter who follows a link here is sent to their
   // own portal rather than to a permission error — see `deniedPathFor`.
-  const user = await requireRole("technician", "/mits");
+  const user = await requireRole("agent", "/mits");
 
   const params = await searchParams;
   const flags = getFeatureFlags();
@@ -89,10 +90,11 @@ export default async function AgentQueuePage({
     saveAgentView(user.id, { scope, view });
   }
 
-  // The tab's preset first, then the deep filters on top of it.
+  // The tab's preset first, then the deep filters on top of it, then the sort.
   const { filter, values, activeCount } = parseTicketQuery(params);
+  const sort = parseTicketSort(params.sort, params.dir);
   const tickets = searchTickets(
-    { ...filterFor(scope, view, user.id), ...filter },
+    { ...filterFor(scope, view, user.id), ...filter, sort },
     user,
   );
 
@@ -125,7 +127,7 @@ export default async function AgentQueuePage({
               </p>
             </div>
 
-            {/* Inside /mits, so no area-switch gate applies — a technician who may see
+            {/* Inside /mits, so no area-switch gate applies — a agent who may see
                 this page may see the CMDB. Hidden with the module, not merely disabled:
                 a link into a 404 is a worse answer than no link. */}
             {flags.feature_cmdb && (
@@ -165,8 +167,14 @@ export default async function AgentQueuePage({
                 <TicketTable
                   tickets={tickets}
                   showOwner
+                  showTime={flags.feature_time_tracking}
                   locations={locations}
                   detailBase="/mits/tickets"
+                  sort={sort}
+                  sortBasePath="/mits"
+                  // Passed whole, so a sort click keeps the tab, the scope and any
+                  // deep filter that is already narrowing the list.
+                  searchParams={params}
                 />
               )}
             </div>

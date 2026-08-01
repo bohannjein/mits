@@ -23,7 +23,7 @@ import {
    Ticket replies and internal notes.
 
    The whole point of this module is one rule: an internal note never leaves the
-   technician side. That is enforced in the SQL, not in the component — a page
+   agent side. That is enforced in the SQL, not in the component — a page
    that forgets a filter is a leak, a query that cannot return the rows is not.
    ────────────────────────────────────────────────────────────────────────── */
 
@@ -91,6 +91,23 @@ export function listCommentsFor(
  * asking for one is refused rather than silently downgraded to public, because
  * silently publishing something meant to be private is the worse failure.
  */
+/**
+ * Server-side mail ingest only. **Never** populated from a request.
+ *
+ * A reply that arrives by mail from somebody with no MITS account still has an
+ * author with a name. The comment is written under the configured fallback
+ * account — `author_id` stays honest about which account performed the write —
+ * while the displayed name and address are the human's.
+ *
+ * Named and separate from `user` for the same reason `MailIngestOrigin` is: a
+ * client that could name its own author could post as a colleague, and burying
+ * that in an options object is how it eventually gets wired to a request body.
+ */
+export interface MailAuthorOrigin {
+  name: string;
+  email: string;
+}
+
 export function addComment(
   ticketId: string,
   user: SessionUser,
@@ -103,10 +120,20 @@ export function addComment(
    * unsanitised HTML.
    */
   format: CommentBodyFormat = "text",
+  origin?: MailAuthorOrigin,
 ): TicketComment {
-  const isAgent = canViewBoard(user.role);
+  /*
+   * A mailed-in reply is never staff, whatever account it is filed under.
+   *
+   * Without this, a mail landing on the fallback account — which an admin might
+   * reasonably have given the agent role — would be stored with
+   * `author_is_agent: 1`. It would then render in the agent bubble, on the right,
+   * as if the team had written it, and `addCommentAction`'s notification rule
+   * would mail the customer their own words back.
+   */
+  const isAgent = origin ? false : canViewBoard(user.role);
   if (visibility === "internal" && !isAgent) {
-    throw new CommentError("Interne Notizen sind der Technik vorbehalten.");
+    throw new CommentError("Interne Notizen sind Agenten vorbehalten.");
   }
 
   let text: string;
@@ -135,9 +162,11 @@ export function addComment(
   const row: CommentRow = {
     id: randomUUID(),
     ticket_id: ticketId,
+    // The account that performed the write stays the account, always. Only the
+    // displayed identity can differ, and only for the mail ingest.
     author_id: user.id,
-    author_email: user.email,
-    author_name: user.name,
+    author_email: origin?.email.trim() || user.email,
+    author_name: origin?.name.trim() || user.name,
     author_is_agent: isAgent ? 1 : 0,
     visibility,
     body: text,

@@ -43,7 +43,7 @@ export default async function ForbiddenPage() {
             </CardDescription>
           </CardHeader>
           {/* Back to the visitor's own area, not a fixed target: a reporter belongs
-              in the portal, a technician who overreached into `/admin` belongs in the
+              in the portal, a agent who overreached into `/admin` belongs in the
               queue. Sending everyone to `/customer/new` would answer "wrong rights"
               with "here, file a ticket". */}
           <CardContent className="flex flex-wrap gap-2">

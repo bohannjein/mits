@@ -148,7 +148,7 @@ export async function changeOwnName(
  * around the gate. The id comes from the session — the form has no user field, and one
  * added to the body would be ignored.
  *
- * Open to every role. A technician has an address too, and the fields are the same
+ * Open to every role. A agent has an address too, and the fields are the same
  * ones; what differs is only who reads them.
  */
 export async function changeOwnProfile(
@@ -186,7 +186,7 @@ export async function changeOwnProfile(
     throw error;
   }
 
-  // The ticket sidebar shows these to the technician working the ticket, so the
+  // The ticket sidebar shows these to the agent working the ticket, so the
   // agent views have to drop their cache as well as this page.
   revalidatePath("/settings/profile");
   revalidatePath("/mits/tickets/[id]", "page");

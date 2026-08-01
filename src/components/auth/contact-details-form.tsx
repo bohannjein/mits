@@ -69,7 +69,7 @@ export function ContactDetailsForm({
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            Hilft der Technik, ein Ticket vor Ort einzuordnen.
+            Hilft dem Agenten, ein Ticket vor Ort einzuordnen.
           </p>
         </div>
       )}

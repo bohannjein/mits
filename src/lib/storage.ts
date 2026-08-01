@@ -1,23 +1,34 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { mkdirSync, createReadStream, existsSync, statSync, unlinkSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
-import { basename, extname, join, resolve } from "node:path";
-import { Readable } from "node:stream";
+import { basename, extname } from "node:path";
 
 import { canViewBoard } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/session";
-import { dataDir } from "@/lib/auth/secret";
 import { maxUploadBytes } from "@/lib/data-settings";
 import { db } from "@/lib/db/sqlite";
+import { isFeatureEnabled } from "@/lib/features";
+import {
+  activeBackend,
+  readObject,
+  removeObject,
+  writeObject,
+} from "@/lib/services/storage";
+import type { StorageBackend } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Disk-backed attachment storage.
+   Attachment storage — the rules half.
 
-   Blobs go into <data dir>/uploads, which is the mounted Docker volume, so they
-   survive a rebuild alongside the database. The client never learns a path: it
-   gets an opaque id, and every read goes through an access check.
+   This module owns *who may read what*, which extensions exist and how an upload
+   binds to a ticket. Where the bytes physically go is `lib/services/storage.ts`:
+   the mounted data directory, or an S3-compatible bucket.
+
+   The split is what let S3 arrive as a new file instead of as edits threaded
+   through the access checks. Nothing below cares which backend is in use; it
+   records the one that was used and hands it back on read.
+
+   The client never learns a path either way: it gets an opaque id, and every read
+   goes through the check in `openUploadFor`.
    ────────────────────────────────────────────────────────────────────────── */
 
 /**
@@ -97,17 +108,19 @@ interface UploadRow {
   owner_id: string;
   ticket_id: string | null;
   original_name: string;
+  /** File name on disk, or the full object key in the bucket. */
   stored_name: string;
   mime_type: string;
   size_bytes: number;
   created_at: string;
   scope: UploadScope;
-}
-
-function uploadsDir(): string {
-  const dir = join(dataDir(), "uploads");
-  mkdirSync(dir, { recursive: true });
-  return dir;
+  /**
+   * Which backend holds the bytes. Defaults to `disk` for every row written
+   * before the column existed, which is where those bytes actually are.
+   */
+  storage: StorageBackend;
+  /** Hex SHA-256. Empty for rows written before it was recorded. */
+  checksum: string;
 }
 
 /**
@@ -159,44 +172,46 @@ export async function storeUpload(
 
   const extension = safeExtension(file.name);
   const id = randomUUID();
-  const storedName = `${id}${extension}`;
-  const target = join(uploadsDir(), storedName);
+  // Generated, never derived from the upload — a UUID plus a checked extension
+  // cannot contain a path separator, so it cannot escape a directory or a prefix.
+  const objectName = `${id}${extension}`;
 
   const bytes = Buffer.from(await file.arrayBuffer());
   // Trust the extension, not the browser-supplied Content-Type: the type is only
   // ever used for a download response, never to execute anything.
   const mimeType = ALLOWED_EXTENSIONS[extension];
 
-  await writeFile(target, bytes, { flag: "wx" });
+  const backend = activeBackend(isFeatureEnabled("feature_s3_storage"));
+  const written = await writeObject(backend, objectName, bytes, mimeType);
 
   const row: UploadRow = {
     id,
     owner_id: user.id,
     ticket_id: null,
     original_name: displayName(file.name),
-    stored_name: storedName,
+    stored_name: written.objectKey,
     mime_type: mimeType,
-    size_bytes: bytes.byteLength,
+    size_bytes: written.size,
     created_at: new Date().toISOString(),
     scope,
+    storage: written.backend,
+    checksum: written.checksum,
   };
 
   try {
     db.prepare(
       `INSERT INTO mits_upload
          (id, owner_id, ticket_id, original_name, stored_name, mime_type,
-          size_bytes, created_at, scope)
+          size_bytes, created_at, scope, storage, checksum)
        VALUES
          (@id, @owner_id, @ticket_id, @original_name, @stored_name, @mime_type,
-          @size_bytes, @created_at, @scope)`,
+          @size_bytes, @created_at, @scope, @storage, @checksum)`,
     ).run(row);
   } catch (error) {
-    // Do not leave a blob behind that nothing points at.
-    try {
-      unlinkSync(target);
-    } catch {
-      /* best effort */
-    }
+    // Do not leave a blob behind that nothing points at. Awaited rather than
+    // fired and forgotten: on a serverless host the process can be frozen the
+    // moment this function returns, and the orphan would survive forever.
+    await removeObject(written.backend, written.objectKey);
     throw error;
   }
 
@@ -215,14 +230,14 @@ export interface ReadableUpload {
   size: number;
   /** Safe to render in an <img>. Everything else is download-only. */
   inlineImage: boolean;
-  stream: () => ReadableStream<Uint8Array>;
+  stream: () => ReadableStream<Uint8Array> | Promise<ReadableStream<Uint8Array>>;
 }
 
 /**
  * Open an upload for download, or return null when it does not exist **or** the
  * user may not read it. Same answer for both, so ids cannot be probed.
  *
- * A ticket attachment is readable by its owner and by technicians and admins — they
+ * A ticket attachment is readable by its owner and by agents and admins — they
  * work the tickets these files belong to. A FAQ attachment is readable by anyone
  * signed in, which is the whole point of publishing it.
  *
@@ -235,12 +250,17 @@ export interface ReadableUpload {
  *
  * Omitting the callback denies participant access rather than granting it, so a
  * caller that forgets it fails closed.
+ *
+ * Async since the S3 backend arrived: opening an object there is a network round
+ * trip. The access decision is still made synchronously and *before* it — no
+ * request leaves this process for a file the caller may not read, which also means
+ * the S3 access log cannot be used to probe which upload ids exist.
  */
-export function openUploadFor(
+export async function openUploadFor(
   id: string,
   user: SessionUser,
   canSeeTicket?: (ticketId: string) => boolean,
-): ReadableUpload | null {
+): Promise<ReadableUpload | null> {
   // A soft-deleted upload is not readable, so a removed attachment stops being
   // served even though the blob is still on disk for a later restore.
   const row = db
@@ -264,22 +284,28 @@ export function openUploadFor(
     (row.ticket_id !== null && (canSeeTicket?.(row.ticket_id) ?? false));
   if (!readable) return null;
 
-  const directory = uploadsDir();
-  const path = resolve(join(directory, row.stored_name));
-  // Belt and braces: the stored name is generated, but a hand-edited database row
-  // must not be able to read outside the uploads directory either.
-  if (!path.startsWith(resolve(directory))) return null;
-  if (!existsSync(path) || !statSync(path).isFile()) return null;
+  /*
+   * Read from the backend the *row* names, not the one currently configured.
+   *
+   * This is the line that makes switching to S3 safe: every attachment written
+   * before the switch stays on disk and keeps being served from there. Reading
+   * `activeBackend()` here instead would 404 the entire existing archive the
+   * moment somebody saved the settings page, and the page would report success.
+   *
+   * Defaulted to `disk` because that is where a row predating the column actually
+   * has its bytes.
+   */
+  const object = await readObject(row.storage ?? "disk", row.stored_name);
+  if (!object) return null;
 
   return {
     name: row.original_name,
     type: row.mime_type,
     size: row.size_bytes,
     inlineImage: isInlineImage(row.mime_type),
-    stream: () =>
-      // Node stream -> web stream; Next serves the latter directly. Streaming
-      // rather than reading into memory keeps a 10 MB download off the heap.
-      Readable.toWeb(createReadStream(path)) as ReadableStream<Uint8Array>,
+    // Streaming rather than reading into memory keeps a 25 MB download off the
+    // heap, on both backends.
+    stream: object.stream,
   };
 }
 

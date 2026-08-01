@@ -72,7 +72,7 @@ export function CannedResponsesForm({
           <CardDescription className="mt-1 leading-relaxed">
             Erscheinen als Schaltflächen über dem Antwortfeld im Ticket. Ein
             Baustein wird <em>eingesetzt</em>, nie automatisch versendet — was
-            rausgeht, bestätigt die Technik.
+            rausgeht, bestätigt der Agent.
           </CardDescription>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {CANNED_PLACEHOLDERS.map((placeholder) => (

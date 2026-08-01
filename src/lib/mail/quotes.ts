@@ -32,6 +32,18 @@ const QUOTE_MARKERS = [
   /^\s*[-=_]{5,}\s*$/,
 ];
 
+/**
+ * Whether this single line is a quote header.
+ *
+ * Exported so `planIngest` can ask the question without owning a second copy of
+ * the patterns. It needs it because `stripQuotedReply` deliberately keeps a
+ * message whose *first* line is a marker — right for a forward becoming a new
+ * ticket, wrong for a reply that is nothing but a quote, where the result is a
+ * bubble containing only "Am 01.08. schrieb IT <it@firma.de>:".
+ */
+export const isQuoteMarkerLine = (line: string): boolean =>
+  QUOTE_MARKERS.some((marker) => marker.test(line));
+
 /** Lines that begin a signature. Everything after is dropped. */
 const SIGNATURE_MARKERS = [
   // RFC 3676: exactly "-- " on its own line. The trailing space is the standard, but

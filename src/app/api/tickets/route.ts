@@ -30,7 +30,7 @@ export async function GET(request: Request) {
 
   const params = new URL(request.url).searchParams;
 
-  // `?scope=own` narrows a technician's or admin's listing to their own tickets
+  // `?scope=own` narrows a agent's or admin's listing to their own tickets
   // — what the portal's "my tickets" panel needs. Narrowing only: the role still
   // sets the ceiling, so this parameter can never widen what is returned.
   const scope = params.get("scope");

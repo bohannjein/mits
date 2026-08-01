@@ -93,6 +93,39 @@ export const isElevatedPriority = (priority: TicketPriority): boolean =>
   ELEVATED_PRIORITIES.includes(priority);
 
 /**
+ * What a ticket is worth before anybody triages it.
+ *
+ * Also the ceiling a reporter gets: priority is an operational judgement about the
+ * whole queue, and a field where everybody can write "kritisch" ranks nothing.
+ * Enforced in `createTicket`, not by leaving the control out of a form — see the
+ * note there.
+ */
+export const DEFAULT_TICKET_PRIORITY: TicketPriority = "medium";
+
+/**
+ * Rank order for sorting, low to critical.
+ *
+ * A `priority` column sorted as text gives critical · high · low · medium, which is
+ * alphabetical and answers no question anybody asked. The queue turns this into a
+ * SQL `CASE`, so the order lives here once rather than in a hand-written expression.
+ */
+export const PRIORITY_RANK: Record<TicketPriority, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  critical: 3,
+};
+
+/** Same problem, same fix: lifecycle order, not alphabetical. */
+export const STATUS_RANK: Record<TicketStatus, number> = {
+  open: 0,
+  in_progress: 1,
+  waiting_user: 2,
+  resolved: 3,
+  closed: 4,
+};
+
+/**
  * Human-readable ticket number: sixteen digits, zero-padded, counted from 1.
  *
  * `0000000000000001`. Stored as an integer and padded on the way out, so sorting and the
@@ -179,8 +212,32 @@ export const MITSTicketSchema = z.object({
   /** Owner. Set from the session — never accepted from the client. */
   created_by: z.string(),
   created_by_email: z.string(),
-  /** Technician the ticket is assigned to, if any. */
+  /** Agent the ticket is assigned to, if any. */
   assigned_to: z.string().nullable().default(null),
+  /**
+   * Display name of the assignee, resolved on read — **not** a stored column.
+   *
+   * Denormalised into the ticket shape rather than looked up per row, because the
+   * queue's owner column and its owner *sort* need the same value and the sort has
+   * to happen in SQL: sorting by `assigned_to` would order by opaque user ids, and
+   * sorting in JavaScript after `LIMIT 500` would sort the wrong five hundred rows.
+   * One LEFT JOIN answers both.
+   *
+   * Defaulted, so `createTicket` — which builds its row by hand — still parses.
+   */
+  assigned_to_name: z.string().nullable().default(null),
+  /**
+   * Newest thing that happened which this reader did not do, or null.
+   *
+   * Derived per request and per *user*: the reader's own reply is not news to them,
+   * and for a reporter an internal note does not exist at all. Both exclusions live
+   * in the SQL — see `searchTickets`.
+   */
+  last_activity_at: z.coerce.date().nullable().default(null),
+  /** True when `last_activity_at` is newer than this reader's last visit. */
+  unread: z.boolean().default(false),
+  /** Minutes of work logged against this ticket. Summed on read, never stored. */
+  logged_minutes: z.number().int().nonnegative().default(0),
   /** Coerced: the API and Ollama both hand us ISO strings, not Date objects. */
   created_at: z.coerce.date(),
 });
@@ -202,8 +259,18 @@ export const MITSTicketDraftSchema = MITSTicketSchema.omit({
   created_by_email: true,
   assigned_to: true,
   title: true,
+  /*
+   * The four read-time fields. Omitted rather than made optional for the same
+   * reason `created_by` is: a client that sends `unread: false` or its own
+   * `logged_minutes` should be ignored, and a schema that accepts the key invites
+   * exactly one future call site to trust it.
+   */
+  assigned_to_name: true,
+  last_activity_at: true,
+  unread: true,
+  logged_minutes: true,
 }).extend({
-  priority: TicketPriority.default("medium"),
+  priority: TicketPriority.default(DEFAULT_TICKET_PRIORITY),
   /** The reporter may state their site; everything else about them comes from the session. */
   location_id: z.string().nullable().default(null),
 });
@@ -215,7 +282,7 @@ export type MITSTicketDraft = z.infer<typeof MITSTicketDraftSchema>;
 
 /**
  * `internal` is the security-relevant half of this type. An internal note is
- * only ever returned to a technician or admin, and it never triggers a mail —
+ * only ever returned to a agent or admin, and it never triggers a mail —
  * see `listCommentsFor` in `lib/ticket-comments.ts`.
  */
 export const CommentVisibility = z.enum(["public", "internal"]);
@@ -246,6 +313,97 @@ export const TicketCommentSchema = z.object({
   created_at: z.coerce.date(),
 });
 export type TicketComment = z.infer<typeof TicketCommentSchema>;
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Worklogs — time booked against a ticket.
+
+   Stored in whole minutes. People type "45", "1,5 Std", "1:30" and "90m", and the
+   thing that has to be summed is a number; keeping the typed form would move the
+   rounding into every report that adds it up, and two reports would then disagree
+   about the same week.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** One booking may not exceed a long day. A typo of 4500 is not a 75-hour shift. */
+export const WORKLOG_MAX_MINUTES = 16 * 60;
+
+export const WorklogEntrySchema = z.object({
+  id: z.string(),
+  ticket_id: z.string(),
+  user_id: z.string(),
+  /** Copied at write time, like `author_name` on a comment: a deleted account must
+   *  not turn a year of timesheets into rows of opaque ids. */
+  user_name: z.string(),
+  minutes: z.number().int().positive().max(WORKLOG_MAX_MINUTES),
+  note: z.string().max(500).default(""),
+  /** `YYYY-MM-DD`. When the work happened, not when the row was written. */
+  performed_at: z.string().max(10),
+  created_at: z.coerce.date(),
+});
+export type WorklogEntry = z.infer<typeof WorklogEntrySchema>;
+
+/**
+ * Read a duration the way a person writes one.
+ *
+ * Accepted: `45`, `45m`, `45 Min`, `1:30`, `1,5`, `1.5h`, `2 Std`, `1h30`.
+ * Returns null for anything it cannot read, so the caller reports a parse failure
+ * instead of booking a number nobody meant — silently reading "1,5" as one minute
+ * is the mistake that only surfaces at the end of the month.
+ *
+ * The ambiguous case is a bare number: `90` means ninety **minutes**, because that
+ * is what a helpdesk timesheet is denominated in and "1,5" is how the same person
+ * writes an hour and a half. A bare decimal (`1,5`, `0.25`) is read as hours,
+ * since nobody books a quarter of a minute.
+ *
+ * Pure and here rather than in `lib/worklogs.ts` for the usual reason: the module
+ * is `server-only`, and this is the function where an off-by-a-factor-of-sixty has
+ * no visible failure mode.
+ */
+export function parseDurationMinutes(input: string): number | null {
+  const raw = input.trim().toLowerCase().replace(/\s+/g, "");
+  if (!raw) return null;
+
+  // `1:30` — hours and minutes. Minutes above 59 are a typo, not 1h90m.
+  const clock = raw.match(/^(\d{1,3}):([0-5]\d)$/);
+  if (clock) {
+    return clamp(Number(clock[1]) * 60 + Number(clock[2]));
+  }
+
+  // `1h30`, `1std30`, `2h`, `2std`
+  const split = raw.match(/^(\d{1,3})(?:h|std|stunden?)(\d{1,2})?(?:m|min|minuten?)?$/);
+  if (split) {
+    const minutes = split[2] === undefined ? 0 : Number(split[2]);
+    if (minutes > 59) return null;
+    return clamp(Number(split[1]) * 60 + minutes);
+  }
+
+  // `1,5h`, `0.25 std`
+  const hours = raw.match(/^(\d{1,3}(?:[.,]\d{1,2})?)(?:h|std|stunden?)$/);
+  if (hours) {
+    return clamp(Math.round(Number(hours[1].replace(",", ".")) * 60));
+  }
+
+  // `45m`, `45min`
+  const minutes = raw.match(/^(\d{1,4})(?:m|min|minuten?)$/);
+  if (minutes) return clamp(Number(minutes[1]));
+
+  // A bare decimal is hours; a bare integer is minutes. See the note above.
+  const bare = raw.match(/^(\d{1,4})([.,]\d{1,2})?$/);
+  if (bare) {
+    if (bare[2]) {
+      return clamp(Math.round(Number(raw.replace(",", ".")) * 60));
+    }
+    return clamp(Number(bare[1]));
+  }
+
+  return null;
+}
+
+/** Zero and anything past the daily ceiling are refused rather than rounded. */
+function clamp(minutes: number): number | null {
+  if (!Number.isFinite(minutes)) return null;
+  if (minutes <= 0 || minutes > WORKLOG_MAX_MINUTES) return null;
+  return Math.round(minutes);
+}
 
 /* ──────────────────────────────────────────────────────────────────────────
    Ticket links.
@@ -329,6 +487,83 @@ export const CANNED_PLACEHOLDERS = [
 ] as const;
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Macros — one click, several field changes.
+
+   A macro is *data*, not code: four optional field changes and an optional canned
+   response, stored as JSON in `mits_setting` beside the responses themselves. A
+   scripting hook would be more powerful and would also be a language nobody can
+   audit; every action here is one an agent could have performed by hand, which is
+   what makes the audit trail it leaves honest.
+
+   The empty string means "leave this alone" throughout. A `null` would say the
+   same thing, but the admin form posts strings and a sentinel that survives a
+   round trip through `FormData` unchanged is one fewer place to get it wrong.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** What a macro does about assignment. */
+export const MacroAssign = z.enum(["", "self", "unassign"]);
+export type MacroAssign = z.infer<typeof MacroAssign>;
+
+/**
+ * What happens to the macro's canned response.
+ *
+ * `insert` puts it in the composer and the agent presses send — the rule the rest
+ * of MITS follows, and the default here.
+ *
+ * `send` posts it immediately. That is a real exception to "Textbausteine werden
+ * eingesetzt, nie gesendet", and it is allowed because the confirming human is a
+ * different one: an *admin* wrote this text and deliberately marked this macro as
+ * auto-sending. The agent clicking it is choosing that pre-approved message by
+ * name. What is still impossible is a client deciding to send text of its own.
+ */
+export const MacroReplyMode = z.enum(["insert", "send"]);
+export type MacroReplyMode = z.infer<typeof MacroReplyMode>;
+
+export const MACRO_REPLY_MODE_LABELS: Record<MacroReplyMode, string> = {
+  insert: "In das Antwortfeld einsetzen",
+  send: "Sofort als Antwort senden",
+};
+
+export const MacroSchema = z.object({
+  id: z.string(),
+  title: z.string().min(1).max(120),
+  /** One line in the macro menu. Optional — a good title often needs no gloss. */
+  description: z.string().max(300).default(""),
+  /** Lucide icon name, resolved through the allow-list in lib/icons.ts. */
+  icon: z.string().max(60).default("Zap"),
+  /*
+   * Parsed leniently rather than as the status enum: a macro written against a
+   * status a later build removed has to still load, so the admin can see and fix
+   * it. `runMacro` validates before applying and ignores anything unrecognised —
+   * a macro that silently does nothing beats a macros page that will not open.
+   */
+  set_status: z.string().max(32).default(""),
+  set_priority: z.string().max(32).default(""),
+  assign: MacroAssign.default(""),
+  /** Id of a canned response, or empty for a macro that only changes fields. */
+  canned_response_id: z.string().max(64).default(""),
+  reply_mode: MacroReplyMode.default("insert"),
+  order_index: z.number().int().nonnegative().default(0),
+});
+export type Macro = z.infer<typeof MacroSchema>;
+
+/**
+ * Whether this macro would actually do anything.
+ *
+ * Checked when saving. A macro with every field left alone and no response is a
+ * button that reports success and changes nothing, which is worse than no button:
+ * the agent believes the ticket moved.
+ */
+export function macroIsEmpty(macro: Macro): boolean {
+  return (
+    macro.set_status === "" &&
+    macro.set_priority === "" &&
+    macro.assign === "" &&
+    macro.canned_response_id === ""
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
    Data retention and upload limits.
    ────────────────────────────────────────────────────────────────────────── */
 
@@ -383,6 +618,97 @@ export function formatBytes(bytes: number): string {
     return `${Math.round(bytes / 1024 / 1024)} MB`;
   }
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1).replace(".", ",")} GB`;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Object storage.
+
+   Two backends, chosen per instance: the mounted data directory, or any
+   S3-compatible endpoint — MinIO, AWS, Hetzner Object Storage.
+
+   **The backend is recorded on every stored file, not only in the setting.** A row
+   written while the disk backend was active has to keep being read from disk after
+   somebody switches to S3; deciding on read from the current setting would make
+   every existing attachment 404 the moment the switch was flipped, and nothing on
+   the settings page would suggest that is what happened. Switching therefore
+   affects new uploads only, and the two backends coexist indefinitely.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const StorageBackend = z.enum(["disk", "s3"]);
+export type StorageBackend = z.infer<typeof StorageBackend>;
+
+export const STORAGE_BACKEND_LABELS: Record<StorageBackend, string> = {
+  disk: "Datenverzeichnis",
+  s3: "S3-Objektspeicher",
+};
+
+export const S3SettingsSchema = z.object({
+  /**
+   * Host, optionally with a port. No scheme and no path — the scheme is `secure`
+   * below and a path would end up inside the signed canonical URI, where it
+   * silently breaks every signature.
+   */
+  endpoint: z.string().max(255).default(""),
+  region: z.string().max(64).default("us-east-1"),
+  bucket: z.string().max(255).default(""),
+  accessKeyId: z.string().max(255).default(""),
+  /** Empty on save means "keep the stored one" — see `resolveSmtpPassword`. */
+  secretAccessKey: z.string().max(512).default(""),
+  /** https unless somebody is running MinIO on a LAN without a certificate. */
+  secure: z.boolean().default(true),
+  /**
+   * `https://host/bucket/key` rather than `https://bucket.host/key`.
+   *
+   * Default on, because it is what MinIO does out of the box and what every
+   * S3-compatible provider still accepts. Virtual-host style additionally needs
+   * a wildcard DNS entry, which a self-hosted MinIO usually does not have.
+   */
+  forcePathStyle: z.boolean().default(true),
+  /** Key prefix, so one bucket can hold more than one instance. */
+  prefix: z.string().max(120).default("mits/"),
+});
+export type S3Settings = z.infer<typeof S3SettingsSchema>;
+
+export const DEFAULT_S3_SETTINGS: S3Settings = S3SettingsSchema.parse({});
+
+/** Sentinel the admin form posts to mean "keep the stored secret". */
+export const KEEP_S3_SECRET = "__keep__";
+
+/** Enough to attempt a request. Checked before every call so a half-filled mask stays inert. */
+export function isS3Configured(settings: S3Settings): boolean {
+  return (
+    settings.endpoint.trim() !== "" &&
+    settings.bucket.trim() !== "" &&
+    settings.accessKeyId.trim() !== "" &&
+    settings.secretAccessKey.trim() !== ""
+  );
+}
+
+/**
+ * Whether this is usable as an endpoint host.
+ *
+ * A scheme or a path here is the mistake people actually make — pasting
+ * `https://s3.example.com/` out of a provider's documentation. Both would land
+ * inside the signed canonical URI and produce `SignatureDoesNotMatch`, which says
+ * nothing about the real cause. Refused at the mask instead.
+ */
+export function isS3Endpoint(value: string): boolean {
+  const raw = value.trim();
+  if (!raw) return false;
+  if (raw.includes("://") || raw.includes("/")) return false;
+  return /^[A-Za-z0-9][A-Za-z0-9.-]*(:\d{1,5})?$/.test(raw);
+}
+
+/**
+ * Normalise a key prefix: no leading slash, exactly one trailing one.
+ *
+ * An empty prefix stays empty — that is "the bucket root", which is legitimate.
+ * A leading slash would produce a key beginning with `//`, which S3 accepts and
+ * which then makes the object impossible to find with the obvious prefix listing.
+ */
+export function normaliseS3Prefix(value: string): string {
+  const raw = value.trim().replace(/^\/+/, "").replace(/\/+$/, "");
+  return raw === "" ? "" : `${raw}/`;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -458,8 +784,26 @@ export const auditLabel = (action: string): string =>
 /** Sentinel the on-call picker posts for "nobody nominated". */
 export const NO_ON_CALL = "__none";
 
+/**
+ * How MITS reaches the support mailbox.
+ *
+ * `none` is not "unconfigured" — it is an explicit "do not fetch", and it is the
+ * default so an instance never starts talking to a mail server nobody set up.
+ */
+export const MailTransport = z.enum(["none", "imap", "graph"]);
+export type MailTransport = z.infer<typeof MailTransport>;
+
+export const MAIL_TRANSPORT_LABELS: Record<MailTransport, string> = {
+  none: "Kein Abruf",
+  imap: "IMAP",
+  graph: "Microsoft Graph",
+};
+
+/** Ceiling per run. A mailbox with a two-year backlog must not be one request. */
+export const MAIL_FETCH_LIMIT = 25;
+
 export const MailSettingsSchema = z.object({
-  /** Address alerts and tickets arrive at. Display only until a transport exists. */
+  /** Address alerts and tickets arrive at. */
   supportAddress: z.string().max(320).default(""),
   /** Off makes a recognised alert an ordinary mail ticket. */
   defenderRuleEnabled: z.boolean().default(true),
@@ -467,13 +811,78 @@ export const MailSettingsSchema = z.object({
   onCallUserId: z.string().max(64).default(""),
   /** Where the immediate notification goes. Empty attempts no mail. */
   onCallEmail: z.string().max(320).default(""),
+
+  /* ── Inbound transport ──────────────────────────────────────────────── */
+
+  transport: MailTransport.default("none"),
+
+  /**
+   * The account inbound mail is filed under when the sender has none.
+   *
+   * Required for ingest, and deliberately so: `created_by` decides who may see a
+   * ticket, and a mail from an address nobody recognises still has to belong to
+   * *something*. It is filed under this account with the real sender kept in
+   * `created_by_email`, so agents see it, replies route back to the human, and no
+   * account is ever created by an unauthenticated message.
+   */
+  fallbackUserId: z.string().max(64).default(""),
+
+  imapHost: z.string().max(255).default(""),
+  imapPort: z.coerce.number().int().min(1).max(65535).default(993),
+  /** Implicit TLS on 993. Off attempts STARTTLS. */
+  imapSecure: z.boolean().default(true),
+  imapUser: z.string().max(255).default(""),
+  /** Empty on save means "keep the stored one" — never "clear it". */
+  imapPassword: z.string().max(512).default(""),
+  imapMailbox: z.string().max(255).default("INBOX"),
+
+  /** Directory (tenant) id of the app registration. */
+  graphTenantId: z.string().max(120).default(""),
+  graphClientId: z.string().max(120).default(""),
+  graphClientSecret: z.string().max(512).default(""),
+  /**
+   * The mailbox to read, as an address or an object id.
+   *
+   * Graph's client-credentials flow is application-wide: the app registration can
+   * reach every mailbox in the tenant unless an Application Access Policy narrows
+   * it. This field says which one MITS *uses*; restricting what it *could* use is
+   * an Exchange-side policy and is called out in the admin mask.
+   */
+  graphMailbox: z.string().max(320).default(""),
 });
 export type MailSettings = z.infer<typeof MailSettingsSchema>;
+
+export const DEFAULT_MAIL_SETTINGS: MailSettings = MailSettingsSchema.parse({});
+
+/** Sentinel the admin form posts to mean "keep the stored secret". */
+export const KEEP_MAIL_SECRET = "__keep__";
+
+/** Enough to attempt a fetch. Checked before every run so a half-filled mask stays inert. */
+export function isMailInboundConfigured(settings: MailSettings): boolean {
+  if (settings.fallbackUserId.trim() === "") return false;
+
+  if (settings.transport === "imap") {
+    return (
+      settings.imapHost.trim() !== "" &&
+      settings.imapUser.trim() !== "" &&
+      settings.imapPassword !== ""
+    );
+  }
+  if (settings.transport === "graph") {
+    return (
+      settings.graphTenantId.trim() !== "" &&
+      settings.graphClientId.trim() !== "" &&
+      settings.graphClientSecret !== "" &&
+      settings.graphMailbox.trim() !== ""
+    );
+  }
+  return false;
+}
 
 /* ──────────────────────────────────────────────────────────────────────────
    Customer profile.
 
-   Contact details a reporter maintains themselves, so the technician working their
+   Contact details a reporter maintains themselves, so the agent working their
    ticket does not have to ask where they sit.
 
    Declared as a list rather than written into the form as JSX, for the same reason a
@@ -492,7 +901,7 @@ export const CUSTOMER_PROFILE_FIELDS = [
   { key: "city", label: "Stadt", widget: "text", autoComplete: "address-level2", max: 120 },
   { key: "country", label: "Land", widget: "text", autoComplete: "country-name", max: 80 },
   { key: "website", label: "Website", widget: "url", autoComplete: "url", max: 300 },
-  { key: "note", label: "Hinweis für die Technik", widget: "textarea", max: 500 },
+  { key: "note", label: "Hinweis für den Agenten", widget: "textarea", max: 500 },
 ] as const;
 
 export type CustomerProfileField = (typeof CUSTOMER_PROFILE_FIELDS)[number];
@@ -542,7 +951,7 @@ export const EMPTY_USER_PROFILE: MITSUserProfile = MITSUserProfileSchema.parse({
  *
  * Stricter than `isSafeResourceHref`, which also accepts a site-relative path — that
  * is right for an admin-authored portal tile and wrong here: a reporter's "website"
- * pointing at `/admin` would put a link to our own pages in a field a technician
+ * pointing at `/admin` would put a link to our own pages in a field a agent
  * clicks. A host is required, and only http and https.
  */
 export function isWebsiteUrl(value: string): boolean {
@@ -881,7 +1290,7 @@ export function expiryState(value: string, now: Date): ExpiryState {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Technician presence.
+   Agent presence.
    ────────────────────────────────────────────────────────────────────────── */
 
 export const PresenceState = z.enum(["active", "idle", "offline"]);
@@ -940,6 +1349,11 @@ export const FeatureFlagsSchema = z.object({
   feature_ticket_linking: z.boolean().default(true),
   feature_canned_responses: z.boolean().default(true),
   feature_cmdb: z.boolean().default(true),
+  feature_time_tracking: z.boolean().default(true),
+  feature_macros: z.boolean().default(true),
+  feature_toast_notifications: z.boolean().default(true),
+  feature_mail_inbound: z.boolean().default(false),
+  feature_s3_storage: z.boolean().default(false),
   feature_typing_indicator: z.boolean().default(false),
   feature_stats_heatmap: z.boolean().default(true),
   feature_sla_countdown: z.boolean().default(false),
@@ -979,9 +1393,9 @@ export const FEATURE_FLAG_META: Record<
       "Ticketeingang mit Übernehmen-Aktion und Übersicht der eigenen offenen Tickets.",
   },
   feature_presence_sidebar: {
-    label: "Techniker-Präsenz",
+    label: "Agenten-Präsenz",
     description:
-      "Zeigt an, welche Technikerinnen und Techniker gerade angemeldet sind.",
+      "Zeigt an, welche Agentinnen und Agenten gerade angemeldet sind.",
   },
   feature_email_notifications: {
     label: "E-Mail-Benachrichtigungen",
@@ -1007,6 +1421,31 @@ export const FEATURE_FLAG_META: Record<
     label: "Textbausteine",
     description:
       "Vorformulierte Antworten, die im Antwortfeld eingesetzt werden. Gepflegt unter /admin/canned-responses.",
+  },
+  feature_time_tracking: {
+    label: "Zeiterfassung",
+    description:
+      "Agenten erfassen Arbeitszeit am Ticket, per Timer oder von Hand. Die Summe steht am Ticket und in der Queue.",
+  },
+  feature_macros: {
+    label: "Makros",
+    description:
+      "Ein Klick setzt Status, Priorität und Zuweisung und fügt einen Textbaustein ein. Gepflegt unter /admin/macros.",
+  },
+  feature_toast_notifications: {
+    label: "Live-Benachrichtigungen",
+    description:
+      "Einblendung oben rechts bei neuer Antwort, neuem Ticket im Pool und eigener Zuweisung. Fragt regelmäßig nach.",
+  },
+  feature_mail_inbound: {
+    label: "E-Mail-Abruf",
+    description:
+      "Holt Nachrichten aus dem Support-Postfach per IMAP oder Microsoft Graph und legt daraus Tickets und Antworten an. Braucht eine Konfiguration unter /admin/mail.",
+  },
+  feature_s3_storage: {
+    label: "S3-Objektspeicher",
+    description:
+      "Legt neue Anhänge in einem S3-Bucket ab statt auf der Platte. Bereits abgelegte Dateien bleiben, wo sie sind.",
   },
   feature_typing_indicator: {
     label: "Schreibt-gerade-Anzeige",
@@ -1228,7 +1667,24 @@ export function parseFormSchema(input: unknown): MITSFormSchema {
    those and must stay free of zod and any Node-only dependency.
    ────────────────────────────────────────────────────────────────────────── */
 
-export const MITSRoleSchema = z.enum(["user", "technician", "admin"]);
+/**
+ * Roles, with the pre-rename value tolerated on read.
+ *
+ * `technician` became `agent`. The column is migrated in `lib/db/sqlite.ts`, but the
+ * preprocess stays for the same reason `TicketPriority` keeps its legacy map: a
+ * database restored from an older backup would otherwise fail this parse on every
+ * row and take the whole user list down with it. Unknown values are *not* mapped —
+ * they fail, and `toRole` in `lib/auth/roles.ts` is what degrades them to `user`.
+ */
+export const LEGACY_ROLE_MAP: Record<string, string> = {
+  technician: "agent",
+};
+
+export const MITSRoleSchema = z.preprocess(
+  (value) =>
+    typeof value === "string" ? (LEGACY_ROLE_MAP[value] ?? value) : value,
+  z.enum(["user", "agent", "admin"]),
+);
 
 /** The user shape the UI is allowed to see. No password hash, no session token. */
 export const MITSUserSchema = z.object({

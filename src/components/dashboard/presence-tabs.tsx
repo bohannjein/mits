@@ -18,7 +18,7 @@ import { PRESENCE_LABELS, type PresenceState } from "@/types/mits";
    Rows are one line and the list scrolls at a fixed height, so a long reporter list
    cannot push the statistics out of the sidebar. Offline accounts never arrive here at
    all — `PresenceList` drops them, since a list of everyone who has ever signed in
-   answers no question a technician is asking.
+   answers no question a agent is asking.
    ────────────────────────────────────────────────────────────────────────── */
 
 /** Green / yellow / grey. A deliberate correction — do not revert to grey for idle. */
@@ -52,12 +52,12 @@ export function PresenceTabs({
   return (
     <Tabs defaultValue="staff" className="gap-2">
       <TabsList className="h-auto w-full gap-1 rounded-full border border-border bg-card p-1">
-        <PresenceTrigger value="staff" label="Technik" rows={staff} />
+        <PresenceTrigger value="staff" label="Agenten" rows={staff} />
         <PresenceTrigger value="reporters" label="Anwender" rows={reporters} />
       </TabsList>
 
       <TabsContent value="staff">
-        <PresenceRows rows={staff} empty="Niemand aus der Technik ist gerade da." />
+        <PresenceRows rows={staff} empty="Gerade ist kein Agent da." />
       </TabsContent>
       <TabsContent value="reporters">
         <PresenceRows rows={reporters} empty="Gerade kein Anwender angemeldet." />

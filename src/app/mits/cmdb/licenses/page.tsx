@@ -38,7 +38,7 @@ export const metadata: Metadata = {
    ────────────────────────────────────────────────────────────────────────── */
 
 export default async function LicencesPage() {
-  await requireRole("technician", "/mits/cmdb/licenses");
+  await requireRole("agent", "/mits/cmdb/licenses");
 
   if (!isFeatureEnabled("feature_cmdb")) notFound();
 

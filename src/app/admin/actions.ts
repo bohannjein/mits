@@ -5,14 +5,18 @@ import { revalidatePath } from "next/cache";
 import { AISettingsError, setAISettings } from "@/lib/ai-settings";
 import { isRole } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
-import { setFeatureFlags } from "@/lib/features";
+import { isFeatureEnabled, setFeatureFlags } from "@/lib/features";
+import { ingestMailbox } from "@/lib/mail/ingest";
 import { saveFormSchema } from "@/lib/form-schemas";
 import {
   conditionCycles,
   danglingConditions,
   resolveFields,
 } from "@/lib/forms/schema-to-zod";
-import { setCannedResponses } from "@/lib/canned-responses";
+import { listCannedResponses, setCannedResponses } from "@/lib/canned-responses";
+import { setMacros } from "@/lib/macros";
+import { verifyS3 } from "@/lib/services/s3";
+import { getS3Settings, setS3Settings } from "@/lib/services/storage";
 import { LocationError, getLocation, replaceLocations } from "@/lib/locations";
 import {
   OrganizationError,
@@ -61,13 +65,21 @@ import {
 } from "@/lib/users";
 import {
   CannedResponseSchema,
+  MacroSchema,
+  S3SettingsSchema,
+  isS3Configured,
+  isS3Endpoint,
+  macroIsEmpty,
+  resolveSmtpPassword,
   FEATURE_FLAG_META,
   FeatureFlagsSchema,
   MITSLocationSchema,
   MITSOrganizationSchema,
   NO_LOCATION,
   NO_ORGANIZATION,
+  MailTransport,
   NO_ON_CALL,
+  isMailInboundConfigured,
   PortalConfigSchema,
   PortalContentSchema,
   PortalFaqSchema,
@@ -446,6 +458,150 @@ export async function saveCannedResponsesAction(
   };
 }
 
+/* ── Macros ─────────────────────────────────────────────────────────────── */
+
+export async function saveMacrosAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const payload = parsePayload(formData, "macros", z.array(MacroSchema));
+  if (!payload.ok) return { ok: false, error: payload.error };
+
+  /*
+   * Refused rather than saved.
+   *
+   * A macro that changes nothing reports "ausgeführt" and moves no ticket — the
+   * agent believes the customer is now waiting on them. The form disables the
+   * save button for this too, but a disabled button is not a check.
+   */
+  const inert = payload.data.filter(macroIsEmpty);
+  if (inert.length > 0) {
+    return {
+      ok: false,
+      error: `„${inert[0].title || "Ohne Titel"}“ ändert nichts. Bitte ein Feld setzen oder einen Textbaustein wählen.`,
+    };
+  }
+
+  /*
+   * A macro may only point at a canned response that exists.
+   *
+   * Checked at save time because the alternative surfaces at run time, on a real
+   * ticket, after the field changes have already been applied — the agent is then
+   * looking at a half-executed macro and an error about a template.
+   */
+  const known = new Set(listCannedResponses().map((entry) => entry.id));
+  const dangling = payload.data.find(
+    (macro) =>
+      macro.canned_response_id !== "" && !known.has(macro.canned_response_id),
+  );
+  if (dangling) {
+    return {
+      ok: false,
+      error: `„${dangling.title}“ verweist auf einen Textbaustein, den es nicht gibt.`,
+    };
+  }
+
+  const saved = setMacros(payload.data);
+  revalidatePath("/admin/macros");
+  // Every agent ticket page renders the list.
+  revalidatePath("/mits", "layout");
+
+  return {
+    ok: true,
+    message:
+      saved.length === 0
+        ? "Makros geleert — im Ticket erscheinen keine Schaltflächen mehr."
+        : `${saved.length} Makro(s) gespeichert.`,
+  };
+}
+
+/* ── Object storage ─────────────────────────────────────────────────────── */
+
+/**
+ * Save the S3 configuration.
+ *
+ * The secret follows the same rule as the SMTP password and for the same reason: a
+ * password input is never populated on render, so a blank field means "I did not
+ * touch this". Treating it as "clear it" would wipe the credentials on every
+ * unrelated save of this mask, and the failure would surface as the next upload.
+ */
+export async function saveS3SettingsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const endpoint = String(formData.get("endpoint") ?? "").trim();
+  // Refused here rather than at signing time: a pasted `https://s3.example.com/`
+  // would land in the canonical URI and come back as `SignatureDoesNotMatch`,
+  // which says nothing about the real mistake.
+  if (endpoint !== "" && !isS3Endpoint(endpoint)) {
+    return {
+      ok: false,
+      error:
+        "Der Endpunkt ist nur der Host, optional mit Port — ohne https:// und ohne Pfad.",
+    };
+  }
+
+  const stored = getS3Settings();
+  const saved = setS3Settings(
+    S3SettingsSchema.parse({
+      endpoint,
+      region: String(formData.get("region") ?? ""),
+      bucket: String(formData.get("bucket") ?? "").trim(),
+      accessKeyId: String(formData.get("accessKeyId") ?? "").trim(),
+      secretAccessKey: resolveSmtpPassword(
+        String(formData.get("secretAccessKey") ?? ""),
+        stored.secretAccessKey,
+      ),
+      secure: formData.get("secure") === "on",
+      forcePathStyle: formData.get("forcePathStyle") === "on",
+      prefix: String(formData.get("prefix") ?? ""),
+    }),
+  );
+
+  revalidatePath("/admin/settings/storage");
+
+  return {
+    ok: true,
+    message: isS3Configured(saved)
+      ? "Gespeichert. Neue Anhänge gehen in den Bucket, sobald das Modul eingeschaltet ist."
+      : "Gespeichert, aber noch unvollständig — bis dahin bleibt die Ablage auf der Platte.",
+  };
+}
+
+/**
+ * Round-trip test against the *stored* settings.
+ *
+ * Deliberately not against the values in the form: what matters is whether the
+ * configuration this instance will actually use works. Testing unsaved input would
+ * let somebody get a green result for a configuration that is not in effect.
+ */
+export async function testS3Action(
+  _previous: ActionResult | null,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const settings = getS3Settings();
+  if (!isS3Configured(settings)) {
+    return {
+      ok: false,
+      error: "Bitte zuerst Endpunkt, Bucket, Access Key und Secret speichern.",
+    };
+  }
+
+  try {
+    return { ok: true, message: await verifyS3(settings) };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Verbindung fehlgeschlagen.",
+    };
+  }
+}
+
 /* ── SMTP ───────────────────────────────────────────────────────────────── */
 
 export async function saveSmtpSettingsAction(
@@ -794,14 +950,66 @@ export async function saveMailSettingsAction(
     return { ok: false, error: "Das gewählte Konto gibt es nicht." };
   }
 
+  const stored = getMailSettings();
+
+  const fallbackUserId = String(formData.get("fallbackUserId") ?? "").trim();
+  const cleanFallback =
+    fallbackUserId === NO_ON_CALL ? "" : fallbackUserId;
+  if (cleanFallback && !findUser(cleanFallback)) {
+    return { ok: false, error: "Das gewählte Auffang-Konto gibt es nicht." };
+  }
+
+  const transport = MailTransport.safeParse(formData.get("transport"));
+
+  /*
+   * The whole mask is saved as one object, including the transport half.
+   *
+   * Spread over the stored settings rather than rebuilt from scratch: the two
+   * secrets are not sent back to the browser, so a field the form did not post
+   * has to keep its stored value. Building a fresh object would clear the IMAP
+   * password every time somebody toggled the Defender rule.
+   */
   const saved = setMailSettings({
+    ...stored,
     supportAddress: String(formData.get("supportAddress") ?? "").trim(),
     defenderRuleEnabled: formData.get("defenderRuleEnabled") === "on",
     onCallUserId: onCallUserId === NO_ON_CALL ? "" : onCallUserId,
     onCallEmail: String(formData.get("onCallEmail") ?? "").trim(),
+
+    transport: transport.success ? transport.data : stored.transport,
+    fallbackUserId: cleanFallback,
+
+    imapHost: String(formData.get("imapHost") ?? stored.imapHost).trim(),
+    imapPort: Number(formData.get("imapPort") ?? stored.imapPort) || 993,
+    imapSecure: formData.get("imapSecure") === "on",
+    imapUser: String(formData.get("imapUser") ?? stored.imapUser).trim(),
+    // Same rule as the SMTP password: a blank field means "not touched", because
+    // a password input is never populated on render.
+    imapPassword: resolveSmtpPassword(
+      String(formData.get("imapPassword") ?? ""),
+      stored.imapPassword,
+    ),
+    imapMailbox:
+      String(formData.get("imapMailbox") ?? stored.imapMailbox).trim() || "INBOX",
+
+    graphTenantId: String(formData.get("graphTenantId") ?? stored.graphTenantId).trim(),
+    graphClientId: String(formData.get("graphClientId") ?? stored.graphClientId).trim(),
+    graphClientSecret: resolveSmtpPassword(
+      String(formData.get("graphClientSecret") ?? ""),
+      stored.graphClientSecret,
+    ),
+    graphMailbox: String(formData.get("graphMailbox") ?? stored.graphMailbox).trim(),
   });
 
   revalidatePath("/admin/mail");
+
+  if (saved.transport !== "none" && !isMailInboundConfigured(saved)) {
+    return {
+      ok: true,
+      message:
+        "Gespeichert, aber der Abruf ist noch unvollständig — es fehlen Zugangsdaten oder das Auffang-Konto.",
+    };
+  }
 
   return {
     ok: true,
@@ -811,6 +1019,45 @@ export async function saveMailSettingsAction(
         : "Gespeichert. Defender-Alerts werden erkannt, bleiben aber unzugewiesen im Eingang."
       : "Gespeichert. Die Defender-Regel ist aus — Alerts werden zu gewöhnlichen Tickets.",
   };
+}
+
+/**
+ * Fetch the mailbox now.
+ *
+ * The only trigger MITS ships with, on purpose. An in-process timer would run once
+ * per Node worker — two workers means every mail becomes two tickets — and it
+ * would keep polling a mailbox on an instance nobody is using. A button plus the
+ * token-protected `POST /api/mail/poll` lets an operator drive it from whatever
+ * scheduler they already run, which is where a recurring job belongs.
+ */
+export async function fetchMailboxAction(
+  _previous: ActionResult | null,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  if (!isFeatureEnabled("feature_mail_inbound")) {
+    return { ok: false, error: "Der E-Mail-Abruf ist abgeschaltet." };
+  }
+
+  try {
+    const report = await ingestMailbox();
+    revalidatePath("/mits");
+    revalidatePath("/admin/mail");
+
+    const summary =
+      `${report.fetched} Nachricht(en) geholt: ${report.created} neue Ticket(s), ` +
+      `${report.replied} Antwort(en), ${report.skipped} übersprungen.`;
+
+    // The notes carry the per-message reasons. Truncated, because a mailbox with
+    // twenty-five newsletters would otherwise produce an unreadable wall.
+    const detail = report.notes.slice(0, 5).join(" · ");
+    return { ok: true, message: detail ? `${summary} ${detail}` : summary };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Abruf fehlgeschlagen.",
+    };
+  }
 }
 
 /**

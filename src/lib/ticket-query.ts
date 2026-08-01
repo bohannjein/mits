@@ -111,7 +111,7 @@ export function parseTicketQuery(
  * number space could be probed for which tickets exist. Someone searching a
  * foreign number simply gets an empty list.
  *
- * The target world is derived from the role, not passed in: a technician jumps
+ * The target world is derived from the role, not passed in: a agent jumps
  * into the agent view with its workflow panel, a reporter into their own lean
  * view. Deriving it here means a caller cannot accidentally send a reporter to
  * `/mits`, where the guard would bounce them straight back.

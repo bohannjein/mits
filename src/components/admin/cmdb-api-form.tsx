@@ -53,7 +53,7 @@ export function CMDBApiForm({ configured }: { configured: boolean }) {
           REST-Schnittstelle
         </CardTitle>
         <CardDescription className="mt-1 leading-relaxed">
-          Ohne Token beantwortet die Schnittstelle nur Anfragen angemeldeter Technik.
+          Ohne Token beantwortet die Schnittstelle nur Anfragen angemeldeter Agenten.
           Skripte senden den Token im Kopf <code>X-MITS-API-Token</code>.
         </CardDescription>
       </CardHeader>

@@ -218,7 +218,7 @@ export function testMail(recipient: string, url: string | null) {
     intro: `Diese Nachricht ging an ${recipient}.`,
     sections: [
       {
-        text: "Wenn diese E-Mail lesbar ankommt, kann MITS Benachrichtigungen versenden: Eingangsbestätigungen und Antworten der Technik.",
+        text: "Wenn diese E-Mail lesbar ankommt, kann MITS Benachrichtigungen versenden: Eingangsbestätigungen und Antworten der Agenten.",
       },
       {
         text: url

@@ -103,7 +103,7 @@ export interface CIFilter {
  *
  * Every clause is a bound parameter and every filter narrows — there is no code path
  * that widens the set beyond "alive items", which is what the whole CMDB is for a
- * technician. Reporters never reach this: the pages are behind `requireRole`.
+ * agent. Reporters never reach this: the pages are behind `requireRole`.
  */
 export function listConfigurationItems(
   filter: CIFilter = {},

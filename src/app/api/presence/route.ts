@@ -11,7 +11,7 @@ import { touchPresence } from "@/lib/presence";
    someone who is not there.
 
    Every role is recorded. Who may *see* the result is decided where it is rendered:
-   the presence panel sits in `/mits`, behind the technician gate.
+   the presence panel sits in `/mits`, behind the agent gate.
    ────────────────────────────────────────────────────────────────────────── */
 
 export async function POST(request: Request) {

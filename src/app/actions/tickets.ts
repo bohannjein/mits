@@ -7,6 +7,7 @@ import { canViewBoard } from "@/lib/auth/roles";
 import { requireUser, type SessionUser } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
 import { ticketReplyMail } from "@/lib/mail-templates";
+import { MacroError, getMacro, runMacro } from "@/lib/macros";
 import { TicketLinkError, addLink, removeLink } from "@/lib/ticket-links";
 import { sendNotification, ticketUrl } from "@/lib/smtp";
 import { CommentError, addComment } from "@/lib/ticket-comments";
@@ -23,12 +24,15 @@ import {
   setTicketPriority,
   setTicketStatus,
 } from "@/lib/tickets";
+import { WorklogError, addWorklog, deleteWorklog } from "@/lib/worklogs";
+import { formatMinutes } from "@/lib/format";
 import {
   CommentBodyFormat,
   CommentVisibility,
   TicketPriority,
   TicketStatus,
   formatTicketNumber,
+  parseDurationMinutes,
   parseTicketNumber,
   type MITSTicket,
 } from "@/types/mits";
@@ -68,7 +72,7 @@ async function authorize(
   const user = await requireUser(`/mits/tickets/${ticketId}`);
 
   if (requireAgent && !canViewBoard(user.role)) {
-    return { ok: false, error: "Diese Aktion ist der Technik vorbehalten." };
+    return { ok: false, error: "Diese Aktion ist Agenten vorbehalten." };
   }
 
   const ticket = getTicketFor(ticketId, user);
@@ -345,6 +349,144 @@ export async function addCommentAction(
   };
 }
 
+/* ── Macros ─────────────────────────────────────────────────────────────── */
+
+/**
+ * Result of a macro run.
+ *
+ * Carries an extra `insert` because that is the one thing the server decides and
+ * the client has to act on: the placeholder-filled reply text goes into the
+ * composer, and the agent presses send. Filling it here rather than in the browser
+ * keeps the reporter's name out of a template the client renders — the same rule
+ * the canned-response dropdown follows.
+ */
+export type MacroActionResult =
+  | { ok: true; message: string; insert: string | null }
+  | { ok: false; error: string };
+
+export async function runMacroAction(
+  _previous: MacroActionResult | null,
+  formData: FormData,
+): Promise<MacroActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, true);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  // A switched-off module refuses on the server too, not just by hiding a button.
+  if (!isFeatureEnabled("feature_macros")) {
+    return { ok: false, error: "Makros sind abgeschaltet." };
+  }
+
+  const macro = getMacro(String(formData.get("macroId") ?? ""));
+  if (!macro) return { ok: false, error: "Makro nicht gefunden." };
+
+  let outcome;
+  try {
+    outcome = runMacro(macro, auth.ticket, auth.user);
+  } catch (error) {
+    if (error instanceof MacroError) return { ok: false, error: error.message };
+    if (error instanceof CommentError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath(`/customer/tickets/${ticketId}`);
+  revalidatePath(`/mits/tickets/${ticketId}`);
+  revalidatePath("/mits");
+
+  /*
+   * The mail goes out only for a macro that actually sent something, and only to
+   * somebody other than the author — the same three conditions `addCommentAction`
+   * checks, because this is the second path that can produce a public reply and
+   * the reporter should not be able to tell which one was used.
+   */
+  if (outcome.sent && outcome.body && auth.ticket.created_by_email !== auth.user.email) {
+    await sendNotification({
+      to: auth.ticket.created_by_email,
+      ...ticketReplyMail(
+        auth.ticket,
+        { author: auth.user.name, body: outcome.body },
+        ticketUrl(auth.ticket.id),
+      ),
+    });
+  }
+
+  return {
+    ok: true,
+    message:
+      outcome.steps.length > 0
+        ? `„${macro.title}“ ausgeführt — ${outcome.steps.join(", ")}.`
+        : `„${macro.title}“ ausgeführt — nichts zu ändern.`,
+    insert: outcome.insert,
+  };
+}
+
+/* ── Worklogs ───────────────────────────────────────────────────────────── */
+
+/**
+ * Book time against a ticket.
+ *
+ * The duration arrives as whatever the agent typed — "45", "1:30", "1,5 Std" — and
+ * is parsed on the server rather than in the browser. Both sides could parse it,
+ * but only one of them decides what gets stored, and a client that sends a plain
+ * number would otherwise be trusted to have done the sixty-times conversion.
+ */
+export async function addWorklogAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, true);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  const raw = String(formData.get("duration") ?? "");
+  const minutes = parseDurationMinutes(raw);
+  if (minutes === null) {
+    return {
+      ok: false,
+      error: `„${raw.trim() || "leer"}“ ist keine Dauer. Erlaubt sind z. B. 45, 45 Min, 1:30 oder 1,5 Std.`,
+    };
+  }
+
+  try {
+    addWorklog(
+      ticketId,
+      auth.user,
+      minutes,
+      String(formData.get("note") ?? ""),
+      String(formData.get("performedAt") ?? ""),
+    );
+  } catch (error) {
+    if (error instanceof WorklogError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath(`/mits/tickets/${ticketId}`);
+  revalidatePath("/mits");
+
+  return { ok: true, message: `${formatMinutes(minutes)} erfasst.` };
+}
+
+export async function deleteWorklogAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, true);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  try {
+    deleteWorklog(String(formData.get("worklogId") ?? ""), ticketId, auth.user);
+  } catch (error) {
+    if (error instanceof WorklogError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath(`/mits/tickets/${ticketId}`);
+  revalidatePath("/mits");
+
+  return { ok: true, message: "Eintrag entfernt." };
+}
+
 /* ── Trash ──────────────────────────────────────────────────────────────── */
 
 /**
@@ -386,7 +528,7 @@ export async function restoreTicketAction(
 ): Promise<TicketActionResult> {
   const user = await requireUser("/admin/settings/data");
   if (!canViewBoard(user.role)) {
-    return { ok: false, error: "Diese Aktion ist der Technik vorbehalten." };
+    return { ok: false, error: "Diese Aktion ist Agenten vorbehalten." };
   }
 
   const ticketId = String(formData.get("ticketId") ?? "");
@@ -411,7 +553,7 @@ export async function restoreCommentAction(
 ): Promise<TicketActionResult> {
   const user = await requireUser("/admin/settings/data");
   if (!canViewBoard(user.role)) {
-    return { ok: false, error: "Diese Aktion ist der Technik vorbehalten." };
+    return { ok: false, error: "Diese Aktion ist Agenten vorbehalten." };
   }
 
   const commentId = String(formData.get("commentId") ?? "");

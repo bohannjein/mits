@@ -281,11 +281,94 @@ function migrateAppTables(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_mits_ticket_ci_item
       ON mits_ticket_ci (ci_id);
+
+    -- When each user last looked at each ticket. The pair is the key, so a second
+    -- visit overwrites rather than appends — this is a bookmark, not a history.
+    --
+    -- Read state is stored, unread is derived: a stored boolean would have to be
+    -- flipped back to true by every writer of every comment for every other user,
+    -- and the first writer that forgets leaves a ticket that never announces
+    -- itself again. Comparing two timestamps cannot fall out of step.
+    CREATE TABLE IF NOT EXISTS mits_ticket_read (
+      user_id   TEXT NOT NULL,
+      ticket_id TEXT NOT NULL,
+      seen_at   TEXT NOT NULL,
+      PRIMARY KEY (user_id, ticket_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mits_ticket_read_ticket
+      ON mits_ticket_read (ticket_id);
+
+    -- Logged work. Append-only from the application's side: an entry is added or
+    -- deleted, never edited, so a corrected figure is visibly a correction.
+    --
+    -- Minutes as an integer rather than hours as a float. "1.5 Std" is what people
+    -- type and "90" is what has to be summed; storing the typed form would put the
+    -- rounding somewhere different in every report that adds it up.
+    CREATE TABLE IF NOT EXISTS mits_ticket_worklog (
+      id           TEXT PRIMARY KEY,
+      ticket_id    TEXT NOT NULL,
+      user_id      TEXT NOT NULL,
+      user_name    TEXT NOT NULL,
+      minutes      INTEGER NOT NULL,
+      note         TEXT NOT NULL DEFAULT '',
+      -- When the work happened, which is not when the row was written: an entry
+      -- filed on Monday for Friday's callout has to report Friday.
+      performed_at TEXT NOT NULL,
+      created_at   TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mits_worklog_ticket
+      ON mits_ticket_worklog (ticket_id, performed_at);
+    CREATE INDEX IF NOT EXISTS idx_mits_worklog_user
+      ON mits_ticket_worklog (user_id);
   `);
 
   addColumns(database);
   backfillTicketNumbers(database);
   renamePriorities(database);
+  renameAgentRole(database);
+}
+
+/**
+ * Rename the role `technician` to `agent`.
+ *
+ * Guarded by a table check rather than run unconditionally: Better Auth owns `user`
+ * and creates it with its own migration runner, so on a fresh instance this function
+ * runs *before* the table exists. An UPDATE against a missing table throws, and this
+ * one sits in the connection's open path — it would take the whole app down on first
+ * start rather than fail quietly.
+ *
+ * Sessions are not touched. Better Auth caches the role in a signed cookie for 60
+ * seconds, so an agent who was signed in across the update keeps the old value until
+ * it expires; `toRole` maps it, which is why that mapping is not redundant with this
+ * migration. See `LEGACY_ROLES` in `lib/auth/roles.ts`.
+ */
+function renameAgentRole(database: Database.Database): void {
+  const hasUserTable = database
+    .prepare(
+      "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'user'",
+    )
+    .get() as { count: number };
+  if (hasUserTable.count === 0) return;
+
+  const columns = database.prepare("PRAGMA table_info(user)").all() as {
+    name: string;
+  }[];
+  if (!columns.some((info) => info.name === "role")) return;
+
+  const pending = database
+    .prepare("SELECT COUNT(*) AS count FROM user WHERE role = 'technician'")
+    .get() as { count: number };
+  if (pending.count === 0) return;
+
+  database
+    .prepare("UPDATE user SET role = 'agent' WHERE role = 'technician'")
+    .run();
+
+  console.info(
+    `[MITS] Rolle technician → agent: ${pending.count} Konto/Konten.`,
+  );
 }
 
 /**
@@ -436,6 +519,32 @@ function addColumns(database: Database.Database): void {
      * customer's whole asset list the day they change provider.
      */
     { table: "mits_user_profile", column: "organization_id", definition: "TEXT" },
+    /*
+     * Which backend holds this blob.
+     *
+     * Defaulted to `disk`, and that default is load-bearing rather than a
+     * formality: every row written before S3 existed has its bytes in
+     * `<data dir>/uploads`, and they stay there after somebody switches the
+     * instance to a bucket. Deciding the backend from the current setting on read
+     * would 404 the whole existing archive at the moment of the switch, with a
+     * settings page reporting a successful save.
+     */
+    {
+      table: "mits_upload",
+      column: "storage",
+      definition: "TEXT NOT NULL DEFAULT 'disk'",
+    },
+    /*
+     * Hex SHA-256 of the bytes. Empty for rows written before it was recorded —
+     * not backfilled, because computing it would mean reading every blob on the
+     * first start after an update, and an empty checksum is honestly "unknown"
+     * rather than a wrong value.
+     */
+    {
+      table: "mits_upload",
+      column: "checksum",
+      definition: "TEXT NOT NULL DEFAULT ''",
+    },
   ];
 
   for (const { table, column, definition } of additions) {

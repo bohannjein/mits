@@ -11,7 +11,7 @@ import type { MITSConfigurationItem } from "@/types/mits";
    Two ways in, in this order:
 
    1. `X-MITS-API-Token` — for a script or an inventory agent, which has no session.
-   2. A signed-in technician or admin — so the same URL can be opened in a browser.
+   2. A signed-in agent or admin — so the same URL can be opened in a browser.
 
    Token first, because a machine caller sends no cookies and evaluating the session
    path first would mean a database read per request for nothing.
@@ -35,7 +35,7 @@ export async function guardCMDBRequest(request: Request): Promise<ApiGuard> {
     return { ok: true };
   }
 
-  const auth = await requireApiRole("technician", request);
+  const auth = await requireApiRole("agent", request);
   if ("response" in auth) return { ok: false, response: auth.response };
 
   return { ok: true };

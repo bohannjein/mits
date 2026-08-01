@@ -39,7 +39,7 @@ export default async function EmailSettingsPage() {
                 E-Mail
               </h1>
               <p className="mt-2 max-w-2xl text-muted-foreground">
-                Versand für Eingangsbestätigungen und Antworten der Technik.
+                Versand für Eingangsbestätigungen und Antworten der Agenten.
               </p>
             </div>
           </div>
@@ -69,7 +69,7 @@ export default async function EmailSettingsPage() {
             <AlertTitle>Was versendet wird</AlertTitle>
             <AlertDescription>
               Eine Bestätigung an den Melder, wenn ein Ticket eingeht, und eine
-              Nachricht, wenn die Technik <em>öffentlich</em> antwortet. Interne
+              Nachricht, wenn ein Agent <em>öffentlich</em> antwortet. Interne
               Notizen verlassen MITS nie. Ein fehlgeschlagener Versand lässt weder
               ein Ticket noch eine Antwort scheitern — er landet im Server-Log.
             </AlertDescription>

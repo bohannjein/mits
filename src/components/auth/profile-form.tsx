@@ -43,7 +43,7 @@ export function ProfileForm({
           className="h-10 rounded-xl"
         />
         <p className="text-xs text-muted-foreground">
-          Erscheint an Ihren Tickets und in Antworten der Technik.
+          Erscheint an Ihren Tickets und in Antworten der Agenten.
         </p>
       </div>
 

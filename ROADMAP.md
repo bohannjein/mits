@@ -196,7 +196,16 @@ Ausführlich in AGENTS.md; hier die Kurzliste, damit sie nicht zweimal auffallen
 - **Deutsche Anführungszeichen** mit `“` schließen, nicht mit `"` — sonst endet der String.
 - **PowerShell:** `Resolve-Path` behandelt `[id]` als Wildcard, `-LiteralPath` nutzen.
   Commit-Messages mit `"` über `git commit -F <datei>`, nicht per Here-String.
-- **Quick-Ticket-Schema:** `description` braucht min. 20 Zeichen — relevant für Testdaten.
+- **Quick-Ticket-Schema:** `description` braucht min. 20 Zeichen — relevant für Testdaten
+  *und* für den Mail-Ingest, der kurze Mails deshalb mit der Absenderadresse auffüllt.
+- **Ein `sed` über die Codebasis trifft auch den Code, den man gerade geschrieben
+  hat.** Der `technician`→`agent`-Lauf hat das frisch angelegte Legacy-Mapping zu
+  `agent: "agent"` gemacht — es kompilierte, und es hätte die Migration wertlos
+  gemacht. Nach so einem Lauf die eigenen neuen Zeilen noch einmal lesen.
+- **Zwei `<form>` auf dieselbe Server Action sind eine Falle.** Ein nicht
+  abgeschickter Schalter ist von „aus“ nicht unterscheidbar, also löscht jedes
+  Speichern die Schalter der anderen Sektion — mit Erfolgsmeldung. Ein Formular,
+  oder je Sektion eine eigene Action.
 
 ## Nach den acht Parts: CMDB
 
@@ -221,6 +230,43 @@ Offen geblieben, bewusst: kein Papierkorb für gelöschte Objekte (soft-deleted 
 sichtbar wieder herstellen kann man sie noch nicht), keine Historie am Objekt
 (`mits_audit_log` hängt an `ticket_id`), keine Vererbung von Beziehungen für
 Auswirkungsanalyse.
+
+## Nach der CMDB: Betriebsausbau
+
+Ein Durchgang, neun Themen, alle in AGENTS.md begründet. Hier nur, was beim
+Weiterbauen zuerst schiefgeht:
+
+- **`technician` ist weg, aber nicht ganz.** `LEGACY_ROLES` und `LEGACY_ROLE_MAP`
+  müssen bleiben: Session-Cookies leben 60 s und Backups länger. Wer sie entfernt,
+  demütigt jeden Agenten still zum `user`, und das Fehlerbild ist eine leere Queue.
+- **`ORDER BY` niemals aus dem Query-String.** `lib/ticket-sort.ts` ist die einzige
+  Stelle mit einem Ausdruck. Eine neue Spalte braucht Eintrag in `SORT_SQL`,
+  `TICKET_SORT_LABELS` **und** `FIRST_CLICK`; der Offline-Check erzwingt die ersten
+  beiden.
+- **Neuer Status oder neue Priorität?** Dann auch `STATUS_RANK` bzw.
+  `PRIORITY_RANK` in `types/mits.ts`. Sonst landet der Wert im `ELSE 99`-Zweig und
+  eine ganze Ticketklasse sammelt sich still am Listenende. `npm test` prüft die
+  Abdeckung.
+- **`searchTickets` bindet zwei Parameterlisten.** Die Ausdrücke für Lese-Status
+  stehen in der SELECT-Liste, also *vor* dem WHERE. `boundSelectParams` und
+  `whereParams` getrennt halten — better-sqlite3 bindet positionsbasiert.
+- **`lib/storage.ts` entscheidet die Regeln, `lib/services/storage.ts` die Bytes.**
+  Gelesen wird aus dem Backend, das die *Zeile* nennt, nie aus der Einstellung.
+- **`openUploadFor` ist jetzt `async`.** Die Zugriffsprüfung passiert weiterhin
+  synchron und *vor* dem Netzwerkaufruf, damit das S3-Zugriffslog nicht verrät,
+  welche Upload-Ids existieren.
+- **Mail wird erst nach dem Schreiben quittiert.** Ein `acknowledge` vor dem Insert
+  ist eine Zeile kürzer und verliert bei jedem fehlgeschlagenen Write eine
+  Kundennachricht, ohne dass irgendwo etwas davon steht.
+- **`planIngest` ist rein — dort testen, nicht gegen ein Postfach.** Beide
+  Fehlrichtungen sind still: verpasste Antwort = Doppelticket, falsch erkannte
+  Antwort = fremde Nachricht in einem fremden Ticket.
+- **Kein Timer im Prozess.** Wenn der Abruf automatisch laufen soll, ist das ein
+  Cron gegen `POST /api/mail/poll`, kein `setInterval`.
+
+Bewusst offen geblieben: Anhänge aus eingehenden Mails werden **nicht** übernommen
+(Body ja, Dateien nein), es gibt keine Migration bestehender Uploads von der Platte
+nach S3, und Textbausteine kennen keine Kategorien-Filterung im `/`-Menü.
 
 ## Verifikation für jeden Part
 

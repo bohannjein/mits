@@ -145,7 +145,7 @@ export function SystemSettingsForm({
             Automatische Aktualisierung
           </CardTitle>
           <CardDescription className="mt-1 leading-relaxed">
-            Gilt für alle Anwender. Technikerinnen und Techniker können davon
+            Gilt für alle Anwender. Agentinnen und Agenten können davon
             abweichen — in ihren eigenen Einstellungen.
           </CardDescription>
         </CardHeader>

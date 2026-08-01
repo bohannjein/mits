@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { canAdminister, canViewBoard } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
 import { listCannedResponses } from "@/lib/canned-responses";
+import { listMacros } from "@/lib/macros";
 import { getFeatureFlags } from "@/lib/features";
 import { getFormSchema } from "@/lib/form-schemas";
 import { resolveFields } from "@/lib/forms/schema-to-zod";
@@ -25,9 +26,10 @@ import { getSystemTimezone } from "@/lib/system-settings";
 import { listAuditFor } from "@/lib/audit";
 import { listCommentsFor } from "@/lib/ticket-comments";
 import { listLinksFor } from "@/lib/ticket-links";
-import { getTicketFor } from "@/lib/tickets";
+import { getTicketFor, markTicketRead } from "@/lib/tickets";
 import { getUserProfile } from "@/lib/user-profile";
 import { listUsers } from "@/lib/users";
+import { listWorklogs } from "@/lib/worklogs";
 import {
   type MITSConfigurationItem,
   TICKET_PRIORITY_LABELS,
@@ -47,7 +49,7 @@ export const metadata: Metadata = {
    Left: the conversation with a composer pinned to the bottom. Right: a sticky
    column of metadata whose dropdowns apply on change.
 
-   Guarded with `requireRole("technician")`, so a reporter handed this URL lands in
+   Guarded with `requireRole("agent")`, so a reporter handed this URL lands in
    their own portal rather than on a page that merely hides the controls.
    ────────────────────────────────────────────────────────────────────────── */
 
@@ -57,13 +59,21 @@ export default async function AgentTicketPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const user = await requireRole("technician", `/mits/tickets/${id}`);
+  const user = await requireRole("agent", `/mits/tickets/${id}`);
   const flags = getFeatureFlags();
 
   // Answers null both for "does not exist" and "not visible", so a 404 leaks
   // nothing about which ids are real.
   const ticket = getTicketFor(id, user);
   if (!ticket) notFound();
+
+  /*
+   * Opening the ticket is what "reading" it means, so the bookmark is written
+   * here. After the visibility check, never before — a `markTicketRead` above the
+   * `notFound()` would let anybody stamp a row for a ticket they cannot see, which
+   * turns this table into a way to prove an id exists.
+   */
+  markTicketRead(id, user.id);
 
   const schema = ticket.form_schema_id
     ? getFormSchema(ticket.form_schema_id)
@@ -164,6 +174,17 @@ export default async function AgentTicketPage({
                 ticketId={ticket.id}
                 comments={listCommentsFor(id, user)}
                 isAgent
+                // Title and blurb only. The macro's actions stay on the server —
+                // the browser posts an id and `runMacro` decides what that means.
+                macros={
+                  flags.feature_macros
+                    ? listMacros().map((macro) => ({
+                        id: macro.id,
+                        title: macro.title,
+                        description: macro.description,
+                      }))
+                    : []
+                }
                 cannedResponses={
                   flags.feature_canned_responses
                     ? listCannedResponses().map((canned) => ({
@@ -190,16 +211,36 @@ export default async function AgentTicketPage({
                   ticket.location_id ? getLocation(ticket.location_id) : null
                 }
                 fields={fields}
-                // The reporter's own details, so the technician does not have to ask
+                // The reporter's own details, so the agent does not have to ask
                 // where they sit. Read here because the sidebar is a client component.
                 reporter={getUserProfile(ticket.created_by)}
                 auditEntries={
                   // Admin only. The trail names who did what, which is not something a
-                  // technician needs to read about a colleague.
+                  // agent needs to read about a colleague.
                   canAdminister(user.role) ? listAuditFor(id) : null
                 }
                 timezone={getSystemTimezone()}
                 assets={assets}
+                worklog={
+                  flags.feature_time_tracking
+                    ? {
+                        entries: listWorklogs(id).map((entry) => ({
+                          id: entry.id,
+                          userName: entry.user_name,
+                          minutes: entry.minutes,
+                          note: entry.note,
+                          performedAt: entry.performed_at,
+                          // Decided here, not in the browser: the component only
+                          // draws the button, `deleteWorklog` decides again.
+                          removable:
+                            entry.user_id === user.id || canAdminister(user.role),
+                        })),
+                        // The instance's today, so the date field and the
+                        // server's future-date clamp agree on which day it is.
+                        today: new Date().toISOString().slice(0, 10),
+                      }
+                    : null
+                }
                 links={
                   flags.feature_ticket_linking
                     ? listLinksFor(id, user).map((link) => ({

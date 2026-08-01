@@ -121,6 +121,72 @@ export function timezoneOffsetLabel(timeZone: string, at: Date): string {
   }
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Relative age.
+
+   `vor 12 Min.` answers the question a queue actually asks — how long has this
+   been sitting there — which an absolute timestamp only answers after the reader
+   does the subtraction. The exact instant is never dropped, only moved into the
+   `title` attribute, because "vor 3 Std." is useless in a handover note.
+
+   Pure and `now`-as-a-parameter for two reasons: it is checkable offline at the
+   bucket boundaries, and a caller that renders on both sides of hydration has to
+   be able to decide *which* clock it means. Reading `Date.now()` in here would
+   make the same element disagree between the server pass and the client pass, and
+   the resulting mismatch is a warning nobody links back to a time format.
+   ────────────────────────────────────────────────────────────────────────── */
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+const WEEK = 7 * DAY;
+/** Average calendar month. Good enough for "vor 3 Mon." on a closed ticket. */
+const MONTH = 30.44 * DAY;
+
+/**
+ * `gerade eben`, `vor 12 Min.`, `vor 3 Std.`, `vor 4 Tagen`, `vor 2 Wo.`
+ *
+ * A timestamp in the future comes back as `gerade eben` rather than as a negative
+ * age. That happens for real — a container in UTC and a mail server a few seconds
+ * ahead are enough — and "in -1 Min." is a bug report waiting to be filed.
+ */
+export function formatRelativeTime(date: Date, now: number): string {
+  const elapsed = now - date.getTime();
+  if (elapsed < MINUTE) return "gerade eben";
+
+  if (elapsed < HOUR) {
+    return `vor ${Math.floor(elapsed / MINUTE)} Min.`;
+  }
+  if (elapsed < DAY) {
+    return `vor ${Math.floor(elapsed / HOUR)} Std.`;
+  }
+  if (elapsed < WEEK) {
+    const days = Math.floor(elapsed / DAY);
+    return days === 1 ? "vor 1 Tag" : `vor ${days} Tagen`;
+  }
+  if (elapsed < MONTH) {
+    return `vor ${Math.floor(elapsed / WEEK)} Wo.`;
+  }
+  return `vor ${Math.floor(elapsed / MONTH)} Mon.`;
+}
+
+/**
+ * `45 Min`, `2 Std`, `1:30 Std` — the shapes people write on a timesheet.
+ *
+ * Minutes in, because minutes is what is stored: an hours-as-a-float column would
+ * put the rounding in a different place in every report that summed it.
+ */
+export function formatMinutes(minutes: number): string {
+  const total = Math.max(0, Math.trunc(minutes));
+  if (total < 60) return `${total} Min`;
+
+  const hours = Math.floor(total / 60);
+  const rest = total % 60;
+  return rest === 0
+    ? `${hours} Std`
+    : `${hours}:${String(rest).padStart(2, "0")} Std`;
+}
+
 /** `+412 ms`, `-1,3 s` — signed, because the direction is the whole point. */
 export function formatOffsetMs(offsetMs: number): string {
   const sign = offsetMs >= 0 ? "+" : "−";

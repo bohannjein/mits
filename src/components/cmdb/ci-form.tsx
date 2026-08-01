@@ -54,7 +54,7 @@ import {
 
    Attributes are edited as key/value pairs rather than as raw JSON. The builder has a
    JSON escape hatch because a form schema is a document; an asset is a record, and
-   asking a technician to write JSON to note a MAC address is asking for a parse error.
+   asking a agent to write JSON to note a MAC address is asking for a parse error.
    ────────────────────────────────────────────────────────────────────────── */
 
 type Draft = Omit<MITSConfigurationItem, "created_at" | "updated_at">;

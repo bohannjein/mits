@@ -8,7 +8,7 @@ import { requireUser } from "@/lib/auth/session";
 import { getFormSchema } from "@/lib/form-schemas";
 import { getLocation } from "@/lib/locations";
 import { listCommentsFor } from "@/lib/ticket-comments";
-import { getTicketFor } from "@/lib/tickets";
+import { getTicketFor, markTicketRead } from "@/lib/tickets";
 
 export const metadata: Metadata = {
   title: "Ticket — MITS",
@@ -34,6 +34,10 @@ export default async function CustomerTicketPage({
   // 404 here leaks nothing about which ids are real.
   const ticket = getTicketFor(id, user);
   if (!ticket) notFound();
+
+  // After the visibility check, for the same reason as in the agent view: a stamp
+  // written before it would let anybody record a read on a ticket they cannot open.
+  markTicketRead(id, user.id);
 
   return (
     <>

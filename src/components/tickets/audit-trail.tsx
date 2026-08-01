@@ -18,7 +18,7 @@ import { auditLabel } from "@/types/mits";
    and nothing to hydrate.
 
    Admin-only, decided by the page that renders it. The trail names who did what, which
-   is exactly the information a technician has no business reading about a colleague —
+   is exactly the information a agent has no business reading about a colleague —
    it exists to answer "what happened to this ticket" for somebody accountable for the
    answer, not to let the team watch each other work.
 

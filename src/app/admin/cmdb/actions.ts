@@ -10,7 +10,7 @@ import { isFeatureEnabled } from "@/lib/features";
 /* ──────────────────────────────────────────────────────────────────────────
    CMDB import.
 
-   Admin only, not technician: an import rewrites existing records in bulk, which is a
+   Admin only, not agent: an import rewrites existing records in bulk, which is a
    different kind of act from correcting one asset. Re-checked here rather than trusted
    from the page — a Server Action is reachable without it.
    ────────────────────────────────────────────────────────────────────────── */

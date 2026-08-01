@@ -7,7 +7,7 @@ import { CIStatus, CIType } from "@/types/mits";
    GET  /api/v1/cmdb/items   — read the inventory, filtered and paged
    POST /api/v1/cmdb/items   — create or update one item
 
-   Authorization in `guardCMDBRequest`: an API token, or a signed-in technician. Enforced
+   Authorization in `guardCMDBRequest`: an API token, or a signed-in agent. Enforced
    here and not in the proxy, which is not a security boundary.
 
    POST goes through the same import path as the CSV importer, so an item created over the

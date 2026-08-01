@@ -27,7 +27,7 @@ import {
    already has rows, so there is no loading skeleton, and `initialData` doubles as
    the fallback if the poll ever fails.
 
-   `?scope=own` matters: for a technician or admin the unscoped listing is the
+   `?scope=own` matters: for a agent or admin the unscoped listing is the
    whole board, and this panel is explicitly *their* tickets.
    ────────────────────────────────────────────────────────────────────────── */
 

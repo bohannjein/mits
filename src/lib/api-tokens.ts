@@ -16,7 +16,7 @@ import { db } from "@/lib/db/sqlite";
    inventory on every fresh instance, and the CMDB knows every serial number in the
    building.
 
-   Sessions remain the other way in, so a technician can open the endpoint in a browser.
+   Sessions remain the other way in, so a agent can open the endpoint in a browser.
    That is deliberate: the same data is on the CMDB pages, so a session that may read
    those may read this.
    ────────────────────────────────────────────────────────────────────────── */

@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 /* ──────────────────────────────────────────────────────────────────────────
    Asset overview.
 
-   Technician and above. Filters live in the URL, so the list is narrowed in SQL and a
+   Agent role and above. Filters live in the URL, so the list is narrowed in SQL and a
    filtered view can be sent to a colleague as a link.
 
    Names for owner, site and assignee are resolved once into maps and handed to the
@@ -39,7 +39,7 @@ export default async function CMDBPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireRole("technician", "/mits/cmdb");
+  await requireRole("agent", "/mits/cmdb");
 
   // A switched-off module has no pages, not just no links.
   if (!isFeatureEnabled("feature_cmdb")) notFound();

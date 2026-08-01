@@ -25,7 +25,7 @@ import {
    Filters for the item list.
 
    State lives in the URL, not in the component: a filtered inventory is something a
-   technician sends to a colleague, and a `useState` filter cannot be linked to. It also
+   agent sends to a colleague, and a `useState` filter cannot be linked to. It also
    means the page stays a server component and the list is filtered in SQL rather than
    in the browser.
 

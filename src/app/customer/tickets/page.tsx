@@ -17,7 +17,8 @@ import {
   parseTicketQuery,
   type RawSearchParams,
 } from "@/lib/ticket-query";
-import { listOwnTickets, searchTickets } from "@/lib/tickets";
+import { parseTicketSort } from "@/lib/ticket-sort";
+import { searchTickets } from "@/lib/tickets";
 
 export const metadata: Metadata = {
   title: "Meine Tickets — MITS",
@@ -47,9 +48,19 @@ export default async function MyTicketsPage({
   });
 
   const hasQuery = searchEnabled && (activeCount > 0 || Boolean(values.q));
-  const tickets = hasQuery
-    ? searchTickets(filter, user)
-    : listOwnTickets(user.id);
+  const sort = parseTicketSort(params.sort, params.dir);
+
+  /*
+   * One query for both cases, where the unfiltered path used to call
+   * `listOwnTickets`.
+   *
+   * That shortcut cannot stay: only `searchTickets` computes the read state and
+   * honours a sort, so the unfiltered listing — which is the one people actually
+   * look at — would have been the only table with no unread markers and dead
+   * column headers. `ownOnly` is already set by `parseTicketQuery` above, and the
+   * role clause narrows on top of it, so the scope is unchanged.
+   */
+  const tickets = searchTickets({ ...filter, sort }, user);
 
   const locations = listLocations();
 
@@ -100,7 +111,13 @@ export default async function MyTicketsPage({
               Kein Ticket passt zu dieser Auswahl.
             </p>
           ) : (
-            <TicketTable tickets={tickets} locations={locations} />
+            <TicketTable
+              tickets={tickets}
+              locations={locations}
+              sort={sort}
+              sortBasePath="/customer/tickets"
+              searchParams={params}
+            />
           )}
         </div>
       </main>

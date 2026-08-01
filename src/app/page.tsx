@@ -26,7 +26,7 @@ import { fillPortalText } from "@/types/mits";
 
    The service portal is the front door: signed in, this forwards to /customer for
    everyone, staff included. Somebody typing the bare host wants the portal, and a
-   technician who wants the queue reaches it from the header — the logo and the user
+   agent who wants the queue reaches it from the header — the logo and the user
    menu both still point at `homeFor(role)`, so daily work is one click, not two.
 
    Anonymous, it is the login mask. It stays a page rather than a redirect-only route

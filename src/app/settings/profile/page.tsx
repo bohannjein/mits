@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import {
   KeyRoundIcon,
   MapPinIcon,
+  PaletteIcon,
   RefreshCwIcon,
   ShieldAlertIcon,
   UserIcon,
@@ -11,6 +12,7 @@ import { PasswordChangeForm } from "@/components/auth/password-change-form";
 import { ContactDetailsForm } from "@/components/auth/contact-details-form";
 import { ProfileForm } from "@/components/auth/profile-form";
 import { RefreshPreferenceForm } from "@/components/auth/refresh-preference-form";
+import { ThemeToggle } from "@/components/branding/theme-toggle";
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -122,7 +124,7 @@ export default async function ProfilePage() {
                   Standort und Kontakt
                 </CardTitle>
                 <CardDescription className="mt-1 leading-relaxed">
-                  Sichtbar für die Technik, die Ihr Ticket bearbeitet.
+                  Sichtbar für den Agenten, der Ihr Ticket bearbeitet.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -133,6 +135,30 @@ export default async function ProfilePage() {
               </CardContent>
             </Card>
           )}
+
+          {/*
+            Shown even while the password gate is closed, unlike every other card
+            here. The gate exists to stop a default-password account from *doing*
+            anything; the theme is stored in this browser and touches no data, and
+            the forced password form is the one screen the account cannot leave —
+            so being unable to read it is the worst possible place to be stuck.
+          */}
+          <Card className="mb-6 rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
+            <CardHeader>
+              <span className="grid size-11 place-items-center rounded-full bg-surface-elevated text-muted-foreground">
+                <PaletteIcon className="size-5" strokeWidth={1.5} aria-hidden />
+              </span>
+              <CardTitle className="mt-4 text-lg font-medium">
+                Erscheinungsbild
+              </CardTitle>
+              <CardDescription className="mt-1 leading-relaxed">
+                Gilt in diesem Browser, nicht für das Konto.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ThemeToggle variant="segmented" />
+            </CardContent>
+          </Card>
 
           {/* Staff only. A reporter follows the instance-wide interval the admin
               set — see `resolveRefreshMinutes`. The action refuses one too, since

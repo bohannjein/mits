@@ -14,7 +14,7 @@ import type { AgentPresence } from "@/lib/presence";
    server pass and hydration and produce a mismatch on exactly the field that is
    supposed to say how long ago somebody was seen.
 
-   Rendered only from `/mits`, which is behind the technician gate. That is what keeps
+   Rendered only from `/mits`, which is behind the agent gate. That is what keeps
    reporter presence out of a reporter's own view now that everyone is recorded.
    ────────────────────────────────────────────────────────────────────────── */
 
@@ -51,7 +51,7 @@ export function PresenceList({
    * The list is a dispatch aid — "who can pick this up now" — and on an instance with a
    * few hundred reporters, everyone who has ever signed in would push the useful rows off
    * the screen. An account that has been silent for half an hour answers no question a
-   * technician is asking, and the full account list lives in the admin masks.
+   * agent is asking, and the full account list lives in the admin masks.
    *
    * The consequence, stated because it is a real one: somebody absent is
    * indistinguishable here from somebody who has no account. That is the right trade for

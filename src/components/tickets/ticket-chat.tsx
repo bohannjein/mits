@@ -8,12 +8,23 @@ import {
   LockIcon,
   SendIcon,
   TriangleAlertIcon,
+  ZapIcon,
 } from "lucide-react";
-import { useActionState, useEffect, useRef, useState } from "react";
+import {
+  useActionState,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
-import { addCommentAction, replyAndCloseAction } from "@/app/actions/tickets";
+import {
+  addCommentAction,
+  replyAndCloseAction,
+  runMacroAction,
+} from "@/app/actions/tickets";
+import { useToast } from "@/components/feedback/toast";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -22,7 +33,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { CommentBody } from "@/components/tickets/comment-body";
+import { ChatBubble, toneFor } from "@/components/tickets/chat-bubble";
 import {
   RichTextEditor,
   type RichTextEditorHandle,
@@ -31,16 +42,17 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { useTimezone } from "@/components/providers/timezone-provider";
-import { formatDateTimeShort } from "@/lib/format";
 import type { TicketComment } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    The conversation, as a messenger.
 
+   Bubbles come from `chat-bubble.tsx`, shared with the reporter's own view so a
+   message cannot be styled one way here and another way there.
+
    Internal notes are visually distinct *and* filtered server-side — a reporter
-   never receives one, so the dashed warning frame here is a courtesy to the
-   agent, not the access control.
+   never receives one, so the dashed frame here is a courtesy to the agent, not
+   the access control.
 
    Two submit buttons on one form, each bound to its own action. "Antworten &
    Schließen" is a single server action rather than two client calls: replying and
@@ -54,16 +66,20 @@ export function TicketChat({
   isAgent,
   /** Placeholder-filled server-side. Empty when the module is off. */
   cannedResponses = [],
+  /** One-click actions. Empty when the module is off. */
+  macros = [],
 }: {
   ticketId: string;
   comments: TicketComment[];
   isAgent: boolean;
   cannedResponses?: { id: string; title: string; body: string }[];
+  macros?: { id: string; title: string; description: string }[];
 }) {
-  const timezone = useTimezone();
+  const { toast } = useToast();
   const [internal, setInternal] = useState(false);
   const [body, setBody] = useState("");
   const [editor, setEditor] = useState<RichTextEditorHandle | null>(null);
+  const [snippetsOpen, setSnippetsOpen] = useState(false);
   const [replyResult, replyAction, replying] = useActionState(
     addCommentAction,
     null,
@@ -72,9 +88,13 @@ export function TicketChat({
     replyAndCloseAction,
     null,
   );
+  const [macroResult, macroAction, runningMacro] = useActionState(
+    runMacroAction,
+    null,
+  );
 
   const result = replyResult ?? closeResult;
-  const busy = replying || closing;
+  const busy = replying || closing || runningMacro;
   const bottom = useRef<HTMLDivElement>(null);
 
   // Clear on confirmation, keyed on the result object's identity so it fires once
@@ -83,6 +103,43 @@ export function TicketChat({
   useEffect(() => {
     if (result?.ok) setBody("");
   }, [result]);
+
+  /*
+   * Put a snippet into the document rather than into the string.
+   *
+   * The body travels as HTML (`bodyFormat="html"`), and a canned response is
+   * stored as plain text. Concatenating the two would hand the sanitiser text
+   * whose newlines collapse into one paragraph — the template arrives as a wall.
+   * `toParagraphs` escapes and wraps it first, and the editor is the thing that
+   * knows where the cursor is.
+   */
+  const insertText = useCallback(
+    (text: string) => {
+      const html = toParagraphs(text);
+      if (editor) {
+        editor.insert(html);
+        return;
+      }
+      // Before the editor has mounted there is nothing to insert into; appending
+      // to the value keeps the snippet rather than dropping it silently.
+      setBody((current) => (current ? `${current}${html}` : html));
+    },
+    [editor],
+  );
+
+  /*
+   * A macro reports back through a toast, and hands over its reply text if it
+   * chose not to send it. Keyed on the result object so it fires once per run.
+   */
+  useEffect(() => {
+    if (!macroResult) return;
+    if (macroResult.ok) {
+      toast({ kind: "system", tone: "success", title: macroResult.message });
+      if (macroResult.insert) insertText(macroResult.insert);
+    } else {
+      toast({ kind: "system", tone: "warning", title: macroResult.error });
+    }
+  }, [macroResult, toast, insertText]);
 
   // A conversation reads bottom-up: the newest message is the one being answered.
   useEffect(() => {
@@ -100,43 +157,23 @@ export function TicketChat({
               Noch keine Beiträge. Die erste Antwort geht an den Melder.
             </p>
           ) : (
-            comments.map((comment) => (
-              <article
-                key={comment.id}
-                className={cn(
-                  "max-w-[85%] rounded-2xl px-4 py-3 shadow-elev-1",
-                  comment.visibility === "internal"
-                    ? // Dashed and tinted: "careful, not for everyone" reads the
-                      // same way it does everywhere else in MITS.
-                      "justify-self-end border border-dashed border-warning/50 bg-warning/5"
-                    : comment.author_is_agent
-                      ? "justify-self-end rounded-br-md border border-border bg-surface-elevated"
-                      : "justify-self-start rounded-bl-md border border-border bg-card",
-                )}
-              >
-                <header className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium">{comment.author_name}</span>
-                  {comment.author_is_agent && (
-                    <Badge
-                      variant="outline"
-                      className="h-auto rounded-full px-2 py-0.5 text-[11px] font-normal"
-                    >
-                      Team
-                    </Badge>
-                  )}
-                  {comment.visibility === "internal" && (
-                    <Badge className="h-auto rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-normal text-warning">
-                      <LockIcon className="size-3" strokeWidth={1.5} />
-                      Intern
-                    </Badge>
-                  )}
-                  <time className="ml-auto font-mono text-[11px] text-muted-foreground">
-                    {formatDateTimeShort(comment.created_at, timezone)}
-                  </time>
-                </header>
-                <CommentBody comment={comment} />
-              </article>
-            ))
+            /*
+             * The agent's perspective: the reporter on the left, the team on the
+             * right. `side` is derived here rather than inside the bubble so the
+             * reporter's own page can mirror it without a second component — see
+             * the note in chat-bubble.tsx.
+             */
+            comments.map((comment) => {
+              const tone = toneFor(comment);
+              return (
+                <ChatBubble
+                  key={comment.id}
+                  comment={comment}
+                  tone={tone}
+                  side={tone === "customer" ? "left" : "right"}
+                />
+              );
+            })
           )}
           <div ref={bottom} />
         </div>
@@ -147,8 +184,10 @@ export function TicketChat({
       <form
         className={cn(
           "sticky bottom-0 mt-4 grid gap-3 rounded-2xl border px-4 py-4 backdrop-blur transition-colors",
+          // Same surface the internal bubble uses, so the composer previews where
+          // the note is about to land instead of inventing a second amber.
           internal
-            ? "border-dashed border-warning/50 bg-warning/5"
+            ? "border-dashed border-bubble-internal-border bg-bubble-internal"
             : "border-border bg-card/95",
         )}
       >
@@ -167,16 +206,19 @@ export function TicketChat({
           {/* Inserted into the field, never sent on its own — the agent confirms
               what goes out, same rule as the AI triage. */}
           {isAgent && cannedResponses.length > 0 && (
-            <DropdownMenu>
+            <DropdownMenu open={snippetsOpen} onOpenChange={setSnippetsOpen}>
               <DropdownMenuTrigger asChild>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-8 rounded-full px-3 text-xs text-muted-foreground"
+                  className="h-8 rounded-full px-3 text-xs"
                   disabled={busy}
                 >
                   Textbaustein
+                  <kbd className="rounded border border-border px-1 font-mono text-[10px] text-muted-foreground">
+                    /
+                  </kbd>
                   <ChevronDownIcon strokeWidth={1.5} />
                 </Button>
               </DropdownMenuTrigger>
@@ -190,13 +232,8 @@ export function TicketChat({
                 {cannedResponses.map((canned) => (
                   <DropdownMenuItem
                     key={canned.id}
-                    onSelect={() =>
-                      setBody((current) =>
-                        current.trim()
-                          ? `${current.trimEnd()}\n\n${canned.body}`
-                          : canned.body,
-                      )
-                    }
+                    className="rounded-xl"
+                    onSelect={() => insertText(canned.body)}
                   >
                     {canned.title}
                   </DropdownMenuItem>
@@ -205,6 +242,42 @@ export function TicketChat({
             </DropdownMenu>
           )}
         </div>
+
+        {/*
+          Macros. Above the composer rather than in the sidebar: a macro usually
+          ends in a reply, and the text it inserts lands two centimetres below the
+          button that produced it.
+        */}
+        {isAgent && macros.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ZapIcon
+              className="size-3.5 shrink-0 text-muted-foreground"
+              strokeWidth={1.5}
+              aria-hidden
+            />
+            {macros.map((macro) => (
+              <form key={macro.id} action={macroAction}>
+                <input type="hidden" name="ticketId" value={ticketId} />
+                <input type="hidden" name="macroId" value={macro.id} />
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  title={macro.description || undefined}
+                  className="h-7 rounded-full bg-surface-elevated px-2.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground"
+                >
+                  {runningMacro ? (
+                    <Loader2Icon className="animate-spin" />
+                  ) : (
+                    <ZapIcon strokeWidth={1.5} />
+                  )}
+                  {macro.title}
+                </Button>
+              </form>
+            ))}
+          </div>
+        )}
 
         {/* The body travels as a hidden field: the editor keeps its value in React
             state, and a Server Action reads FormData. */}
@@ -217,9 +290,16 @@ export function TicketChat({
           disabled={busy}
           tone={internal ? "warning" : "default"}
           onReady={setEditor}
+          // Only when there is something to offer: a shortcut that opens an empty
+          // menu is a swallowed keystroke.
+          onSlash={
+            isAgent && cannedResponses.length > 0
+              ? () => setSnippetsOpen(true)
+              : undefined
+          }
           placeholder={
             internal
-              ? "Nur für die Technik sichtbar."
+              ? "Nur für Agenten sichtbar."
               : "Geht an den Melder und löst eine Benachrichtigung aus."
           }
         />
@@ -242,7 +322,7 @@ export function TicketChat({
             </div>
           ) : (
             <span className="text-xs text-muted-foreground">
-              Ihre Antwort ist für die Technik sichtbar.
+              Ihre Antwort ist für die Agenten sichtbar.
             </span>
           )}
 
@@ -253,8 +333,8 @@ export function TicketChat({
               className={cn(
                 "h-10 rounded-full px-4",
                 internal
-                  ? "bg-warning/15 text-warning hover:bg-warning/25"
-                  : "bg-surface-elevated text-foreground hover:bg-accent",
+                  ? "bg-bubble-internal-accent/15 text-bubble-internal-accent hover:bg-bubble-internal-accent/25 hover:text-bubble-internal-accent"
+                  : "bg-surface-elevated text-foreground hover:bg-accent hover:text-accent-foreground",
               )}
               disabled={!canSend}
             >

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Roboto, Roboto_Mono } from "next/font/google";
 
 import { ThemeProvider } from "@/components/branding/theme-provider";
+import { ToastProvider } from "@/components/feedback/toast";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { TimezoneProvider } from "@/components/providers/timezone-provider";
 import { getSystemTimezone } from "@/lib/system-settings";
@@ -54,7 +55,15 @@ export default async function RootLayout({
       <body className="flex min-h-full flex-col">
         <ThemeProvider>
           <TimezoneProvider timezone={timezone}>
-            <QueryProvider>{children}</QueryProvider>
+            {/*
+              Inside QueryProvider, because the watcher that feeds it polls with
+              TanStack Query — and at the root rather than per page, so a toast
+              raised by a Server Action has somewhere to land whichever page the
+              agent is on.
+            */}
+            <QueryProvider>
+              <ToastProvider>{children}</ToastProvider>
+            </QueryProvider>
           </TimezoneProvider>
         </ThemeProvider>
       </body>

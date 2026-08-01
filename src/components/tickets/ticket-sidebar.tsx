@@ -29,6 +29,11 @@ import {
 import { AuditTrail } from "@/components/tickets/audit-trail";
 import { TicketAssets, type AssetRow } from "@/components/tickets/ticket-assets";
 import { TicketLinks, type LinkRow } from "@/components/tickets/ticket-links";
+import {
+  TicketWorklog,
+  type WorklogRow,
+} from "@/components/tickets/ticket-worklog";
+import { formatMinutes } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import {
@@ -82,6 +87,8 @@ export function TicketSidebar({
   links = null,
   /** Null when the CMDB module is off. Same rule as `links`. */
   assets = null,
+  /** Null when time tracking is off — the section then does not exist. */
+  worklog = null,
 }: {
   ticket: MITSTicket;
   agents: { id: string; name: string }[];
@@ -98,6 +105,7 @@ export function TicketSidebar({
     suggestions: AssetRow[];
     candidates: AssetRow[];
   } | null;
+  worklog?: { entries: WorklogRow[]; today: string } | null;
 }) {
   /*
    * Assembled here so the card can decide whether there is an address at all. A
@@ -362,6 +370,32 @@ export function TicketSidebar({
             </div>
           ))}
         </dl>
+      ),
+    });
+  }
+
+  if (worklog !== null) {
+    const total = worklog.entries.reduce((sum, entry) => sum + entry.minutes, 0);
+    sections.push({
+      id: "worklog",
+      title: "Zeiterfassung",
+      // The total in the collapsed header, so an agent does not have to open the
+      // section to answer "how long has this taken".
+      badge:
+        total > 0 ? (
+          <Badge
+            variant="secondary"
+            className="h-auto rounded-full px-1.5 py-0 text-[10px] font-normal tabular-nums"
+          >
+            {formatMinutes(total)}
+          </Badge>
+        ) : undefined,
+      content: (
+        <TicketWorklog
+          ticketId={ticket.id}
+          entries={worklog.entries}
+          today={worklog.today}
+        />
       ),
     });
   }

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { canViewBoard } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
+import { getFeatureFlags } from "@/lib/features";
 import { getMailSettings } from "@/lib/mail-settings";
 import { listUsers } from "@/lib/users";
 
@@ -19,9 +20,20 @@ export default async function AdminMailPage() {
   await requireRole("admin", "/admin/mail");
 
   const settings = getMailSettings();
-  const staff = listUsers()
+  const users = listUsers();
+  const staff = users
     .filter((user) => canViewBoard(user.role))
     .map((user) => ({ id: user.id, name: user.name }));
+
+  /*
+   * The fallback account is also staff-only.
+   *
+   * A reporter account would work — `created_by` decides visibility and a reporter
+   * can see their own tickets — and it would mean every mail from an unknown
+   * address landed in one person's portal instead of the queue. Staff see the whole
+   * queue anyway, which is where an inbound mail belongs.
+   */
+  const accounts = staff;
 
   return (
     <>
@@ -49,7 +61,19 @@ export default async function AdminMailPage() {
 
           <Separator className="my-8 bg-border" />
 
-          <MailSettingsForm settings={settings} staff={staff} />
+          {/* The two secrets never leave the server — only whether one exists. */}
+          <MailSettingsForm
+            settings={{
+              ...settings,
+              imapPassword: "",
+              graphClientSecret: "",
+            }}
+            staff={staff}
+            accounts={accounts}
+            hasImapPassword={settings.imapPassword !== ""}
+            hasGraphSecret={settings.graphClientSecret !== ""}
+            inboundEnabled={getFeatureFlags().feature_mail_inbound}
+          />
         </div>
       </main>
     </>

@@ -11,7 +11,13 @@ import { resolveFields, schemaToZod } from "@/lib/forms/schema-to-zod";
 import { getLocation } from "@/lib/locations";
 import { UploadError, linkUploadsToTicket } from "@/lib/storage";
 import {
+  DEFAULT_TICKET_SORT,
+  orderByFor,
+  type TicketSort,
+} from "@/lib/ticket-sort";
+import {
   AttachmentMetaSchema,
+  DEFAULT_TICKET_PRIORITY,
   MITSTicketSchema,
   OPEN_TICKET_STATUSES,
   type MITSTicket,
@@ -44,6 +50,18 @@ interface TicketRow {
   priority: string;
   assigned_to: string | null;
   created_at: string;
+  /** From the LEFT JOIN on `user`. Null when unassigned or the account is gone. */
+  assigned_to_name?: string | null;
+  /*
+   * Only `searchTickets` produces these — it is the one read that knows *who* is
+   * asking, and "unread" is meaningless without that. Everywhere else they are
+   * absent and the schema defaults them, which is the honest answer: a detail page
+   * that rendered `unread: false` from a query that never computed it would be
+   * stating something it did not check.
+   */
+  last_activity_at?: string | null;
+  unread?: number;
+  logged_minutes?: number | null;
 }
 
 function rowToTicket(row: TicketRow): MITSTicket {
@@ -62,6 +80,13 @@ function rowToTicket(row: TicketRow): MITSTicket {
     created_by: row.created_by,
     created_by_email: row.created_by_email,
     assigned_to: row.assigned_to,
+    assigned_to_name: row.assigned_to_name ?? null,
+    // The empty string is the SQL "no activity for this reader" sentinel — see the
+    // MAX(...) expression in `searchTickets`. Passing it to `z.coerce.date()` would
+    // produce an Invalid Date, which renders as "NaN" rather than as nothing.
+    last_activity_at: row.last_activity_at ? row.last_activity_at : null,
+    unread: row.unread === 1,
+    logged_minutes: row.logged_minutes ?? 0,
     created_at: row.created_at,
   });
 }
@@ -84,9 +109,28 @@ export class TicketValidationError extends Error {
  * compiled schema is `strictObject`, so unknown properties are rejected rather
  * than stored.
  */
+/**
+ * Server-side ingest only. **Never** populated from a request.
+ *
+ * An inbound mail has no session, so the ticket is filed under a configured
+ * fallback account while the human who wrote it is recorded as the reporter. That
+ * needs `created_by` and `created_by_email` to disagree, which no other path is
+ * allowed to do — rule 7 exists because a request that could name its own owner is
+ * a request that can file tickets as somebody else.
+ *
+ * Split from `user` and named for its one caller so the exception is visible at
+ * every call site rather than hidden in an options bag. `POST /api/tickets` does
+ * not pass it, and there is nothing in the draft schema that could carry it.
+ */
+export interface MailIngestOrigin {
+  /** The human who sent it. Replies route here; visibility does not. */
+  reporterEmail: string;
+}
+
 export function createTicket(
   draft: MITSTicketDraft,
   user: SessionUser,
+  origin?: MailIngestOrigin,
 ): MITSTicket {
   const schema = getFormSchema(draft.form_schema_id);
   if (!schema) {
@@ -121,19 +165,38 @@ export function createTicket(
     throw new TicketValidationError("Der gewählte Standort ist unbekannt.");
   }
 
+  /*
+   * Priority is an agent's call, so a reporter's draft cannot set it.
+   *
+   * Enforced here rather than by leaving the control out of the intake form: the
+   * form is one client of `POST /api/tickets`, the draft schema has a `priority`
+   * field with a default, and "the UI does not offer it" is not a rule — anybody
+   * can post JSON. Clamped rather than rejected, because a stale cached form
+   * legitimately still submits the field and a 422 for it would block a ticket
+   * over a value the reporter never chose.
+   *
+   * Staff keep whatever they set: an agent filing on somebody's behalf has already
+   * made the judgement this rule exists to protect.
+   */
+  const priority = canViewBoard(user.role)
+    ? draft.priority
+    : DEFAULT_TICKET_PRIORITY;
+
   const ticket: TicketRow = {
     id: randomUUID(),
     // Filled inside the transaction below, where the read cannot race an insert.
     ticket_number: null,
     location_id: draft.location_id,
+    // Ownership is always the account. Only the *display and reply* address can
+    // differ, and only for the mail ingest — see `MailIngestOrigin`.
     created_by: user.id,
-    created_by_email: user.email,
+    created_by_email: origin?.reporterEmail.trim() || user.email,
     source: draft.source,
     form_schema_id: schema.id,
     title: deriveTitle(parsed.data, schema.title),
     payload: JSON.stringify(parsed.data),
     status: "open",
-    priority: draft.priority,
+    priority,
     assigned_to: null,
     created_at: new Date().toISOString(),
   };
@@ -205,26 +268,55 @@ function collectFileIds(
  * upside is that `grep ALIVE src/lib/tickets.ts` audits the whole file: a read path
  * without it is a deletion that appears not to have worked.
  */
-const ALIVE = "deleted_at IS NULL";
+const ALIVE = "mits_ticket.deleted_at IS NULL";
 
-const SELECT_TICKET = `
-  SELECT id, ticket_number, location_id, created_by, created_by_email, source,
-         form_schema_id, title, payload, status, priority, assigned_to, created_at
-    FROM mits_ticket
+/**
+ * Every read joins the assignee.
+ *
+ * A LEFT JOIN rather than a per-row lookup: the queue needs the owner's display
+ * name in a column *and* has to sort by it, and sorting by a name that only exists
+ * in JavaScript would mean sorting after `LIMIT 500` — the wrong five hundred rows.
+ * LEFT, so an unassigned ticket and one whose assignee's account was deleted both
+ * still come back.
+ *
+ * The alias is `owner`, not `user`: `lib/ticket-sort.ts` builds `ORDER BY` against
+ * it, and `user` is also the table name.
+ */
+const TICKET_COLUMNS = `
+  mits_ticket.id, mits_ticket.ticket_number, mits_ticket.location_id,
+  mits_ticket.created_by, mits_ticket.created_by_email, mits_ticket.source,
+  mits_ticket.form_schema_id, mits_ticket.title, mits_ticket.payload,
+  mits_ticket.status, mits_ticket.priority, mits_ticket.assigned_to,
+  mits_ticket.created_at,
+  COALESCE(NULLIF(owner.name, ''), owner.email) AS assigned_to_name
 `;
+
+const TICKET_FROM = `
+  FROM mits_ticket
+  LEFT JOIN user AS owner ON owner.id = mits_ticket.assigned_to
+`;
+
+/**
+ * Split into columns and source so `searchTickets` can append its own per-user
+ * expressions between them. Composing two named halves beats rewriting this string
+ * with a regex — the regex version worked and was one whitespace change away from
+ * silently producing a statement without the extra columns.
+ */
+const SELECT_TICKET = `SELECT ${TICKET_COLUMNS} ${TICKET_FROM}`;
 
 /** Tickets the user owns. The only listing a plain `user` role can reach. */
 export function listOwnTickets(userId: string): MITSTicket[] {
   const rows = db
-    .prepare(`${SELECT_TICKET} WHERE ${ALIVE} AND created_by = ? ORDER BY created_at DESC`)
+    .prepare(`${SELECT_TICKET} WHERE ${ALIVE} AND mits_ticket.created_by = ?
+       ORDER BY mits_ticket.created_at DESC`)
     .all(userId) as TicketRow[];
   return rows.map(rowToTicket);
 }
 
-/** Every ticket — technician board and admin desk only. */
+/** Every ticket — agent board and admin desk only. */
 export function listAllTickets(): MITSTicket[] {
   const rows = db
-    .prepare(`${SELECT_TICKET} WHERE ${ALIVE} ORDER BY created_at DESC`)
+    .prepare(`${SELECT_TICKET} WHERE ${ALIVE} ORDER BY mits_ticket.created_at DESC`)
     .all() as TicketRow[];
   return rows.map(rowToTicket);
 }
@@ -243,9 +335,9 @@ export function listTicketsFor(user: SessionUser): MITSTicket[] {
  * a 403-versus-404 difference.
  */
 export function getTicketFor(id: string, user: SessionUser): MITSTicket | null {
-  const row = db.prepare(`${SELECT_TICKET} WHERE ${ALIVE} AND id = ?`).get(id) as
-    | TicketRow
-    | undefined;
+  const row = db
+    .prepare(`${SELECT_TICKET} WHERE ${ALIVE} AND mits_ticket.id = ?`)
+    .get(id) as TicketRow | undefined;
   if (!row) return null;
   if (!canViewBoard(user.role) && row.created_by !== user.id) return null;
   return rowToTicket(row);
@@ -258,7 +350,7 @@ export function countTickets(): { total: number; open: number } {
   const row = db
     .prepare(
       `SELECT COUNT(*) AS total,
-              SUM(CASE WHEN status IN (${OPEN_PLACEHOLDERS}) THEN 1 ELSE 0 END) AS open
+              SUM(CASE WHEN mits_ticket.status IN (${OPEN_PLACEHOLDERS}) THEN 1 ELSE 0 END) AS open
          FROM mits_ticket
         WHERE ${ALIVE}`,
     )
@@ -281,7 +373,7 @@ export interface TicketFilter {
   /** Inclusive ISO dates, `YYYY-MM-DD`. */
   from?: string;
   to?: string;
-  /** Narrow a technician's or admin's result set to their own tickets. */
+  /** Narrow a agent's or admin's result set to their own tickets. */
   ownOnly?: boolean;
 
   /*
@@ -293,6 +385,16 @@ export interface TicketFilter {
   statusIn?: TicketStatus[];
   priorityIn?: TicketPriority[];
   unassignedOnly?: boolean;
+
+  /**
+   * Column and direction. Defaults to newest first.
+   *
+   * Part of the filter rather than a second argument so the queue can hand one
+   * object to `searchTickets` — a sort that travelled separately would be easy to
+   * forget at one of the call sites and the list would silently come back in a
+   * different order than the header claims.
+   */
+  sort?: TicketSort;
 }
 
 /** Sentinel the filter form uses; a real id can never collide with it. */
@@ -316,14 +418,88 @@ export function searchTickets(
   filter: TicketFilter,
   user: SessionUser,
 ): MITSTicket[] {
+  const staff = canViewBoard(user.role);
+
+  /*
+   * Two parameter lists, concatenated at the end.
+   *
+   * better-sqlite3 binds positionally and refuses a mix of named and positional
+   * placeholders, so the `?` in the read-state expressions — which sit in the
+   * SELECT list, *before* the WHERE — have to be bound first. Keeping them in a
+   * separate array is what makes that order impossible to get wrong when a filter
+   * is added later.
+   */
+  const selectParams: unknown[] = [];
   // Seeded, not appended: an empty filter would otherwise produce no WHERE at all
   // and return deleted tickets.
   const clauses: string[] = [ALIVE];
-  const params: unknown[] = [];
+  const whereParams: unknown[] = [];
 
-  if (!canViewBoard(user.role) || filter.ownOnly) {
-    clauses.push("created_by = ?");
-    params.push(user.id);
+  /*
+   * The newest event on this ticket that this reader did not cause.
+   *
+   * Both exclusions matter. Without `created_by <> me` every ticket a reporter
+   * files is immediately unread *to them*, and without `author_id <> me` an agent's
+   * own reply marks their own ticket unread the moment they send it — the badge
+   * would then say "new" on precisely the rows where nothing new happened.
+   *
+   * A reporter's version additionally ignores internal notes: they cannot see one,
+   * so being told something changed and finding nothing is worse than no badge.
+   *
+   * The empty string is the "nothing to report" sentinel. It compares below every
+   * ISO timestamp, so the unread test below fails for it without a special case,
+   * and `rowToTicket` maps it back to null.
+   */
+  const activity = `
+    MAX(
+      CASE WHEN mits_ticket.created_by = ? THEN '' ELSE mits_ticket.created_at END,
+      COALESCE((
+        SELECT MAX(c.created_at)
+          FROM mits_ticket_comment c
+         WHERE c.ticket_id = mits_ticket.id
+           AND c.deleted_at IS NULL
+           AND c.author_id <> ?
+           ${staff ? "" : "AND c.visibility = 'public'"}
+      ), '')
+    )`;
+  selectParams.push(user.id, user.id);
+
+  const readAt = `(
+    SELECT r.seen_at FROM mits_ticket_read r
+     WHERE r.ticket_id = mits_ticket.id AND r.user_id = ?
+  )`;
+  selectParams.push(user.id);
+
+  const logged = `COALESCE((
+    SELECT SUM(w.minutes) FROM mits_ticket_worklog w
+     WHERE w.ticket_id = mits_ticket.id
+  ), 0)`;
+
+  const extraColumns = `,
+         ${activity} AS last_activity_at,
+         CASE
+           WHEN ${activity} = '' THEN 0
+           WHEN ${readAt} IS NULL THEN 1
+           WHEN ${readAt} < ${activity} THEN 1
+           ELSE 0
+         END AS unread,
+         ${logged} AS logged_minutes`;
+
+  // `activity` and `readAt` are each interpolated more than once above, so their
+  // placeholders repeat in the same order. Bound by repeating the values rather
+  // than by rewriting the SQL into a subselect: SQLite has no way to name a scalar
+  // expression for reuse inside the same SELECT list.
+  const boundSelectParams = [
+    ...selectParams.slice(0, 2), // activity, in last_activity_at
+    ...selectParams.slice(0, 2), // activity, in the CASE's first branch
+    selectParams[2], // readAt, second branch
+    selectParams[2], // readAt, third branch
+    ...selectParams.slice(0, 2), // activity, third branch
+  ];
+
+  if (!staff || filter.ownOnly) {
+    clauses.push("mits_ticket.created_by = ?");
+    whereParams.push(user.id);
   }
 
   const q = filter.q?.trim();
@@ -332,60 +508,90 @@ export function searchTickets(
     // characters, not turn into a pattern.
     const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
     clauses.push(
-      "(title LIKE ? ESCAPE '\\' OR created_by_email LIKE ? ESCAPE '\\')",
+      "(mits_ticket.title LIKE ? ESCAPE '\\' OR mits_ticket.created_by_email LIKE ? ESCAPE '\\')",
     );
-    params.push(pattern, pattern);
+    whereParams.push(pattern, pattern);
   }
 
   if (filter.locationId) {
-    clauses.push("location_id = ?");
-    params.push(filter.locationId);
+    clauses.push("mits_ticket.location_id = ?");
+    whereParams.push(filter.locationId);
   }
   if (filter.status) {
-    clauses.push("status = ?");
-    params.push(filter.status);
+    clauses.push("mits_ticket.status = ?");
+    whereParams.push(filter.status);
   }
   if (filter.priority) {
-    clauses.push("priority = ?");
-    params.push(filter.priority);
+    clauses.push("mits_ticket.priority = ?");
+    whereParams.push(filter.priority);
   }
   if (filter.assignedTo === UNASSIGNED_FILTER || filter.unassignedOnly) {
-    clauses.push("assigned_to IS NULL");
+    clauses.push("mits_ticket.assigned_to IS NULL");
   } else if (filter.assignedTo) {
-    clauses.push("assigned_to = ?");
-    params.push(filter.assignedTo);
+    clauses.push("mits_ticket.assigned_to = ?");
+    whereParams.push(filter.assignedTo);
   }
 
   // An empty array would render `IN ()`, which is a syntax error in SQLite — and
   // semantically it should match nothing, not everything, so it is skipped rather
   // than treated as "no filter".
   if (filter.statusIn && filter.statusIn.length > 0) {
-    clauses.push(`status IN (${filter.statusIn.map(() => "?").join(", ")})`);
-    params.push(...filter.statusIn);
+    clauses.push(
+      `mits_ticket.status IN (${filter.statusIn.map(() => "?").join(", ")})`,
+    );
+    whereParams.push(...filter.statusIn);
   }
   if (filter.priorityIn && filter.priorityIn.length > 0) {
-    clauses.push(`priority IN (${filter.priorityIn.map(() => "?").join(", ")})`);
-    params.push(...filter.priorityIn);
+    clauses.push(
+      `mits_ticket.priority IN (${filter.priorityIn.map(() => "?").join(", ")})`,
+    );
+    whereParams.push(...filter.priorityIn);
   }
   // `created_at` is an ISO string, so a date prefix comparison sorts correctly.
   // `to` gets a time suffix rather than `<=` on the bare date, which would
   // exclude everything that happened during the chosen day.
   if (filter.from) {
-    clauses.push("created_at >= ?");
-    params.push(`${filter.from}T00:00:00.000Z`);
+    clauses.push("mits_ticket.created_at >= ?");
+    whereParams.push(`${filter.from}T00:00:00.000Z`);
   }
   if (filter.to) {
-    clauses.push("created_at <= ?");
-    params.push(`${filter.to}T23:59:59.999Z`);
+    clauses.push("mits_ticket.created_at <= ?");
+    whereParams.push(`${filter.to}T23:59:59.999Z`);
   }
 
   const where = `WHERE ${clauses.join(" AND ")}`;
+  // Never interpolated from the request: `orderByFor` only accepts a key that
+  // `parseTicketSort` validated against a fixed list. `ORDER BY` cannot be bound
+  // as a parameter, so the whitelist is the whole defence.
+  const orderBy = orderByFor(filter.sort ?? DEFAULT_TICKET_SORT);
 
   const rows = db
-    .prepare(`${SELECT_TICKET} ${where} ORDER BY created_at DESC LIMIT 500`)
-    .all(...params) as TicketRow[];
+    .prepare(
+      `SELECT ${TICKET_COLUMNS} ${extraColumns} ${TICKET_FROM} ${where}
+        ORDER BY ${orderBy} LIMIT 500`,
+    )
+    .all(...boundSelectParams, ...whereParams) as TicketRow[];
 
   return rows.map(rowToTicket);
+}
+
+/**
+ * Record that this user has seen this ticket as it stands now.
+ *
+ * An UPSERT of a single timestamp, called from the detail page's render. A write
+ * during a GET is deliberate and bounded: it is idempotent, it is invisible to
+ * everybody except the caller, and the alternative — a client component that POSTs
+ * on mount — costs a round-trip per ticket opened to record something the server
+ * already knew at render time.
+ *
+ * Not gated on role. A reporter opening their own ticket has read it too, and the
+ * unread computation in `searchTickets` is per-user either way.
+ */
+export function markTicketRead(ticketId: string, userId: string): void {
+  db.prepare(
+    `INSERT INTO mits_ticket_read (user_id, ticket_id, seen_at) VALUES (?, ?, ?)
+     ON CONFLICT(user_id, ticket_id) DO UPDATE SET seen_at = excluded.seen_at`,
+  ).run(userId, ticketId, new Date().toISOString());
 }
 
 /** Look up by the human-readable number, for the search bar's direct jump. */
@@ -394,7 +600,7 @@ export function getTicketByNumberFor(
   user: SessionUser,
 ): MITSTicket | null {
   const row = db
-    .prepare(`${SELECT_TICKET} WHERE ${ALIVE} AND ticket_number = ?`)
+    .prepare(`${SELECT_TICKET} WHERE ${ALIVE} AND mits_ticket.ticket_number = ?`)
     .get(ticketNumber) as TicketRow | undefined;
   if (!row) return null;
   // Same rule as getTicketFor: a foreign ticket answers null, not 403, so the
@@ -407,9 +613,9 @@ export function getTicketByNumberFor(
 export function listUnassignedTickets(): MITSTicket[] {
   const rows = db
     .prepare(
-      `${SELECT_TICKET} WHERE ${ALIVE} AND assigned_to IS NULL
-         AND status IN (${OPEN_PLACEHOLDERS})
-         ORDER BY created_at ASC`,
+      `${SELECT_TICKET} WHERE ${ALIVE} AND mits_ticket.assigned_to IS NULL
+         AND mits_ticket.status IN (${OPEN_PLACEHOLDERS})
+         ORDER BY mits_ticket.created_at ASC`,
     )
     .all(...OPEN_TICKET_STATUSES) as TicketRow[];
   return rows.map(rowToTicket);
@@ -419,9 +625,9 @@ export function listUnassignedTickets(): MITSTicket[] {
 export function listAssignedTickets(agentId: string): MITSTicket[] {
   const rows = db
     .prepare(
-      `${SELECT_TICKET} WHERE ${ALIVE} AND assigned_to = ?
-         AND status IN (${OPEN_PLACEHOLDERS})
-         ORDER BY created_at ASC`,
+      `${SELECT_TICKET} WHERE ${ALIVE} AND mits_ticket.assigned_to = ?
+         AND mits_ticket.status IN (${OPEN_PLACEHOLDERS})
+         ORDER BY mits_ticket.created_at ASC`,
     )
     .all(agentId, ...OPEN_TICKET_STATUSES) as TicketRow[];
   return rows.map(rowToTicket);
@@ -433,7 +639,7 @@ export class TicketUpdateError extends Error {}
  * Assign a ticket, or clear the assignment with `null`.
  *
  * Staff only, checked by the caller's `requireRole`. The target has to be a
- * technician or admin: assigning to a plain user would put a ticket in a queue
+ * agent or admin: assigning to a plain user would put a ticket in a queue
  * that person cannot open.
  */
 /*
@@ -459,7 +665,7 @@ export function assignTicket(
     if (!target) throw new TicketUpdateError("Benutzer nicht gefunden.");
     if (!canViewBoard(toRole(target.role))) {
       throw new TicketUpdateError(
-        "Nur Technik und Administration können Tickets übernehmen.",
+        "Nur Agenten und Administration können Tickets übernehmen.",
       );
     }
   }
@@ -541,9 +747,9 @@ export function setTicketPriority(
 
 /** Read back after a write, so the caller always gets the persisted row. */
 function requireTicket(ticketId: string): MITSTicket {
-  const row = db.prepare(`${SELECT_TICKET} WHERE ${ALIVE} AND id = ?`).get(ticketId) as
-    | TicketRow
-    | undefined;
+  const row = db
+    .prepare(`${SELECT_TICKET} WHERE ${ALIVE} AND mits_ticket.id = ?`)
+    .get(ticketId) as TicketRow | undefined;
   if (!row) throw new TicketUpdateError("Ticket nicht gefunden.");
   return rowToTicket(row);
 }
@@ -561,7 +767,7 @@ export function todayCounts(): { opened: number; closed: number } {
   const opened = db
     .prepare(
       `SELECT COUNT(*) AS count FROM mits_ticket
-        WHERE ${ALIVE} AND substr(created_at, 1, 10) = ?`,
+        WHERE ${ALIVE} AND substr(mits_ticket.created_at, 1, 10) = ?`,
     )
     .get(today) as { count: number };
 
@@ -569,7 +775,7 @@ export function todayCounts(): { opened: number; closed: number } {
     .prepare(
       `SELECT COUNT(*) AS count FROM mits_ticket
         WHERE ${ALIVE}
-          AND status IN ('closed', 'resolved')
+          AND mits_ticket.status IN ('closed', 'resolved')
           AND substr(created_at, 1, 10) = ?`,
     )
     .get(today) as { count: number };

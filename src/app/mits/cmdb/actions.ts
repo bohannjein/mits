@@ -29,7 +29,7 @@ import {
 /* ──────────────────────────────────────────────────────────────────────────
    CMDB write paths.
 
-   Technician and above, checked here rather than only in the route gate — a Server
+   Agent and above, checked here rather than only in the route gate — a Server
    Action is reachable without the page it was rendered on, and `src/proxy.ts` is not a
    security boundary (see AGENTS.md rule 5).
 
@@ -45,7 +45,7 @@ export type CMDBActionResult =
 async function authorize(): Promise<
   { ok: true; user: SessionUser } | { ok: false; error: string }
 > {
-  const user = await requireRole("technician");
+  const user = await requireRole("agent");
   if (!isFeatureEnabled("feature_cmdb")) {
     return { ok: false, error: "Die CMDB ist abgeschaltet." };
   }
@@ -206,9 +206,9 @@ export async function removeCIRelationAction(
 /**
  * Attach an asset to a ticket.
  *
- * Technician and above only — a reporter cannot state which asset their ticket is
+ * Agent and above only — a reporter cannot state which asset their ticket is
  * about, because the list of assets is not theirs to browse. They describe the problem;
- * the technician records which thing it turned out to be.
+ * the agent records which thing it turned out to be.
  */
 export async function attachCIToTicketAction(
   _previous: CMDBActionResult | null,

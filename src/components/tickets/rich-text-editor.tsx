@@ -52,6 +52,7 @@ export function RichTextEditor({
   /** Focus ring accent, so an internal note reads as one while being written. */
   tone = "default",
   onReady,
+  onSlash,
 }: {
   value: string;
   onChange: (html: string) => void;
@@ -59,8 +60,24 @@ export function RichTextEditor({
   disabled?: boolean;
   tone?: "default" | "warning";
   onReady?: (handle: RichTextEditorHandle) => void;
+  /**
+   * Fired when `/` is typed at the start of an empty block — the shortcut for the
+   * canned-response picker. The parent opens its own menu; this component has no
+   * opinion about what a slash command offers.
+   */
+  onSlash?: () => void;
 }) {
   const [uploading, setUploading] = useState(false);
+  /*
+   * `onSlash` reached through a ref, like `editorRef` below.
+   *
+   * `useEditor` builds `editorProps` once; a handler closing over the prop
+   * directly would capture whatever it was on the first render and keep calling
+   * that — so a parent that only knows its snippet list after a fetch would have
+   * the shortcut wired to a stale, empty callback forever.
+   */
+  const slashRef = useRef<(() => void) | undefined>(undefined);
+  slashRef.current = onSlash;
   /** Shared by upload failures and refused links — both are the same kind of
    *  transient complaint about what the author just tried. */
   const [notice, setNotice] = useState<string | null>(null);
@@ -143,6 +160,29 @@ export function RichTextEditor({
           "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4",
           "[&_img]:my-2 [&_img]:max-h-64 [&_img]:rounded-xl [&_img]:border [&_img]:border-border",
         ),
+      },
+      /*
+       * `/` at the start of an empty block opens the snippet picker.
+       *
+       * A key handler rather than a ProseMirror suggestion plugin: a suggestion
+       * plugin would give inline filtering and would also mean a second popup
+       * implementation with its own keyboard handling next to the Radix menu the
+       * toolbar already uses. The condition is deliberately narrow — `$from.parent`
+       * empty and the cursor at its start — so a slash inside a sentence, a URL or
+       * a path stays a slash. Nothing is inserted when it fires, so a reply that
+       * genuinely begins with a slash is one Escape away.
+       */
+      handleKeyDown: (view, event) => {
+        if (event.key !== "/" || !slashRef.current) return false;
+        if (event.ctrlKey || event.metaKey || event.altKey) return false;
+
+        const { $from, empty } = view.state.selection;
+        const atBlockStart = empty && $from.parentOffset === 0;
+        if (!atBlockStart || $from.parent.content.size > 0) return false;
+
+        event.preventDefault();
+        slashRef.current();
+        return true;
       },
       handlePaste: (_view, event) => {
         const files = Array.from(event.clipboardData?.files ?? []);

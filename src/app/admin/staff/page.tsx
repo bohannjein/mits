@@ -18,13 +18,13 @@ import { requireRole } from "@/lib/auth/session";
 import { countAdmins, listUsers } from "@/lib/users";
 
 export const metadata: Metadata = {
-  title: "Technik & Administration — MITS",
+  title: "Agenten & Administration — MITS",
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
    Staff accounts and their roles.
 
-   Separate from the reporter list: a technician's record is managed for its role, a
+   Separate from the reporter list: a agent's record is managed for its role, a
    reporter's for where they sit and how to reach them. One combined table meant
    scrolling past colleagues to find a customer, and the two need different columns.
 
@@ -48,7 +48,7 @@ export default async function AdminStaffPage() {
           <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
-                Technik &amp; Administration
+                Agenten &amp; Administration
               </h1>
               <p className="mt-2 max-w-2xl text-muted-foreground">
                 Konten mit Zugriff auf die Queue. Eine Rollenänderung greift erst,

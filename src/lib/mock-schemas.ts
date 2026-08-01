@@ -14,27 +14,37 @@ import type { MITSFormSchema } from "@/types/mits";
 /**
  * The "Schnell-Ticket" (legacy) intake. It is a schema like every other form —
  * the classic tab is a *schema choice*, not a hand-built component.
+ *
+ * **Version 2 dropped the priority field.** Two reasons, and the second is the one
+ * that mattered:
+ *
+ *  1. Priority is an operational judgement about the whole queue, so it belongs to
+ *     an agent. `createTicket` clamps a reporter's draft to the default and that is
+ *     the actual boundary; leaving the control on screen only invited people to set
+ *     a value that would be quietly overwritten.
+ *  2. It was already broken. The enum was migrated from `normal`/`urgent` to
+ *     `medium`/`critical`, but `optionLabels` here still keyed the old values — so
+ *     the select had been offering the raw strings "medium" and "critical" to every
+ *     reporter since that rename.
+ *
+ * Existing tickets keep a `priority` key in their stored payload. Nothing
+ * re-validates a stored payload against its schema, so those rows still open; the
+ * agent view falls back to the property name for the label.
  */
 export const QUICK_TICKET_SCHEMA: MITSFormSchema = {
   id: "quick-ticket",
   title: "Schnell-Ticket",
   description: "Freitext-Meldung, wenn keine Kategorie passt.",
   category: "Allgemein",
-  version: 1,
+  version: 2,
   icon: "PenLine",
   submitLabel: "Ticket senden",
   aiHint: "Auffangformular für alles, was in kein spezifisches Schema passt.",
   schema: {
     type: "object",
-    required: ["title", "priority", "description"],
+    required: ["title", "description"],
     properties: {
       title: { type: "string", title: "Titel", minLength: 5, maxLength: 120 },
-      priority: {
-        type: "string",
-        title: "Priorität",
-        enum: ["low", "medium", "high", "critical"],
-        default: "medium",
-      },
       description: {
         type: "string",
         title: "Beschreibung",
@@ -54,25 +64,14 @@ export const QUICK_TICKET_SCHEMA: MITSFormSchema = {
       order: 1,
       placeholder: "Kurz und konkret, z. B. „Drucker Etage 3 offline“",
     },
-    priority: {
-      order: 2,
-      widget: "select",
-      tooltip: "Dringend bedeutet: Arbeit steht komplett still.",
-      optionLabels: {
-        low: "Niedrig",
-        normal: "Normal",
-        high: "Hoch",
-        urgent: "Dringend",
-      },
-    },
     description: {
-      order: 3,
+      order: 2,
       widget: "textarea",
       placeholder: "Was ist passiert? Seit wann? Welche Fehlermeldung erscheint?",
       help: "Mindestens 20 Zeichen.",
     },
     attachments: {
-      order: 4,
+      order: 3,
       accept: "image/*,.pdf,.log,.txt",
       help: "Screenshots oder Logs, bis 5 Dateien.",
     },

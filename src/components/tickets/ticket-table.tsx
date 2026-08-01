@@ -1,8 +1,26 @@
 import Link from "next/link";
+import {
+  ArrowDownIcon,
+  ArrowUpDownIcon,
+  ArrowUpIcon,
+  ClockIcon,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { formatDateTimeShort } from "@/lib/format";
+import {
+  formatDateTime,
+  formatMinutes,
+  formatRelativeTime,
+} from "@/lib/format";
 import { getSystemTimezone } from "@/lib/system-settings";
+import {
+  DEFAULT_TICKET_SORT,
+  TICKET_SORT_LABELS,
+  sortHref,
+  type TicketSort,
+  type TicketSortKey,
+} from "@/lib/ticket-sort";
+import { cn } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -20,12 +38,23 @@ import {
   type MITSTicket,
 } from "@/types/mits";
 
-/* Shared listing for "my tickets" and the technician board. `showOwner` is the
-   only difference: a plain user never sees a foreign address, because their
-   listing only ever contains their own tickets anyway.
+/* ──────────────────────────────────────────────────────────────────────────
+   Shared listing for "my tickets" and the agent queue.
+
+   A **server** component, and it stays one. Sorting travels in the URL, so a
+   header is a link rather than a click handler — which keeps the result
+   shareable, keeps the back button working, and lets the relative age be computed
+   once during the render instead of after hydration. The moment this needed
+   `useState` for the sort, every row's age would have become a client-side
+   calculation and a hydration risk.
+
+   `showOwner` is what separates the two callers: a reporter's listing only ever
+   contains their own tickets, so the reporter and owner columns would be a column
+   of their own address and a column they cannot act on.
 
    The labels come from types/mits.ts rather than living here, so a new status
-   cannot render as a blank cell in one table and a label in another. */
+   cannot render as a blank cell in one table and a label in another.
+   ────────────────────────────────────────────────────────────────────────── */
 
 export function TicketTable({
   tickets,
@@ -37,13 +66,31 @@ export function TicketTable({
    * an agent into the reporter's lean page would drop the workflow panel.
    */
   detailBase = "/customer/tickets",
+  /**
+   * Sorting. Omitting `sortBasePath` renders plain headings — a caller with no URL
+   * to sort into (a panel, a dialog) gets a static table rather than links that
+   * would navigate away from it.
+   */
+  sort = DEFAULT_TICKET_SORT,
+  sortBasePath,
+  searchParams = {},
+  /** Shows the logged-time column. Off where the module is not in play. */
+  showTime = false,
 }: {
   tickets: MITSTicket[];
   showOwner?: boolean;
   locations?: MITSLocation[];
   detailBase?: string;
+  sort?: TicketSort;
+  sortBasePath?: string;
+  searchParams?: Record<string, string | string[] | undefined>;
+  showTime?: boolean;
 }) {
   const timezone = getSystemTimezone();
+  // One clock for every row, read once. Calling Date.now() per row would let a
+  // slow render put two tickets filed in the same second into different buckets.
+  const now = Date.now();
+
   if (tickets.length === 0) {
     return (
       <p className="rounded-2xl border border-border p-6 text-sm text-muted-foreground">
@@ -55,18 +102,31 @@ export function TicketTable({
   const byId = new Map((locations ?? []).map((entry) => [entry.id, entry]));
   const showLocation = locations !== undefined && locations.length > 0;
 
+  const header = (key: TicketSortKey, className?: string) => (
+    <SortableHead
+      key={key}
+      sortKey={key}
+      sort={sort}
+      basePath={sortBasePath}
+      searchParams={searchParams}
+      className={className}
+    />
+  );
+
   return (
     <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-elev-1">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Nr.</TableHead>
-            <TableHead>Titel</TableHead>
+            {header("number")}
+            {header("title")}
             {showLocation && <TableHead>Standort</TableHead>}
-            {showOwner && <TableHead>Melder</TableHead>}
-            <TableHead>Priorität</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Erstellt</TableHead>
+            {showOwner && header("reporter")}
+            {showOwner && header("owner")}
+            {header("priority")}
+            {header("status")}
+            {showTime && <TableHead className="text-right">Zeit</TableHead>}
+            {header("age")}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -77,16 +137,43 @@ export function TicketTable({
 
             return (
               <TableRow key={ticket.id}>
-                <TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
-                  {formatTicketNumber(ticket.ticket_number)}
+                <TableCell
+                  className={cn(
+                    "font-mono text-xs whitespace-nowrap text-muted-foreground",
+                    // The unread dot rides on the number cell so it sits in a fixed
+                    // column instead of shifting with the title's length.
+                    ticket.unread && "text-foreground",
+                  )}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-1.5 shrink-0 rounded-full",
+                        ticket.unread ? "bg-primary" : "bg-transparent",
+                      )}
+                    />
+                    {formatTicketNumber(ticket.ticket_number)}
+                  </span>
                 </TableCell>
-                <TableCell className="font-medium">
+                <TableCell
+                  className={cn(
+                    "font-medium",
+                    // Weight *and* the dot, not an accent hue alone: colour is the
+                    // one signal a red-green colour blind reader loses, and "which
+                    // of these is new" is the entire point of the row.
+                    ticket.unread && "font-semibold",
+                  )}
+                >
                   <Link
                     href={`${detailBase}/${ticket.id}`}
                     className="underline-offset-4 hover:underline"
                   >
                     {ticket.title}
                   </Link>
+                  {ticket.unread && (
+                    <span className="sr-only"> — ungelesene Änderung</span>
+                  )}
                 </TableCell>
                 {showLocation && (
                   <TableCell className="text-xs text-muted-foreground">
@@ -99,12 +186,19 @@ export function TicketTable({
                     {ticket.created_by_email}
                   </TableCell>
                 )}
+                {showOwner && (
+                  <TableCell className="text-xs whitespace-nowrap">
+                    {ticket.assigned_to_name ?? (
+                      <span className="text-muted-foreground">
+                        Nicht zugewiesen
+                      </span>
+                    )}
+                  </TableCell>
+                )}
                 <TableCell>
                   <Badge
                     variant={
-                      isElevatedPriority(ticket.priority)
-                        ? "default"
-                        : "outline"
+                      isElevatedPriority(ticket.priority) ? "default" : "outline"
                     }
                     className="rounded-full"
                   >
@@ -116,8 +210,33 @@ export function TicketTable({
                     {TICKET_STATUS_LABELS[ticket.status]}
                   </Badge>
                 </TableCell>
-                <TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
-                  {formatDateTimeShort(ticket.created_at, timezone)}
+                {showTime && (
+                  <TableCell className="text-right text-xs whitespace-nowrap tabular-nums">
+                    {ticket.logged_minutes > 0 ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <ClockIcon
+                          className="size-3 text-muted-foreground"
+                          strokeWidth={1.5}
+                          aria-hidden
+                        />
+                        {formatMinutes(ticket.logged_minutes)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                )}
+                {/*
+                  The age, with the exact instant in the tooltip. Computed on the
+                  server: this is not a client component, so there is nothing to
+                  hydrate and no second clock to disagree with. It goes stale
+                  between renders, which is what `AutoRefresh` in the header is for.
+                */}
+                <TableCell
+                  className="text-xs whitespace-nowrap text-muted-foreground"
+                  title={formatDateTime(ticket.created_at, timezone)}
+                >
+                  {formatRelativeTime(ticket.created_at, now)}
                 </TableCell>
               </TableRow>
             );
@@ -126,4 +245,67 @@ export function TicketTable({
       </Table>
     </div>
   );
+}
+
+/**
+ * A column heading that sorts.
+ *
+ * The arrow has three states, not two: `ArrowUpDown` on an inactive column says
+ * "this is sortable", up or down on the active one says which way. One arrow on
+ * every column would make each of them look active.
+ */
+function SortableHead({
+  sortKey,
+  sort,
+  basePath,
+  searchParams,
+  className,
+}: {
+  sortKey: TicketSortKey;
+  sort: TicketSort;
+  basePath?: string;
+  searchParams: Record<string, string | string[] | undefined>;
+  className?: string;
+}) {
+  const label = TICKET_SORT_LABELS[sortKey];
+  const active = sort.key === sortKey;
+
+  if (!basePath) {
+    return <TableHead className={className}>{label}</TableHead>;
+  }
+
+  const Arrow = !active
+    ? ArrowUpDownIcon
+    : sort.dir === "asc"
+      ? ArrowUpIcon
+      : ArrowDownIcon;
+
+  return (
+    <TableHead className={className} aria-sort={ariaSort(active, sort.dir)}>
+      <Link
+        href={sortHref(basePath, searchParams, sort, sortKey)}
+        // Hover moves the background and leaves the label at full contrast; the
+        // arrow's opacity is the only thing that dims, and it is decoration.
+        className={cn(
+          "-mx-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+          active && "font-semibold",
+        )}
+      >
+        {label}
+        <Arrow
+          className={cn("size-3.5", active ? "opacity-100" : "opacity-40")}
+          strokeWidth={1.5}
+          aria-hidden
+        />
+      </Link>
+    </TableHead>
+  );
+}
+
+function ariaSort(
+  active: boolean,
+  dir: TicketSort["dir"],
+): "ascending" | "descending" | "none" {
+  if (!active) return "none";
+  return dir === "asc" ? "ascending" : "descending";
 }

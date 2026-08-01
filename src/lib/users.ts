@@ -23,6 +23,29 @@ export function findUser(userId: string): ManagedUser | null {
   return listUsers().find((candidate) => candidate.id === userId) ?? null;
 }
 
+/**
+ * Look an account up by its address, case-insensitively.
+ *
+ * For the mail ingest: a message from an address MITS already knows becomes that
+ * person's ticket, so it shows up in their portal. This is a *lookup*, never a
+ * creation — an unauthenticated message must not be able to bring an account into
+ * existence, and the ingest files an unknown sender under the configured fallback
+ * account instead.
+ *
+ * Addresses are compared lowercased. The local part is technically
+ * case-sensitive per RFC 5321, and treating it that way here would mean
+ * `Anna.Meier@firma.de` and `anna.meier@firma.de` are different reporters — which
+ * no mail server on earth actually implements and every user would consider a bug.
+ */
+export function findUserByEmail(email: string): ManagedUser | null {
+  const needle = email.trim().toLowerCase();
+  if (!needle) return null;
+  return (
+    listUsers().find((candidate) => candidate.email.toLowerCase() === needle) ??
+    null
+  );
+}
+
 export function countUsers(): number {
   const row = db.prepare("SELECT COUNT(*) AS count FROM user").get() as
     | { count: number }

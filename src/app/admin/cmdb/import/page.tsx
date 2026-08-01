@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 /* ──────────────────────────────────────────────────────────────────────────
    Bulk import.
 
-   Admin, not technician: the import rewrites existing records in one go, which is a
+   Admin, not agent: the import rewrites existing records in one go, which is a
    different act from correcting one asset.
 
    The note about companies and sites is there because it is the one thing that silently

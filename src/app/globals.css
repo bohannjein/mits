@@ -6,18 +6,37 @@
 
 /* ──────────────────────────────────────────────────────────────────────────
    MITS design system — Google Web Design Language (Material 3 / Gemini).
-   Dark is the default theme (see ThemeProvider). Every colour lives here as a
-   CSS variable; components must only ever use the semantic Tailwind classes
-   they generate (bg-background, text-foreground, border-border, …).
 
-   The values below are the Gemini surface ramp expressed in oklch:
+   **Two complete themes, not one theme with a fallback.** Dark stays the
+   product's default look; light is a first-class alternative an account can
+   switch to from the header or its own settings. Every colour lives here as a
+   CSS variable, and components only ever use the semantic Tailwind classes
+   these generate (bg-background, text-foreground, border-border, …) — a literal
+   `bg-[#131314]` would break rule 2 *and* would not follow the theme.
+
+   Dark ramp:
      --background       #131314   app shell
      --card             #1e1e1f   tiles, cards, tab bars
      --surface-elevated #28282a   hover / raised state
      --border           white 10% hairlines instead of opaque edges
-   Same pixels the Google surfaces use, but reachable through the semantic
-   classes — a literal `bg-[#131314]` in a component would break rule 2 and
-   would not follow the light theme.
+
+   Light ramp:
+     --background       #f8f9fa   app shell
+     --card             #ffffff   tiles, cards — true white, not off-white
+     --surface-elevated #f1f3f4   hover / raised state
+     --border           black 10% hairlines
+
+   ## The hover rule
+
+   Every interactive surface changes its *background* on hover and keeps its
+   foreground at full contrast. Nothing may hover to a dimmer text colour: a
+   `hover:text-muted-foreground` on an element that also lightens its background
+   is how a label disappears under the cursor, and it is invisible in review
+   because the resting state looks correct. Where a state needs its own hover
+   colour, that colour is a token (`--primary-hover`) rather than an alpha step
+   on the base one — `bg-primary/80` blends toward whatever is *behind* the
+   element, so the same class is readable in one theme and washed out in the
+   other.
    ────────────────────────────────────────────────────────────────────────── */
 
 @theme inline {
@@ -58,6 +77,11 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  /* Hover for a filled primary surface. A token rather than `bg-primary/80`:
+     alpha blends toward the layer behind, so the same class lands darker on
+     #131314 and washed out on #ffffff — and `--primary-foreground` only stays
+     readable on one of the two. */
+  --color-primary-hover: var(--primary-hover);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -77,6 +101,28 @@
   --color-gemini-1: var(--gemini-1);
   --color-gemini-2: var(--gemini-2);
   --color-gemini-3: var(--gemini-3);
+
+  /* ── Conversation bubbles ────────────────────────────────────────────────
+     Three speakers, three surfaces: the reporter on the left, the agent on the
+     right, an internal note set apart. Tokens rather than a Tailwind palette
+     pair (`bg-blue-50 dark:bg-blue-950/40`) for two reasons — rule 2, and
+     because a `/40` alpha in the dark theme reads differently over `--card`
+     than over `--background`, so the same bubble changes shade depending on
+     which column it sits in.
+
+     Text on all three is plain `--foreground`. One foreground for every bubble
+     is deliberate: a per-bubble text colour is a second thing to keep in step
+     with three backgrounds across two themes, and the first one that drifts is
+     a message nobody can read. The `-accent` tokens are for the small role
+     label only, and each is contrast-checked against its own surface. */
+  --color-bubble-customer: var(--bubble-customer);
+  --color-bubble-customer-border: var(--bubble-customer-border);
+  --color-bubble-agent: var(--bubble-agent);
+  --color-bubble-agent-border: var(--bubble-agent-border);
+  --color-bubble-agent-accent: var(--bubble-agent-accent);
+  --color-bubble-internal: var(--bubble-internal);
+  --color-bubble-internal-border: var(--bubble-internal-border);
+  --color-bubble-internal-accent: var(--bubble-internal-accent);
 
   /* Material 3 shape scale, driven by the single --radius knob:
      8 / 10 / 12 / 16 / 24 / 28 / 32px. */
@@ -108,35 +154,61 @@
 }
 
 :root {
-  /* Material 3 light: #f8fafd shell, pure white cards. */
-  --background: oklch(0.985 0.003 250);
-  --foreground: oklch(0.245 0.004 265);
+  /*
+   * Material 3 light, tuned for a clean Apple-flat read: a real #f8f9fa shell
+   * and true white cards, so a card is visibly *on* the page rather than
+   * merging with it.
+   *
+   * `--foreground` sits near slate-900 rather than at the softer Material grey.
+   * Body text on white is the one place where "tasteful" and "readable" pull
+   * apart, and the lighter value only satisfied WCAG AA at the large sizes —
+   * every 12px label in a sidebar failed it.
+   */
+  --background: oklch(0.98 0.002 250);
+  --foreground: oklch(0.215 0.024 264);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.245 0.004 265);
-  --surface-elevated: oklch(0.962 0.006 250);
+  --card-foreground: oklch(0.215 0.024 264);
+  --surface-elevated: oklch(0.958 0.004 250);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.245 0.004 265);
+  --popover-foreground: oklch(0.215 0.024 264);
   /* Google Blue #0b57d0 — the accent for links, focus and icon highlights. */
   --primary: oklch(0.45 0.2 264);
   --primary-foreground: oklch(1 0 0);
+  /* Darker, not lighter: white text has to gain contrast on hover, not lose it. */
+  --primary-hover: oklch(0.385 0.185 264);
   --secondary: oklch(0.955 0.006 250);
-  --secondary-foreground: oklch(0.245 0.004 265);
+  --secondary-foreground: oklch(0.215 0.024 264);
   --muted: oklch(0.955 0.006 250);
   /* #5f6368 — Google's secondary text. */
-  --muted-foreground: oklch(0.51 0.008 265);
-  --accent: oklch(0.93 0.012 250);
-  --accent-foreground: oklch(0.245 0.004 265);
+  --muted-foreground: oklch(0.49 0.01 265);
+  /*
+   * The hover surface. Stronger than the old value on purpose: at 0.93 against a
+   * white card the shift was about two percent of lightness — technically a
+   * hover state, visually none, which reads as a table that does not respond to
+   * the cursor at all.
+   */
+  --accent: oklch(0.918 0.014 250);
+  --accent-foreground: oklch(0.215 0.024 264);
   --destructive: oklch(0.52 0.2 25);
   --destructive-foreground: oklch(1 0 0);
-  --success: oklch(0.55 0.14 150);
+  --success: oklch(0.52 0.14 150);
   --success-foreground: oklch(1 0 0);
-  --warning: oklch(0.7 0.15 75);
-  --warning-foreground: oklch(0.2 0.03 75);
+  --warning: oklch(0.62 0.14 65);
+  --warning-foreground: oklch(1 0 0);
   /* Hairlines, not edges: black at 10% so borders sit under the elevation
      instead of competing with it. */
   --border: oklch(0 0 0 / 10%);
   --input: oklch(0 0 0 / 14%);
   --ring: oklch(0.45 0.2 264);
+  /* Conversation bubbles — see the @theme block for why these are tokens. */
+  --bubble-customer: oklch(0.965 0.003 250);
+  --bubble-customer-border: oklch(0.885 0.005 250);
+  --bubble-agent: oklch(0.964 0.024 256);
+  --bubble-agent-border: oklch(0.845 0.065 258);
+  --bubble-agent-accent: oklch(0.44 0.19 264);
+  --bubble-internal: oklch(0.972 0.038 92);
+  --bubble-internal-border: oklch(0.855 0.11 88);
+  --bubble-internal-accent: oklch(0.45 0.105 72);
   /* The Gemini gradient stops: #4285f4, #9b72cb, #d96570. */
   --gemini-1: oklch(0.623 0.188 260);
   --gemini-2: oklch(0.612 0.129 303);
@@ -178,6 +250,10 @@
   /* Material 3 dark primary #a8c7fa — light blue, readable on #131314. */
   --primary: oklch(0.81 0.078 259);
   --primary-foreground: oklch(0.22 0.05 264);
+  /* Darker here too, for the same reason: the foreground on a dark-theme primary
+     surface is near-black, so hover has to move the surface *up* in contrast
+     against it — which on an inverted pair means down in lightness. */
+  --primary-hover: oklch(0.73 0.085 259);
   --secondary: oklch(0.277 0.004 285);
   --secondary-foreground: oklch(0.915 0.002 285);
   --muted: oklch(0.277 0.004 285);
@@ -195,6 +271,20 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 14%);
   --ring: oklch(0.81 0.078 259);
+  /*
+   * Conversation bubbles. Opaque rather than an alpha tint: `bg-blue-950/40`
+   * composites against whatever is behind it, and the same agent reply would sit
+   * on `--card` in the ticket column and on `--background` in a dialog — two
+   * shades for one speaker.
+   */
+  --bubble-customer: oklch(0.235 0.003 285);
+  --bubble-customer-border: oklch(1 0 0 / 11%);
+  --bubble-agent: oklch(0.268 0.036 262);
+  --bubble-agent-border: oklch(0.66 0.12 260 / 38%);
+  --bubble-agent-accent: oklch(0.81 0.078 259);
+  --bubble-internal: oklch(0.272 0.034 86);
+  --bubble-internal-border: oklch(0.72 0.12 86 / 40%);
+  --bubble-internal-accent: oklch(0.85 0.14 88);
   --gemini-1: oklch(0.7 0.16 260);
   --gemini-2: oklch(0.7 0.13 303);
   --gemini-3: oklch(0.74 0.13 20);

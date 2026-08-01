@@ -2,6 +2,7 @@
 
 import {
   CheckCircle2Icon,
+  InboxIcon,
   Loader2Icon,
   MailIcon,
   SaveIcon,
@@ -9,9 +10,10 @@ import {
   TriangleAlertIcon,
   ZapIcon,
 } from "lucide-react";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 
 import {
+  fetchMailboxAction,
   saveMailSettingsAction,
   testDefenderRuleAction,
 } from "@/app/admin/actions";
@@ -39,6 +41,9 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
+  KEEP_MAIL_SECRET,
+  MAIL_TRANSPORT_LABELS,
+  MailTransport,
   NO_ON_CALL,
   TICKET_PRIORITY_LABELS,
   type MailSettings,
@@ -58,10 +63,20 @@ import {
 export function MailSettingsForm({
   settings,
   staff,
+  accounts,
+  hasImapPassword,
+  hasGraphSecret,
+  inboundEnabled,
 }: {
   settings: MailSettings;
   /** Candidates for on-call duty — only accounts that can work a queue. */
   staff: { id: string; name: string }[];
+  /** Candidates for the fallback account. Same list; named for its own purpose. */
+  accounts: { id: string; name: string }[];
+  /** Whether a secret is on file. The values themselves never leave the server. */
+  hasImapPassword: boolean;
+  hasGraphSecret: boolean;
+  inboundEnabled: boolean;
 }) {
   const [saveResult, saveAction, saving] = useActionState(
     saveMailSettingsAction,
@@ -71,31 +86,277 @@ export function MailSettingsForm({
     testDefenderRuleAction,
     null,
   );
+  const [fetchResult, fetchAction, fetching] = useActionState(
+    fetchMailboxAction,
+    null,
+  );
+
+  // Controlled, so the IMAP and Graph blocks can appear as the transport is
+  // chosen instead of showing two sets of credentials at once.
+  const [transport, setTransport] = useState<MailTransport>(settings.transport);
 
   return (
     <div className="grid gap-6">
-      <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
-        <CardHeader>
-          <MailIcon className="size-5 text-primary" aria-hidden strokeWidth={1.5} />
-          <CardTitle className="mt-4 text-lg font-medium">Posteingang</CardTitle>
-          <CardDescription className="mt-1 leading-relaxed">
-            Adresse, an die Tickets und Alerts gehen.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Alert className="rounded-2xl border-border px-4 py-3">
-            <TriangleAlertIcon strokeWidth={1.5} />
-            <AlertTitle>Noch kein Abruf eingerichtet</AlertTitle>
-            <AlertDescription>
-              MITS holt derzeit keine Mails ab — der Transport (IMAP oder Microsoft
-              Graph) ist noch nicht gebaut. Die Erkennung darunter ist vollständig und
-              hier prüfbar; sie greift, sobald Nachrichten hereinkommen.
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
-
       <form action={saveAction} className="grid gap-6">
+        <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
+          <CardHeader>
+            <InboxIcon className="size-5 text-primary" aria-hidden strokeWidth={1.5} />
+            <CardTitle className="mt-4 text-lg font-medium">
+              Abruf aus dem Postfach
+            </CardTitle>
+            <CardDescription className="mt-1 leading-relaxed">
+              Eingehende Mails werden zu Tickets. Eine Antwort auf eine
+              MITS-Mail erkennt ihre Ticketnummer im Betreff und landet als Beitrag
+              im vorhandenen Ticket.
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="grid gap-5">
+            {!inboundEnabled && (
+              <Alert className="rounded-2xl border-border px-4 py-3">
+                <TriangleAlertIcon strokeWidth={1.5} />
+                <AlertTitle>Modul abgeschaltet</AlertTitle>
+                <AlertDescription>
+                  Unter Module ist „E-Mail-Abruf“ aus. Der Zugang lässt sich
+                  einrichten; geholt wird erst nach dem Einschalten.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="grid gap-2">
+              <Label htmlFor="transport">Transport</Label>
+              <Select
+                name="transport"
+                value={transport}
+                onValueChange={(value) => setTransport(value as MailTransport)}
+                disabled={saving}
+              >
+                <SelectTrigger id="transport" className="h-10 w-full rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MailTransport.options.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {MAIL_TRANSPORT_LABELS[option]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {transport !== "none" && (
+              <div className="grid gap-2">
+                <Label htmlFor="fallbackUserId">Auffang-Konto</Label>
+                <Select
+                  name="fallbackUserId"
+                  defaultValue={settings.fallbackUserId || NO_ON_CALL}
+                  disabled={saving}
+                >
+                  <SelectTrigger
+                    id="fallbackUserId"
+                    className="h-10 w-full rounded-xl"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_ON_CALL}>Keines gewählt</SelectItem>
+                    {accounts.map((candidate) => (
+                      <SelectItem key={candidate.id} value={candidate.id}>
+                        {candidate.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Unter diesem Konto laufen Mails von Adressen, zu denen es kein
+                  MITS-Konto gibt. Die Absenderadresse bleibt als Melder erhalten,
+                  Antworten gehen also weiterhin an die Person.
+                </p>
+              </div>
+            )}
+
+            {transport === "imap" && (
+              <div className="grid gap-4 rounded-2xl border border-border p-4">
+                <div className="grid gap-4 sm:grid-cols-[2fr_1fr]">
+                  <div className="grid gap-2">
+                    <Label htmlFor="imapHost">IMAP-Server</Label>
+                    <Input
+                      id="imapHost"
+                      name="imapHost"
+                      defaultValue={settings.imapHost}
+                      placeholder="imap.firma.de"
+                      disabled={saving}
+                      className="h-10 rounded-xl font-mono text-xs"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="imapPort">Port</Label>
+                    <Input
+                      id="imapPort"
+                      name="imapPort"
+                      type="number"
+                      defaultValue={settings.imapPort}
+                      disabled={saving}
+                      className="h-10 rounded-xl font-mono text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="imapUser">Benutzer</Label>
+                    <Input
+                      id="imapUser"
+                      name="imapUser"
+                      defaultValue={settings.imapUser}
+                      autoComplete="off"
+                      disabled={saving}
+                      className="h-10 rounded-xl font-mono text-xs"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="imapPassword">Passwort</Label>
+                    <Input
+                      id="imapPassword"
+                      name="imapPassword"
+                      type="password"
+                      defaultValue={hasImapPassword ? KEEP_MAIL_SECRET : ""}
+                      autoComplete="new-password"
+                      disabled={saving}
+                      className="h-10 rounded-xl"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="imapMailbox">Postfach</Label>
+                  <Input
+                    id="imapMailbox"
+                    name="imapMailbox"
+                    defaultValue={settings.imapMailbox}
+                    placeholder="INBOX"
+                    disabled={saving}
+                    className="h-10 rounded-xl font-mono text-xs"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  <Switch
+                    id="imapSecure"
+                    name="imapSecure"
+                    defaultChecked={settings.imapSecure}
+                    disabled={saving}
+                  />
+                  <Label
+                    htmlFor="imapSecure"
+                    className="text-sm font-normal text-muted-foreground"
+                  >
+                    TLS direkt (Port 993). Aus versucht STARTTLS.
+                  </Label>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Geholt werden ungelesene Nachrichten. MITS markiert eine Mail erst
+                  als gelesen, wenn daraus ein Ticket oder ein Beitrag entstanden
+                  ist.
+                </p>
+              </div>
+            )}
+
+            {transport === "graph" && (
+              <div className="grid gap-4 rounded-2xl border border-border p-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="graphTenantId">Verzeichnis-ID (Tenant)</Label>
+                  <Input
+                    id="graphTenantId"
+                    name="graphTenantId"
+                    defaultValue={settings.graphTenantId}
+                    disabled={saving}
+                    className="h-10 rounded-xl font-mono text-xs"
+                  />
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="graphClientId">Anwendungs-ID</Label>
+                    <Input
+                      id="graphClientId"
+                      name="graphClientId"
+                      defaultValue={settings.graphClientId}
+                      disabled={saving}
+                      className="h-10 rounded-xl font-mono text-xs"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="graphClientSecret">Client Secret</Label>
+                    <Input
+                      id="graphClientSecret"
+                      name="graphClientSecret"
+                      type="password"
+                      defaultValue={hasGraphSecret ? KEEP_MAIL_SECRET : ""}
+                      autoComplete="new-password"
+                      disabled={saving}
+                      className="h-10 rounded-xl"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="graphMailbox">Postfach</Label>
+                  <Input
+                    id="graphMailbox"
+                    name="graphMailbox"
+                    defaultValue={settings.graphMailbox}
+                    placeholder="support@firma.de"
+                    disabled={saving}
+                    className="h-10 rounded-xl font-mono text-xs"
+                  />
+                </div>
+
+                {/*
+                  Said out loud, because it is the part that surprises people: the
+                  client-credentials flow is tenant-wide, and Mail.Read granted to
+                  this app registration reaches every mailbox unless Exchange
+                  narrows it. The field above chooses which one MITS uses — it does
+                  not limit what the credential could reach.
+                */}
+                <Alert className="rounded-xl border-border px-3 py-2">
+                  <TriangleAlertIcon strokeWidth={1.5} />
+                  <AlertDescription className="text-xs">
+                    Die App-Registrierung braucht <code>Mail.ReadWrite</code> als
+                    Anwendungsberechtigung mit Administrator-Zustimmung. Diese gilt
+                    tenant-weit — den Zugriff auf dieses eine Postfach begrenzt eine
+                    Application Access Policy in Exchange, nicht dieses Feld.
+                  </AlertDescription>
+                </Alert>
+              </div>
+            )}
+
+            <div className="grid gap-2">
+              <Label htmlFor="supportAddress">Support-Adresse</Label>
+              <Input
+                id="supportAddress"
+                name="supportAddress"
+                type="email"
+                defaultValue={settings.supportAddress}
+                placeholder="support@firma.de"
+                disabled={saving}
+                className="h-10 rounded-xl font-mono"
+              />
+            </div>
+
+          </CardContent>
+        </Card>
+
+        {/*
+          One form for both cards, not two.
+
+          `saveMailSettingsAction` writes the whole settings object, and a checkbox
+          that is not posted is indistinguishable from one that is off. Two forms
+          sharing the action would therefore have had each save silently clear the
+          other section's switches — the Defender rule turning itself off every
+          time somebody edited the IMAP host, with a success message either way.
+        */}
         <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
           <CardHeader>
             <ShieldAlertIcon className="size-5 text-primary" aria-hidden strokeWidth={1.5} />
@@ -109,18 +370,6 @@ export function MailSettingsForm({
           </CardHeader>
 
           <CardContent className="grid gap-5">
-            <div className="grid gap-2">
-              <Label htmlFor="supportAddress">Support-Adresse</Label>
-              <Input
-                id="supportAddress"
-                name="supportAddress"
-                type="email"
-                defaultValue={settings.supportAddress}
-                placeholder="support@firma.de"
-                disabled={saving}
-                className="h-10 rounded-xl font-mono"
-              />
-            </div>
 
             <div className="flex items-start gap-3 rounded-2xl border border-border p-4">
               <Switch
@@ -206,7 +455,55 @@ export function MailSettingsForm({
               className="w-fit rounded-full px-4"
             >
               {saving ? <Loader2Icon className="animate-spin" /> : <SaveIcon strokeWidth={1.5} />}
-              {saving ? "Speichern …" : "Speichern"}
+              {saving ? "Speichern …" : "Alles speichern"}
+            </Button>
+          </CardContent>
+        </Card>
+      </form>
+
+      {/*
+        Its own form, because fetching is not saving: inside the settings form the
+        button would submit the whole mask as a side effect of pressing "abrufen".
+      */}
+      <form action={fetchAction}>
+        <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
+          <CardHeader>
+            <InboxIcon className="size-5 text-primary" aria-hidden strokeWidth={1.5} />
+            <CardTitle className="mt-4 text-lg font-medium">Jetzt abrufen</CardTitle>
+            <CardDescription className="mt-1 leading-relaxed">
+              Holt einmalig, was im Postfach liegt. Für den laufenden Betrieb ruft
+              ein Cron-Job <code>POST /api/mail/poll</code> mit dem Service-Token
+              auf — MITS bringt bewusst keinen eigenen Timer mit, weil ein Timer je
+              Node-Worker liefe und jede Mail doppelt einlesen würde.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            {fetchResult && (
+              <Alert
+                variant={fetchResult.ok ? "default" : "destructive"}
+                className="rounded-2xl border-border px-4 py-3"
+              >
+                {fetchResult.ok ? (
+                  <CheckCircle2Icon strokeWidth={1.5} />
+                ) : (
+                  <TriangleAlertIcon strokeWidth={1.5} />
+                )}
+                <AlertDescription className="break-words">
+                  {fetchResult.ok ? fetchResult.message : fetchResult.error}
+                </AlertDescription>
+              </Alert>
+            )}
+            <Button
+              type="submit"
+              disabled={fetching || !inboundEnabled || transport === "none"}
+              className="h-10 w-fit rounded-full bg-surface-elevated px-5 text-foreground hover:bg-accent hover:text-accent-foreground"
+            >
+              {fetching ? (
+                <Loader2Icon className="animate-spin" />
+              ) : (
+                <InboxIcon strokeWidth={1.5} />
+              )}
+              {fetching ? "Wird geholt …" : "Postfach abrufen"}
             </Button>
           </CardContent>
         </Card>

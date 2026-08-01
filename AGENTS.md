@@ -26,6 +26,11 @@ Diese Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
    `rgb()`, kein `oklch()` und keine Tailwind-Palette (`bg-zinc-800`) außerhalb von
    `src/app/globals.css`. Neue Farbe = neues Token in `globals.css` (`:root` **und** `.dark`).
 
+   Das gilt auch für `dark:`-Paare wie `bg-blue-50 dark:bg-blue-950/40`. Ein Alpha-Wert
+   mischt gegen das, was *dahinter* liegt — dieselbe Klasse landet auf `--card` bei
+   einer anderen Farbe als auf `--background`. Deshalb sind die Chat-Bubbles
+   `--bubble-*`-Tokens und nicht zwei Paletteklassen.
+
    **Die einzige Ausnahme ist `src/lib/mail-templates.ts`.** Mail-Clients entfernen
    `<style>`-Blöcke, lösen keine CSS-Custom-Properties auf, und Outlook rendert mit der
    Word-Engine. `bg-card` und `var(--card)` kämen dort als unformatierter Text an, deshalb
@@ -64,8 +69,10 @@ Diese Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
 | Motion | `framer-motion` — Spring-Physics, kein `duration`-Easing |
 | Forms | `react-hook-form` + `zod`, eigener JSON-Schema-Renderer (Phase 2) |
 | State | TanStack Query (Server-State) · Zustand (UI-State) |
-| Auth | Better Auth 1.6 (E-Mail/Passwort), Rollen `user` < `technician` < `admin` |
+| Auth | Better Auth 1.6 (E-Mail/Passwort), Rollen `user` < `agent` < `admin` |
 | Persistenz | SQLite (`better-sqlite3`, WAL) in `<data dir>/mits.db` |
+| Dateien | Platte in `<data dir>/uploads` **oder** S3 (MinIO/AWS/Hetzner), pro Datei gemerkt |
+| Mail rein | IMAP (`imapflow`) oder Microsoft Graph, MIME über `mailparser` |
 | KI-Backend | FastAPI in `backend/` — nur `fastapi`, `uvicorn`, `httpx`, `pydantic` |
 | LLM | bestehende Ollama-Instanz, Adresse und Modelle **in der UI** konfiguriert |
 | Deployment | `docker-compose.yml` im Root, Services `mits-web` + `mits-backend` |
@@ -115,7 +122,8 @@ src/
     api/admin/ai-models/   fragt Ollama nach installierten Modellen (admin)
     api/admin/form-schemas/[id]/  lädt ein Schema in den Builder (admin)
   components/
-    branding/              ThemeProvider, MITSLogo
+    branding/              ThemeProvider, ThemeToggle (Hell/Dunkel/System), MITSLogo
+    feedback/              toast.tsx (Overlay + useToast), notification-watcher
     dashboard/             announcement-banner, resource-grid,
                            portal-actions (Client: die zwei Portal-Kacheln),
                            open-tickets-panel (Client: Live-Liste per TanStack Query),
@@ -163,6 +171,16 @@ src/
     mock-schemas.ts         Beispiel-Schemata (Backend-Ersatz)
     icons.ts                erlaubte Lucide-Icons für schema.icon
     utils.ts                cn()
+    ticket-sort.ts          Sortier-Whitelist + ORDER BY + Header-Links (kein server-only!)
+    worklogs.ts             erfasste Zeit, Summe immer als SUM() gelesen
+    macros.ts               Makro-Store + Runner über die normalen Mutatoren
+    notifications.ts        Feed für die Einblendungen, Sichtbarkeit je Abfrage neu
+    services/storage.ts     Backend-Weiche Platte | S3, pro Datei gemerkt
+    services/s3.ts          PUT/GET/DELETE, fail closed
+    services/s3-sign.ts     SigV4, rein und gegen AWS-Vektoren geprüft
+    services/mail-inbound.ts IMAP + Graph, quittiert erst nach dem Schreiben
+    mail/inbound-parse.ts   Antwort oder neues Ticket? Rein, offline geprüft
+    mail/ingest.ts          schreibt, was inbound-parse entschieden hat
     cmdb.ts                 Objekte, Beziehungen, Plätze, Ticket-Zuordnung
     cmdb-import.ts          ein Importpfad für CSV und API
     cmdb-api.ts             Guard + Wire-Format der REST-Endpunkte
@@ -238,8 +256,36 @@ ein Portal, das nie konfiguriert wurde.
 
 ## Design-System
 
-**Google Web Design Language** (Material 3 / Gemini), **Dark ist Standard**
-(`ThemeProvider`: `defaultTheme="dark"`, `enableSystem={false}`).
+**Google Web Design Language** (Material 3 / Gemini), **Dark ist Standard, Light
+gleichwertig** (`ThemeProvider`: `defaultTheme="dark"`, `enableSystem`).
+
+`defaultTheme` und `enableSystem` widersprechen sich nicht: der Default gilt für ein
+Konto ohne gespeicherte Wahl — dark, passend zum `class="dark"`, das der Server ins
+`<html>` schreibt, also ohne Flash beim ersten Besuch. `enableSystem` fügt nur
+*„System“* als wählbare Option hinzu. Umgeschaltet wird über `ThemeToggle` im Header
+und unter „Erscheinungsbild“ in `/settings/profile`; gespeichert wird in
+`localStorage`, nicht in `mits_setting` — das ist eine Eigenschaft dieses Browsers,
+nicht der Person.
+
+**Die Hover-Regel.** Jede interaktive Fläche ändert beim Hover ihren *Hintergrund*
+und lässt den Vordergrund auf vollem Kontrast. Kein `hover:text-muted-foreground`
+auf etwas, das gleichzeitig heller wird — genau so verschwindet eine Beschriftung
+unter dem Cursor, und im Review fällt es nicht auf, weil der Ruhezustand stimmt.
+Braucht ein Zustand eine eigene Hover-Farbe, ist das ein Token (`--primary-hover`)
+und kein Alpha-Schritt: `bg-primary/80` mischt gegen das, was dahinter liegt, und
+ist deshalb in einem Theme lesbar und im anderen ausgewaschen.
+
+| Token | Wofür |
+|---|---|
+| `--primary-hover` | gefüllte Primärflächen, in **beiden** Themes dunkler |
+| `--bubble-customer*` | Kunden-Bubble, neutrale Fläche |
+| `--bubble-agent*` | Agenten-Bubble, blauer Akzent, plus `-accent` für das Rollen-Label |
+| `--bubble-internal*` | interne Notiz, Amber, gestrichelter Rand |
+
+Bubble-Flächen sind **deckend**, nicht als Alpha-Tint definiert. Ein
+`bg-blue-950/40` compositet gegen den Untergrund, und dieselbe Agenten-Antwort säße
+in der Ticket-Spalte auf `--card` und in einem Dialog auf `--background` — zwei
+Farben für einen Sprecher.
 
 | Merkmal | Umsetzung |
 |---|---|
@@ -315,6 +361,78 @@ mit Dateien, Entscheidungen und Stolperfallen steht in **[ROADMAP.md](ROADMAP.md
 | 8 | Formular-Builder (Canvas, bedingte Logik, abhängige Dropdowns) | ✅ |
 | — | 16-stellige Ticketnummern ab 1 (Anzeigebreite, keine Kapazität) | ✅ |
 | — | CMDB: Firmen, Objekte, Beziehungen, Lizenzen, Import, REST (12. Flag) | ✅ |
+| — | Dual-Theme, Rollen-Rename, Bubbles, Toasts, Queue, Zeit, Makros, S3, Mail-Abruf | ✅ |
+
+## Nach der CMDB: Betriebsausbau
+
+Ein Durchgang, neun Themen. Was dabei nicht offensichtlich ist:
+
+**Die Rolle heißt `agent`, nicht mehr `technician`.** Migriert in
+`renameTechnicianRole` (`lib/db/sqlite.ts`), und trotzdem steht das alte Wort noch
+an zwei Stellen: `LEGACY_ROLES` in `lib/auth/roles.ts` und `LEGACY_ROLE_MAP` in
+`types/mits.ts`. Beide sind nicht redundant. Better Auth cacht die Rolle 60 s im
+signierten Cookie, und ein aus einem älteren Backup zurückgespieltes
+`mits.db` hat die Migration nie gesehen — ohne die Zuordnung fiele `toRole` auf
+`user` zurück und **jeder Agent verlöre still die Queue**. Das Fehlerbild ist eine
+leere Queue, nicht etwas, das nach einem Rollennamen aussieht.
+
+**Sortierung liegt in der URL, nie im Component-State.** `lib/ticket-sort.ts`
+liefert die `ORDER BY`-Ausdrücke aus einer Whitelist — `ORDER BY` lässt sich in
+SQLite nicht parametrisieren, ein ungeprüfter Schlüssel wäre konkatenierte SQL.
+Nebeneffekt und Grund: `TicketTable` bleibt eine Server Component, also wird das
+relative Alter einmal beim Rendern berechnet statt nach der Hydration.
+
+**Ungelesen wird abgeleitet, gelesen wird gespeichert.** `mits_ticket_read` hält je
+Paar einen Zeitstempel; „ungelesen“ ist der Vergleich mit der jüngsten Aktivität,
+die dieser Leser **nicht** verursacht hat. Ein gespeichertes Boolean müsste jeder
+Schreiber für jeden anderen Benutzer zurücksetzen, und der erste, der es vergisst,
+hinterlässt ein Ticket, das sich nie wieder meldet.
+
+**Priorität ist eine Agenten-Entscheidung.** `createTicket` klemmt den Entwurf einer
+melderseitigen Anfrage auf `medium` — das ist die Grenze, nicht das fehlende Feld im
+Formular. `QUICK_TICKET_SCHEMA` ist deshalb auf Version 2 und ohne
+`priority`-Feld; dessen `optionLabels` zeigten seit der Prioritäts-Umbenennung
+ohnehin die Rohwerte an.
+
+**Der Speicherort steht an jeder Datei, nicht nur in der Einstellung.**
+`mits_upload.storage` entscheidet beim Lesen. Würde stattdessen die aktuelle
+Einstellung gelten, wäre im Moment des Umschaltens auf S3 das komplette bestehende
+Archiv 404 — bei einer Seite, die „gespeichert“ meldet.
+
+**SigV4 ist selbst gebaut** (`lib/services/s3-sign.ts`), gegen die AWS-Testvektoren
+in `npm test` geprüft. Das AWS-SDK wären zwanzig Megabyte für drei Request-Formen.
+Der Grund für die Vektoren: eine falsche Signatur kommt als
+`SignatureDoesNotMatch` zurück und sagt nichts darüber, welcher der sechs Schritte
+schiefging.
+
+**Es gibt keinen Mail-Timer im Prozess.** Ein `setInterval` liefe je Node-Worker —
+zwei Worker heißt jede Mail zweimal, also jedes Ticket doppelt. Getrieben wird über
+`POST /api/mail/poll` mit dem Service-Token (oder dem Admin-Button). Eine Nachricht
+wird erst **nach** dem erfolgreichen Schreiben als gelesen markiert; andersherum
+verlöre ein fehlgeschlagener DB-Write die Mail lautlos.
+
+**Mail-Eigentümerschaft kommt nie aus der Nachricht.** Kennt MITS die Absenderadresse,
+ist es deren Ticket. Sonst läuft es unter dem konfigurierten Auffang-Konto, während
+`created_by_email` die echte Adresse behält — Sichtbarkeit beim Konto, Antwortweg
+beim Menschen. Ein unauthentifizierter Absender legt **kein** Konto an. Die beiden
+schmalen Ausnahmen heißen `MailIngestOrigin` und `MailAuthorOrigin` und sind
+absichtlich benannt statt in ein Options-Objekt gesteckt.
+
+**Eine gemailte Antwort ist nie Team.** `addComment` setzt `author_is_agent` auf
+`false`, sobald ein `origin` mitkommt — sonst stünde eine Kundenantwort, die unter
+einem Agenten-Auffangkonto abgelegt wird, rechts in der Agenten-Bubble, und die
+Benachrichtigungsregel schickte dem Melder seine eigenen Worte zurück.
+
+**Makros senden nur, wenn ein Admin das so eingestellt hat.** `reply_mode: "insert"`
+ist Default und folgt der Hausregel. `"send"` ist die dokumentierte Ausnahme: der
+bestätigende Mensch ist dann der Admin, der den Text geschrieben und das Makro so
+markiert hat — nicht der Client. `saveMacrosAction` lehnt wirkungslose Makros und
+tote Baustein-Verweise ab; ein Makro, das „ausgeführt“ meldet und nichts bewegt,
+ist schlechter als kein Knopf.
+
+**Der Toast liegt in `components/feedback/`, nicht in `components/ui/`.** Regel 1:
+`ui/` ist CLI-verwaltet, und shadcn hat kein `toast` mehr (die Registry zeigt auf
+`sonner`). Gleiche Begründung wie bei `components/forms/form.tsx`.
 
 **Verknüpfungen sind ein Fenster in andere Tickets.** `listLinksFor` prüft **jedes** Ziel
 einzeln mit `getTicketFor` und lässt ein nicht sichtbares Ticket komplett weg — nicht als
@@ -440,11 +558,16 @@ Maschinenaufruf bekommt also JSON statt eines Redirects auf die Anmeldung.
 ```
 /                       öffentlicher Einstieg: Login-Maske, angemeldet -> /customer
 /customer/…             Anwender: Portal, Ticket-Erstellung, eigene Tickets, schlanke Detailansicht
-/mits/                  Technik: Live-Queue mit Tabs, Präsenz + Statistik als Spalte
+/mits/                  Agenten: Live-Queue mit Tabs, Präsenz + Statistik als Spalte
 /mits/tickets/[id]      Agenten-Detailansicht mit Workflow-Panel
-/mits/cmdb/…            Bestand, Lizenzen, Objekt-Detailansicht (Technik)
+/mits/cmdb/…            Bestand, Lizenzen, Objekt-Detailansicht (Agenten)
 /admin/…                Administration
-/api/v1/cmdb/…          REST-Schnittstelle, Token **oder** Technik-Sitzung
+/admin/macros           Makros
+/admin/settings/storage Dateispeicher (Platte oder S3)
+/admin/mail             Postfach-Abruf + Defender-Regel
+/api/notifications      Feed für die Einblendungen, `?since=` (jede Rolle)
+/api/mail/poll          Postfach abrufen, Service-Token **oder** Admin-Sitzung
+/api/v1/cmdb/…          REST-Schnittstelle, Token **oder** Agenten-Sitzung
 ```
 
 **Eintrittsweg und In-App-Navigation sind zwei verschiedene Ziele.** Wer den bloßen

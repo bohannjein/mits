@@ -62,7 +62,7 @@ export function TicketReceipt({
           Ticket {formatTicketNumber(ticket.ticket_number)} erfolgreich erstellt
         </CardTitle>
         <CardDescription className="mt-1 leading-relaxed">
-          {ticket.title} — die Technik hat die Meldung erhalten. Über die
+          {ticket.title} — die Agenten haben die Meldung erhalten. Über die
           Ticket-Nummer lässt sie sich jederzeit wiederfinden.
         </CardDescription>
       </CardHeader>

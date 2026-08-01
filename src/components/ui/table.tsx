@@ -57,7 +57,12 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        // `accent`, not `muted/50`: in the light theme `--muted` sits about two
+        // percent of lightness below a white card, so the shipped hover was a
+        // state that technically existed and visually did not. The cell text
+        // stays `--foreground` throughout — a row must not dim its own content
+        // to signal that the cursor is over it.
+        "border-b transition-colors hover:bg-accent/60 has-aria-expanded:bg-accent/60 data-[state=selected]:bg-accent",
         className
       )}
       {...props}

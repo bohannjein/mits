@@ -27,7 +27,7 @@ export const metadata: Metadata = {
    Reporter accounts and their contact details.
 
    Split from the staff list because the two are managed for different reasons: a
-   technician's record is about a role, a reporter's is about where they sit and how to
+   agent's record is about a role, a reporter's is about where they sit and how to
    reach them. One combined table meant scrolling past colleagues to reach a customer.
 
    Each row expands into the same form the reporter sees in their own settings, posting

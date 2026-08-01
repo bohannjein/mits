@@ -45,6 +45,14 @@ import {
   stripQuotedReply,
 } from "../src/lib/mail/quotes";
 import {
+  cleanSubject,
+  htmlToText,
+  isAutomatedMail,
+  planIngest,
+  ticketNumberFromSubject,
+  type InboundMail as InboundMailShape,
+} from "../src/lib/mail/inbound-parse";
+import {
   hasVisibleContent,
   sanitizeRichText,
   uploadIdsInHtml,
@@ -54,10 +62,30 @@ import {
   SYSTEM_TIMEZONES,
   formatDateTime,
   formatDateTimeShort,
+  formatMinutes,
   formatOffsetMs,
+  formatRelativeTime,
   isValidTimezone,
   timezoneOffsetLabel,
 } from "../src/lib/format";
+import {
+  MITS_ROLES,
+  ROLE_LABELS,
+  canViewBoard,
+  isRole,
+  toRole,
+} from "../src/lib/auth/roles";
+import {
+  DEFAULT_TICKET_SORT,
+  SORTABLE_ENUM_COVERAGE,
+  SORT_SQL,
+  TICKET_SORT_KEYS,
+  TICKET_SORT_LABELS,
+  nextDirection,
+  orderByFor,
+  parseTicketSort,
+  sortHref,
+} from "../src/lib/ticket-sort";
 import {
   DEFAULT_PORTAL_FAQS,
   KEEP_SMTP_PASSWORD,
@@ -115,9 +143,28 @@ import {
   MITSOrganizationSchema,
   expiryState,
   normaliseCIAttributes,
+  DEFAULT_MAIL_SETTINGS,
+  isMailInboundConfigured,
   organizationIdForEmail,
+  parseDurationMinutes,
   seatUsage,
+  DEFAULT_S3_SETTINGS,
+  MACRO_REPLY_MODE_LABELS,
+  MacroReplyMode,
+  MacroSchema,
+  isS3Configured,
+  isS3Endpoint,
+  macroIsEmpty,
+  normaliseS3Prefix,
 } from "../src/types/mits";
+import {
+  EMPTY_BODY_SHA256,
+  amzDates,
+  canonicalQuery,
+  canonicalUri,
+  sha256Hex,
+  signS3Request,
+} from "../src/lib/services/s3-sign";
 
 let failures = 0;
 
@@ -168,12 +215,10 @@ console.log("quick ticket");
   check("empty form is rejected", !empty.success);
   check("title required", errors.includes("title"), errors.join(","));
   check("description required", errors.includes("description"), errors.join(","));
-  check("priority has a default, so not flagged", !errors.includes("priority"));
   check("optional attachments not flagged", !errors.includes("attachments"));
 
   const valid = zod.safeParse({
     title: "Drucker Etage 3 offline",
-    priority: "high",
     description: "Seit heute Morgen ist der Drucker nicht erreichbar, Fehler 0x83.",
     attachments: [],
   });
@@ -181,19 +226,29 @@ console.log("quick ticket");
 
   const shortTitle = zod.safeParse({
     title: "abc",
-    priority: "high",
     description: "Seit heute Morgen ist der Drucker nicht erreichbar, Fehler 0x83.",
     attachments: [],
   });
   check("minLength on title enforced", !shortTitle.success);
 
-  const badPriority = zod.safeParse({
+  /*
+   * The field is gone as of version 2 — priority is an agent's call and
+   * `createTicket` clamps a reporter's draft to the default. Asserted here rather
+   * than left implicit: the compiled schema is a `strictObject`, so a form or a
+   * cached client that still sends the key is refused, and somebody re-adding the
+   * field to the schema would silently re-open the customer-facing control.
+   */
+  const stalePriority = zod.safeParse({
     title: "Drucker Etage 3 offline",
-    priority: "sofort",
     description: "Seit heute Morgen ist der Drucker nicht erreichbar, Fehler 0x83.",
     attachments: [],
+    priority: "critical",
   });
-  check("enum value outside the schema is rejected", !badPriority.success);
+  check("the reporter form no longer accepts a priority", !stalePriority.success);
+  check(
+    "…and the quick ticket schema declares none",
+    !("priority" in (QUICK_TICKET_SCHEMA.schema.properties ?? {})),
+  );
 }
 
 console.log("hardware order");
@@ -1389,7 +1444,7 @@ console.log("\nrich-text sanitising");
 
 console.log("\ncustomer profile");
 {
-  // A reporter's website ends up as a link a technician clicks, so the scheme check
+  // A reporter's website ends up as a link a agent clicks, so the scheme check
   // is the load-bearing part. Stricter than isSafeResourceHref on purpose: that one
   // also accepts a site-relative path, which here would point at our own pages.
   check("https with a domain is accepted", isWebsiteUrl("https://example.de"));
@@ -1604,7 +1659,7 @@ console.log("\nincident rule");
   check("…and is flagged as assumed", assumed?.priorityAssumed === true);
 
   // Without an on-call account the incident is left in the pool rather than pushed at
-  // an arbitrary technician.
+  // an arbitrary agent.
   const unassigned = planSecurityIncident(
     {
       from: "security-noreply@microsoft.com",
@@ -2124,6 +2179,425 @@ console.log("cmdb — import coercion");
       .map((target) => target.key)
       .join(",") === "name",
   );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   The technician → agent rename.
+
+   The mapping is the part that has no visible failure mode: if `toRole` stops
+   translating the old value, an instance restored from a pre-rename backup
+   silently demotes every agent to `user`, and what shows up is "the queue is
+   empty" rather than anything pointing at a role name.
+   ────────────────────────────────────────────────────────────────────────── */
+console.log("role rename");
+{
+  check("the new value is a role", isRole("agent"));
+  check("the old value is not, any more", !isRole("technician"));
+  check("but it still maps", toRole("technician") === "agent");
+  check("and it still clears the queue gate", canViewBoard("technician"));
+  check("an unknown value degrades to user", toRole("supervisor") === "user");
+  check("…and never upwards", !canViewBoard("supervisor"));
+  check("no role literal is left in the list", !MITS_ROLES.includes("technician" as never));
+  check("every role has a label", MITS_ROLES.every((role) => Boolean(ROLE_LABELS[role])));
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Queue sorting.
+
+   `ORDER BY` cannot be parameterised, so the whitelist in `lib/ticket-sort.ts` is
+   the only thing standing between a query string and concatenated SQL. These
+   checks are that guarantee written down.
+   ────────────────────────────────────────────────────────────────────────── */
+console.log("ticket sort");
+{
+  check(
+    "an unknown key falls back to the default",
+    parseTicketSort("; DROP TABLE mits_ticket", "asc").key === DEFAULT_TICKET_SORT.key,
+  );
+  check(
+    "an unknown direction falls back too",
+    parseTicketSort("title", "sideways").dir === DEFAULT_TICKET_SORT.dir,
+  );
+  check("the default is newest first", DEFAULT_TICKET_SORT.key === "age" && DEFAULT_TICKET_SORT.dir === "desc");
+  check(
+    "every key has an expression",
+    TICKET_SORT_KEYS.every((key) => Boolean(SORT_SQL[key])),
+  );
+  check(
+    "every key has a label",
+    TICKET_SORT_KEYS.every((key) => Boolean(TICKET_SORT_LABELS[key])),
+  );
+  check(
+    "no expression carries a placeholder",
+    TICKET_SORT_KEYS.every((key) => !SORT_SQL[key].includes("?")),
+  );
+
+  /*
+   * Every status and priority the app can store has to appear in its CASE, or that
+   * value sorts into the `ELSE 99` bucket and a whole class of tickets silently
+   * collects at one end of the list.
+   */
+  check(
+    "the status CASE covers every status",
+    SORTABLE_ENUM_COVERAGE.status.every((value) =>
+      SORT_SQL.status.includes(`'${value}'`),
+    ),
+    SORT_SQL.status,
+  );
+  check(
+    "the priority CASE covers every priority",
+    SORTABLE_ENUM_COVERAGE.priority.every((value) =>
+      SORT_SQL.priority.includes(`'${value}'`),
+    ),
+    SORT_SQL.priority,
+  );
+
+  check(
+    "clicking the active column flips it",
+    nextDirection({ key: "title", dir: "asc" }, "title") === "desc",
+  );
+  check(
+    "clicking a new column does not always start ascending",
+    nextDirection({ key: "title", dir: "asc" }, "priority") === "desc",
+  );
+  check(
+    "ORDER BY always carries a tiebreaker",
+    orderByFor({ key: "status", dir: "asc" }).includes("mits_ticket.id"),
+    orderByFor({ key: "status", dir: "asc" }),
+  );
+
+  // A sort click inside a filtered queue has to keep the filter. Dropping it would
+  // widen the list, which looks like a working queue holding the wrong rows.
+  const href = sortHref(
+    "/mits",
+    { scope: "mine", view: "waiting", status: "waiting_user", sort: "age", dir: "desc" },
+    { key: "age", dir: "desc" },
+    "owner",
+  );
+  check("sorting keeps the tab", href.includes("scope=mine") && href.includes("view=waiting"));
+  check("sorting keeps the filter", href.includes("status=waiting_user"));
+  check("…and replaces the old sort rather than appending", href.match(/sort=/g)?.length === 1);
+  check("…with the new key", href.includes("sort=owner"));
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Relative age and durations.
+
+   Bucket boundaries, because an off-by-one here labels a two-hour-old ticket
+   "gerade eben" and nothing on screen looks wrong.
+   ────────────────────────────────────────────────────────────────────────── */
+console.log("relative time");
+{
+  const now = Date.UTC(2026, 7, 1, 12, 0, 0);
+  const ago = (ms: number) => formatRelativeTime(new Date(now - ms), now);
+
+  check("under a minute reads as just now", ago(59_000) === "gerade eben", ago(59_000));
+  check("exactly a minute switches", ago(60_000) === "vor 1 Min.", ago(60_000));
+  check("minutes round down", ago(12 * 60_000 + 59_000) === "vor 12 Min.", ago(779_000));
+  check("an hour switches unit", ago(3_600_000) === "vor 1 Std.", ago(3_600_000));
+  check("hours round down", ago(3 * 3_600_000 + 59 * 60_000) === "vor 3 Std.");
+  check("a day switches unit", ago(86_400_000) === "vor 1 Tag", ago(86_400_000));
+  check("two days is plural", ago(2 * 86_400_000) === "vor 2 Tagen");
+  check("a week switches unit", ago(7 * 86_400_000) === "vor 1 Wo.");
+  // Clock skew is real: a container in UTC and a mail server a few seconds ahead
+  // are enough, and "in -1 Min." is a bug report waiting to be filed.
+  check("a future timestamp does not go negative", ago(-5_000) === "gerade eben", ago(-5_000));
+
+  /*
+   * Duration parsing. The whole risk here is a factor of sixty in the wrong
+   * direction: booking "1,5" as one minute or "90" as ninety hours both look like
+   * a number in the field and only surface when somebody adds up a month.
+   */
+  const d = parseDurationMinutes;
+  check("a bare integer is minutes", d("90") === 90, String(d("90")));
+  check("a bare decimal is hours", d("1,5") === 90, String(d("1,5")));
+  check("a dot works like a comma", d("1.5") === 90, String(d("1.5")));
+  check("clock notation reads", d("1:30") === 90, String(d("1:30")));
+  check("an explicit unit reads", d("45 Min") === 45, String(d("45 Min")));
+  check("hours with a unit read", d("2 Std") === 120, String(d("2 Std")));
+  check("hours plus minutes read", d("1h30") === 90, String(d("1h30")));
+  check("case and spacing do not matter", d("  1 STD  ") === 60, String(d("  1 STD  ")));
+  // Above 59 in the minutes slot is a typo, not 1h90m — refused rather than
+  // silently reinterpreted.
+  check("a bad clock minute is refused", d("1:90") === null);
+  check("zero is refused, not booked", d("0") === null);
+  check("a negative is refused", d("-5") === null);
+  check("more than a long day is refused", d("20 Std") === null);
+  check("prose is refused", d("ein bisschen") === null);
+  check("an empty string is refused", d("   ") === null);
+
+  check("minutes below an hour stay minutes", formatMinutes(45) === "45 Min");
+  check("a round hour drops the colon", formatMinutes(120) === "2 Std");
+  check("ninety minutes reads as 1:30", formatMinutes(90) === "1:30 Std", formatMinutes(90));
+  check("single-digit rest is padded", formatMinutes(65) === "1:05 Std", formatMinutes(65));
+  check("negative input is clamped", formatMinutes(-10) === "0 Min");
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   AWS Signature Version 4.
+
+   Checked against the two worked examples in Amazon's own S3 documentation
+   ("Authenticating Requests: Using the Authorization Header"). This is the one
+   piece of code in MITS where being wrong produces no usable diagnostic: the
+   remote answers `SignatureDoesNotMatch` and says nothing about which of six
+   steps was off. A published vector is the only feedback that points at a line.
+   ────────────────────────────────────────────────────────────────────────── */
+console.log("s3 signing");
+{
+  const credentials = {
+    accessKeyId: "AKIAIOSFODNN7EXAMPLE",
+    secretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    region: "us-east-1",
+  };
+  const at = new Date("2013-05-24T00:00:00Z");
+  const signatureOf = (authorization: string) =>
+    authorization.match(/Signature=([0-9a-f]{64})/)?.[1] ?? "";
+
+  check("the amz date drops separators and millis", amzDates(at).amzDate === "20130524T000000Z", amzDates(at).amzDate);
+  check("the date stamp is the day", amzDates(at).dateStamp === "20130524");
+
+  // Reserved characters in a key are singly encoded — S3 differs from every other
+  // AWS service here, and double-encoding is the classic way to get this wrong.
+  check("a dollar in the path is encoded", canonicalUri("/test$file.text") === "/test%24file.text", canonicalUri("/test$file.text"));
+  check("slashes survive", canonicalUri("/mits/a/b.png") === "/mits/a/b.png");
+  check("a space becomes %20, not +", canonicalUri("/a b.txt") === "/a%20b.txt", canonicalUri("/a b.txt"));
+  check("query parameters sort by key", canonicalQuery({ b: "2", a: "1" }) === "a=1&b=2");
+
+  // Vector 1 — PUT Object.
+  const put = signS3Request(
+    {
+      method: "PUT",
+      host: "examplebucket.s3.amazonaws.com",
+      path: "/test$file.text",
+      headers: {
+        date: "Fri, 24 May 2013 00:00:00 GMT",
+        "x-amz-storage-class": "REDUCED_REDUNDANCY",
+      },
+      payloadHash:
+        "44ce7dd67c959e0d3524ffac1771dfbba87d2b6b4b4e99e42034a8b803f8b072",
+    },
+    credentials,
+    at,
+    "https",
+  );
+  check(
+    "PUT Object matches the documented signature",
+    signatureOf(put.headers.Authorization) ===
+      "98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd",
+    signatureOf(put.headers.Authorization),
+  );
+
+  // Vector 2 — GET Object with a Range header, and an empty payload.
+  const get = signS3Request(
+    {
+      method: "GET",
+      host: "examplebucket.s3.amazonaws.com",
+      path: "/test.txt",
+      headers: { range: "bytes=0-9" },
+      payloadHash: EMPTY_BODY_SHA256,
+    },
+    credentials,
+    at,
+    "https",
+  );
+  check(
+    "GET Object matches the documented signature",
+    signatureOf(get.headers.Authorization) ===
+      "f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41",
+    signatureOf(get.headers.Authorization),
+  );
+  check(
+    "the empty-body hash is the SHA-256 of nothing",
+    sha256Hex("") === EMPTY_BODY_SHA256,
+  );
+
+  /*
+   * Endpoint validation. The mistake people make is pasting the URL out of a
+   * provider's documentation; a scheme or a path lands inside the signed canonical
+   * URI and comes back as a signature error that names nothing.
+   */
+  check("a bare host is accepted", isS3Endpoint("s3.eu-central-1.amazonaws.com"));
+  check("a host with a port is accepted", isS3Endpoint("minio.local:9000"));
+  check("a scheme is refused", !isS3Endpoint("https://s3.example.com"));
+  check("a trailing path is refused", !isS3Endpoint("s3.example.com/bucket"));
+  check("an empty endpoint is refused", !isS3Endpoint("   "));
+
+  check("a prefix gains one trailing slash", normaliseS3Prefix("mits") === "mits/");
+  check("…and never two", normaliseS3Prefix("mits//") === "mits/");
+  check("a leading slash is dropped", normaliseS3Prefix("/mits/") === "mits/");
+  check("an empty prefix stays empty", normaliseS3Prefix("  ") === "");
+
+  const complete = {
+    ...DEFAULT_S3_SETTINGS,
+    endpoint: "s3.example.com",
+    bucket: "mits",
+    accessKeyId: "AKIA",
+    secretAccessKey: "secret",
+  };
+  check("a complete configuration is usable", isS3Configured(complete));
+  // Fail closed: a half-filled mask must not produce a request that cannot be
+  // signed, so every field is required before anything is attempted.
+  check("a missing secret is not", !isS3Configured({ ...complete, secretAccessKey: "" }));
+  check("a missing bucket is not", !isS3Configured({ ...complete, bucket: "" }));
+  check("the default configuration is not", !isS3Configured(DEFAULT_S3_SETTINGS));
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Macros.
+
+   The check that matters is the inert one: a macro with nothing set reports
+   "ausgeführt" and moves no ticket, so the agent believes the customer is now
+   waiting on them.
+   ────────────────────────────────────────────────────────────────────────── */
+console.log("macros");
+{
+  const base = MacroSchema.parse({ id: "m1", title: "Test" });
+  check("a macro with nothing set is inert", macroIsEmpty(base));
+  check("a status makes it real", !macroIsEmpty({ ...base, set_status: "waiting_user" }));
+  check("a priority makes it real", !macroIsEmpty({ ...base, set_priority: "high" }));
+  check("an assignment makes it real", !macroIsEmpty({ ...base, assign: "self" }));
+  check(
+    "a canned response makes it real",
+    !macroIsEmpty({ ...base, canned_response_id: "c1" }),
+  );
+  // Insert, not send. The default has to be the one that keeps a human between the
+  // template and the customer.
+  check("the default reply mode is insert", base.reply_mode === "insert");
+  check("every reply mode has a label", MacroReplyMode.options.every((mode) => Boolean(MACRO_REPLY_MODE_LABELS[mode])));
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Inbound mail.
+
+   Both failure modes are silent. Missing a reply opens a duplicate ticket and
+   splits the conversation; matching one that is not a reply appends a stranger's
+   message to somebody else's ticket. Neither logs anything.
+   ────────────────────────────────────────────────────────────────────────── */
+console.log("mail ingest");
+{
+  const num = ticketNumberFromSubject;
+  check("a bracketed padded number is found", num("[0000000000001042] Neue Antwort: Drucker") === 1042);
+  check("a reply prefix does not hide it", num("AW: [0000000000001042] Drucker") === 1042);
+  check("a short hand-typed number works", num("Re: [1042] Drucker") === 1042);
+  check("a hash inside the brackets works", num("[#1042] Drucker") === 1042);
+  /*
+   * The brackets are the whole safety margin. A bare run of digits in a subject is
+   * an order number, an invoice or an IBAN fragment as often as it is a ticket,
+   * and appending somebody's mail to whichever ticket that happens to hit is the
+   * worse of the two mistakes.
+   */
+  check("a bare number is not a ticket reference", num("Rechnung 1042 vom 03.08.") === null);
+  check("a number with no brackets anywhere is refused", num("Bestellung 0000000000001042") === null);
+  check("zero is refused", num("[0] Test") === null);
+  check("a subject with no number is refused", num("Drucker kaputt") === null);
+
+  check("a reply prefix is stripped", cleanSubject("AW: Drucker") === "Drucker");
+  check("stacked prefixes are stripped", cleanSubject("Re: AW: WG: Drucker") === "Drucker", cleanSubject("Re: AW: WG: Drucker"));
+  check("a plain subject survives", cleanSubject("Drucker kaputt") === "Drucker kaputt");
+  // A colon in ordinary prose must not be treated as a prefix boundary.
+  check("a colon mid-subject is left alone", cleanSubject("Fehler: 0x83") === "Fehler: 0x83");
+
+  /*
+   * Auto-reply detection. Without it MITS mails a confirmation, the customer's
+   * out-of-office answers it, MITS opens a ticket for the out-of-office and
+   * confirms that too — a loop that fills the queue in minutes.
+   */
+  check("auto-submitted is caught", isAutomatedMail({ "auto-submitted": "auto-replied" }));
+  check("auto-submitted: no is not", !isAutomatedMail({ "auto-submitted": "no" }));
+  check("a mailing list is caught", isAutomatedMail({ "list-id": "<news.firma.de>" }));
+  check("bulk precedence is caught", isAutomatedMail({ precedence: "bulk" }));
+  check("Exchange suppression is caught", isAutomatedMail({ "x-auto-response-suppress": "All" }));
+  check("an ordinary mail is not", !isAutomatedMail({ from: "anna@firma.de" }));
+
+  const mail = (over: Partial<InboundMailShape>): InboundMailShape => ({
+    uid: "1",
+    from: "anna@firma.de",
+    fromName: "Anna Meier",
+    subject: "Drucker kaputt",
+    text: "Der Drucker in Etage 3 ist seit heute Morgen offline.",
+    html: "",
+    messageId: "<a@firma.de>",
+    references: [],
+    receivedAt: new Date("2026-08-01T09:00:00Z"),
+    ...over,
+  });
+
+  const fresh = planIngest(mail({}));
+  check("a first message becomes a ticket", fresh.kind === "ticket");
+  check("…titled from the subject", fresh.kind === "ticket" && fresh.title === "Drucker kaputt");
+
+  const answer = planIngest(
+    mail({
+      subject: "AW: [0000000000001042] Neue Antwort: Drucker kaputt",
+      text: "Das hat geholfen, danke!\n\nAm 01.08. schrieb IT <it@firma.de>:\n> Bitte neu starten.",
+    }),
+  );
+  check("a reply is recognised", answer.kind === "reply");
+  check("…against the right ticket", answer.kind === "reply" && answer.ticketNumber === 1042);
+  check(
+    "…with the quote stripped",
+    answer.kind === "reply" && answer.body === "Das hat geholfen, danke!",
+    answer.kind === "reply" ? JSON.stringify(answer.body) : "",
+  );
+
+  // A reply that is nothing but a quote leaves no text. An empty bubble in the
+  // thread tells the agent less than no bubble at all.
+  const empty = planIngest(
+    mail({
+      subject: "[1042] Re: Drucker",
+      text: "Am 01.08. schrieb IT <it@firma.de>:\n> Bitte neu starten.",
+    }),
+  );
+  check("an all-quote reply is skipped", empty.kind === "skip");
+
+  /*
+   * A *new* ticket keeps its quote. There is nothing to duplicate on a first
+   * message, and a forwarded mail is mostly quote — trimming it would leave the
+   * two words somebody typed above the forward.
+   */
+  const forwarded = planIngest(
+    mail({
+      subject: "WG: Rechnung",
+      text: "Bitte prüfen.\n\nVon: buchhaltung@firma.de\nDetails im Anhang.",
+    }),
+  );
+  check("a forward keeps its quoted part", forwarded.kind === "ticket" && forwarded.body.includes("Details im Anhang"));
+
+  check(
+    "an out-of-office never becomes a ticket",
+    planIngest(mail({}), { "auto-submitted": "auto-replied" }).kind === "skip",
+  );
+  check("a mail without a sender is skipped", planIngest(mail({ from: "" })).kind === "skip");
+
+  // Graph hands back HTML; the plain-text half has to keep its line structure or
+  // `stripQuotedReply` can never find a marker at the start of a line.
+  check(
+    "block tags become newlines",
+    htmlToText("<p>Eins</p><p>Zwei</p>") === "Eins\n\nZwei",
+    JSON.stringify(htmlToText("<p>Eins</p><p>Zwei</p>")),
+  );
+  check("a break becomes a newline", htmlToText("a<br>b") === "a\nb");
+  check("entities are decoded", htmlToText("<p>M&uuml;ller &amp; Co</p>").includes("&"), htmlToText("<p>M&uuml;ller &amp; Co</p>"));
+  check("script content is dropped", !htmlToText("<script>alert(1)</script>ok").includes("alert"));
+
+  check("a complete IMAP configuration is usable", isMailInboundConfigured({
+    ...DEFAULT_MAIL_SETTINGS,
+    transport: "imap",
+    fallbackUserId: "u1",
+    imapHost: "imap.firma.de",
+    imapUser: "support",
+    imapPassword: "secret",
+  }));
+  // Fail closed: without a fallback account a mail from an unknown address has no
+  // owner, and `created_by` is what decides who can see the ticket.
+  check("…but not without a fallback account", !isMailInboundConfigured({
+    ...DEFAULT_MAIL_SETTINGS,
+    transport: "imap",
+    imapHost: "imap.firma.de",
+    imapUser: "support",
+    imapPassword: "secret",
+  }));
+  check("the default transport fetches nothing", !isMailInboundConfigured(DEFAULT_MAIL_SETTINGS));
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

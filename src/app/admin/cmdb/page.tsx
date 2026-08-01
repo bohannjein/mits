@@ -23,7 +23,7 @@ export const metadata: Metadata = {
    CMDB administration: bulk import and the REST token.
 
    Separate from `/mits/cmdb`, which is where the inventory is worked with. What lives
-   here changes how data gets in, which is an admin decision, not a technician's.
+   here changes how data gets in, which is an admin decision, not a agent's.
    ────────────────────────────────────────────────────────────────────────── */
 
 export default async function AdminCMDBPage() {

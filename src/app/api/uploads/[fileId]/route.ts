@@ -5,7 +5,7 @@ import { getTicketFor } from "@/lib/tickets";
 /* ──────────────────────────────────────────────────────────────────────────
    Attachment download.
 
-   Access is decided per request: the owner, a technician/admin working the board,
+   Access is decided per request: the owner, a agent/admin working the board,
    or anyone signed in when the file was published as a FAQ attachment. A file that
    exists but is not readable answers 404, identical to a file that never existed,
    so ids cannot be probed.
@@ -24,11 +24,29 @@ export async function GET(
    * The participant check is supplied here, not imported by the storage module —
    * that would close an import cycle. See `openUploadFor`.
    */
-  const upload = openUploadFor(
-    fileId,
-    user,
-    (ticketId) => getTicketFor(ticketId, user) !== null,
-  );
+  let upload;
+  try {
+    upload = await openUploadFor(
+      fileId,
+      user,
+      (ticketId) => getTicketFor(ticketId, user) !== null,
+    );
+  } catch (error) {
+    /*
+     * A backend that is unreachable or misconfigured is not "not found".
+     *
+     * Answering 404 here would tell an agent the attachment is gone when the real
+     * problem is an expired S3 key, and somebody would go looking for a deleted
+     * file. 502 plus a log line points at the actual cause. The message is
+     * deliberately generic — a signing error's text names the bucket.
+     */
+    console.error("[MITS] Anhang konnte nicht geöffnet werden:", error);
+    return Response.json(
+      { error: "Der Dateispeicher ist nicht erreichbar." },
+      { status: 502 },
+    );
+  }
+
   if (!upload) {
     return Response.json({ error: "Datei nicht gefunden." }, { status: 404 });
   }
@@ -50,7 +68,8 @@ export async function GET(
 
   const filename = `filename*=UTF-8''${encodeURIComponent(upload.name)}`;
 
-  return new Response(upload.stream(), {
+  // Awaited: the S3 backend resolves its stream from a network response.
+  return new Response(await upload.stream(), {
     headers: {
       "Content-Type": upload.type,
       "Content-Length": String(upload.size),
