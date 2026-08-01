@@ -468,6 +468,23 @@
      on instead of being a grey bar in the dark theme. Firefox takes the shorthand;
      WebKit needs the pseudo-elements, and gets them below.
   */
+  /*
+   * The j/k cursor in a ticket table.
+   *
+   * A CSS rule keyed on an attribute rather than a class the table renders,
+   * because `TicketTable` is a Server Component and stays one — the highlight is
+   * written onto the row by `QueueShortcuts` with `setAttribute`. Styling it here
+   * means the table itself needs to know nothing about keyboard navigation.
+   *
+   * An inset ring rather than a background: the rows already use their background
+   * for hover and for the unread state, and a third meaning on the same property
+   * is a row whose colour nobody can read back.
+   */
+  tr[data-cursor="true"] {
+    box-shadow: inset 2px 0 0 0 var(--primary);
+    background-color: var(--accent);
+  }
+
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;

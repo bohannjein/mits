@@ -26,6 +26,7 @@ import {
   softDeleteTicketAction,
 } from "@/app/actions/tickets";
 import { useToast } from "@/components/feedback/toast";
+import { Kbd } from "@/components/layout/shortcut-hint";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -153,7 +154,7 @@ export function TicketSidebar({
   links?: LinkRow[] | null;
   assets?: {
     attached: AssetRow[];
-    suggestions: AssetRow[];
+    suggestions: { assigned: AssetRow[]; onSite: AssetRow[] };
     candidates: AssetRow[];
   } | null;
   worklog?: { entries: WorklogRow[]; today: string } | null;
@@ -386,6 +387,7 @@ export function TicketSidebar({
               <UserCheckIcon strokeWidth={1.5} />
             )}
             {mine ? "Dir zugewiesen" : "Mir zuweisen"}
+            {!mine && <Kbd keys={["M"]} className="opacity-60" />}
           </Button>
 
           {result && (

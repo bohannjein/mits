@@ -313,6 +313,24 @@ export function addComment(
    * page would refetch and correctly find nothing new, and waking it to learn
    * that is a round trip that also reveals the note's timing.
    */
+  /*
+   * A reporter writing into a closed ticket reopens it.
+   *
+   * Here rather than in the action, so the mail ingest gets it too — the most
+   * common way this happens is somebody replying to the closing notification,
+   * which never touches a Server Action. A reply that lands on a closed ticket
+   * and leaves it closed is a question nobody is looking at: it is in no queue,
+   * it raises no unread badge for the desk, and the person who wrote it has every
+   * reason to believe somebody will answer.
+   *
+   * Only for a reporter and only for a public message. An agent writing on a
+   * closed ticket is filing a note after the fact, and reopening on that would
+   * mean the desk cannot annotate its own archive without resurrecting it.
+   */
+  if (!isAgent && visibility === "public") {
+    reopenIfClosed(ticketId, user);
+  }
+
   publish({
     type: "ticket",
     ticketId,
@@ -325,6 +343,35 @@ export function addComment(
   publish({ type: "queue", audience: "staff", actorId: user.id });
 
   return rowToComment(row);
+}
+
+/**
+ * Put a closed ticket back in the queue.
+ *
+ * `open` and not the status it had before: what it was doing three weeks ago is
+ * not what it is doing now, and restoring "Wartet auf Anwender" on a ticket the
+ * user just wrote into would be actively wrong. The assignment is left alone —
+ * whoever handled it last is the obvious person to look at it again, and taking
+ * that away would drop it into the pool anonymously.
+ *
+ * Audited, because a status change nobody made by hand is exactly the kind that
+ * needs to be explainable afterwards.
+ */
+function reopenIfClosed(ticketId: string, actor: SessionUser): void {
+  const row = db
+    .prepare("SELECT status FROM mits_ticket WHERE id = ? AND deleted_at IS NULL")
+    .get(ticketId) as { status: string } | undefined;
+
+  if (!row) return;
+  if (row.status !== "closed" && row.status !== "resolved") return;
+
+  db.prepare("UPDATE mits_ticket SET status = 'open' WHERE id = ?").run(ticketId);
+
+  recordAudit(ticketId, actor, "status_changed", {
+    field: "status",
+    from: row.status,
+    to: "open",
+  });
 }
 
 /**

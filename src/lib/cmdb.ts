@@ -532,20 +532,38 @@ export function suggestCIsForTicket(
   ticketId: string,
   reporterId: string,
   locationId: string | null,
-): MITSConfigurationItem[] {
+): { assigned: MITSConfigurationItem[]; onSite: MITSConfigurationItem[] } {
   const attached = new Set(listCIsForTicket(ticketId).map((item) => item.id));
 
-  const mine = listConfigurationItems({ assignedUserId: reporterId });
-  const onSite = locationId ? listConfigurationItems({ locationId }) : [];
-
+  /*
+   * Two groups, kept apart rather than concatenated.
+   *
+   * They answer different questions and deserve different confidence. "This is
+   * the reporter's laptop" is nearly always the right object; "this is something
+   * else at their site" is a shortlist worth scanning. Merged into one list the
+   * agent cannot tell which is which, and the first plausible name wins — which
+   * on a shared site is regularly the wrong device.
+   */
   const seen = new Set<string>();
-  const out: MITSConfigurationItem[] = [];
-  for (const item of [...mine, ...onSite]) {
-    if (attached.has(item.id) || seen.has(item.id)) continue;
-    seen.add(item.id);
-    out.push(item);
+  const take = (items: MITSConfigurationItem[], limit: number) => {
+    const out: MITSConfigurationItem[] = [];
+    for (const item of items) {
+      if (attached.has(item.id) || seen.has(item.id)) continue;
+      seen.add(item.id);
+      out.push(item);
+      if (out.length >= limit) break;
+    }
+    return out;
+  };
+
+  // The reporter's own first, so their entries claim the ids before the site list
+  // can — a laptop that is both is theirs, not "something at the office".
+  const assigned = take(listConfigurationItems({ assignedUserId: reporterId }), 8);
+  const onSite = take(
+    locationId ? listConfigurationItems({ locationId }) : [],
     // Enough to pick from without turning the sidebar into a second inventory list.
-    if (out.length >= 8) break;
-  }
-  return out;
+    6,
+  );
+
+  return { assigned, onSite };
 }

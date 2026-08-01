@@ -7,6 +7,7 @@ import { PresenceHeartbeat } from "@/components/dashboard/presence-heartbeat";
 import { NotificationWatcher } from "@/components/feedback/notification-watcher";
 import { AutoRefresh } from "@/components/layout/auto-refresh";
 import { ConnectionDot } from "@/components/layout/connection-dot";
+import { ShortcutHelp } from "@/components/layout/shortcut-help";
 import { TicketSearch } from "@/components/tickets/ticket-search";
 import { TicketSearchDialog } from "@/components/tickets/ticket-search-dialog";
 import { Button } from "@/components/ui/button";
@@ -139,6 +140,9 @@ export async function AppHeader() {
             {/* Live status. Only for a session that has a stream — the password
                 gate leaves nothing to be live about. */}
             {!user.mustChangePassword && <ConnectionDot />}
+            {/* Renders nothing until `?` is pressed. Here so every page has it
+                without knowing about it — same as the watcher above. */}
+            {!user.mustChangePassword && <ShortcutHelp />}
             <ThemeToggle />
             <UserMenu user={user} />
           </>

@@ -69,6 +69,9 @@ export function QueueTabs({
         <div
           role="group"
           aria-label="Zuständigkeit"
+          // What the `c` shortcut looks for. An attribute rather than an id: this
+          // renders once per page today and an id would be a promise about that.
+          data-scope-switcher=""
           className="inline-flex h-11 w-fit items-center gap-1 rounded-full border border-border bg-card p-1"
         >
           {AGENT_SCOPES.map((candidate) => {

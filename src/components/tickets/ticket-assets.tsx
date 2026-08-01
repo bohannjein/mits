@@ -10,6 +10,7 @@ import {
 } from "@/app/mits/cmdb/actions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { CIIcon } from "@/components/tickets/ci-icon";
 import { Input } from "@/components/ui/input";
 import { CI_TYPE_LABELS, type CIType } from "@/types/mits";
 
@@ -42,7 +43,15 @@ export function TicketAssets({
 }: {
   ticketId: string;
   attached: AssetRow[];
-  suggestions: AssetRow[];
+  /**
+   * Two groups, not one list.
+   *
+   * "This is the reporter's laptop" and "this is something else at their site"
+   * deserve different confidence, and merged the agent cannot tell which is
+   * which — on a shared site the first plausible name is regularly the wrong
+   * device.
+   */
+  suggestions: { assigned: AssetRow[]; onSite: AssetRow[] };
   candidates: AssetRow[];
 }) {
   const [attachResult, attachAction, attaching] = useActionState(
@@ -81,6 +90,7 @@ export function TicketAssets({
               key={row.id}
               className="flex items-center gap-2 rounded-xl border border-border px-3 py-2"
             >
+              <CIIcon type={row.type} />
               <div className="min-w-0 flex-1">
                 <Link
                   href={`/mits/cmdb/${row.id}`}
@@ -113,28 +123,24 @@ export function TicketAssets({
         </ul>
       )}
 
-      {suggestions.length > 0 && (
-        <div className="grid gap-1 border-t border-border pt-3">
-          <span className="label-industrial">Vorschläge</span>
-          {suggestions.map((row) => (
-            <form key={row.id} action={attachAction}>
-              <input type="hidden" name="ticketId" value={ticketId} />
-              <input type="hidden" name="ciId" value={row.id} />
-              <Button
-                type="submit"
-                variant="ghost"
-                size="sm"
-                disabled={attaching}
-                className="h-auto w-full justify-start rounded-xl px-3 py-2 text-left"
-              >
-                <span className="min-w-0 flex-1 truncate">
-                  {row.name}
-                  {row.assetTag ? ` · ${row.assetTag}` : ""}
-                </span>
-              </Button>
-            </form>
-          ))}
-        </div>
+      {suggestions.assigned.length > 0 && (
+        <SuggestionGroup
+          title="Dem Melder zugewiesen"
+          rows={suggestions.assigned}
+          ticketId={ticketId}
+          action={attachAction}
+          busy={attaching}
+        />
+      )}
+
+      {suggestions.onSite.length > 0 && (
+        <SuggestionGroup
+          title="Am selben Standort"
+          rows={suggestions.onSite}
+          ticketId={ticketId}
+          action={attachAction}
+          busy={attaching}
+        />
       )}
 
       <div className="grid gap-2 border-t border-border pt-3">
@@ -163,6 +169,7 @@ export function TicketAssets({
               ) : (
                 <LinkIcon strokeWidth={1.5} />
               )}
+              <CIIcon type={row.type} />
               <span className="min-w-0 flex-1 truncate">
                 {row.name}
                 {row.assetTag ? ` · ${row.assetTag}` : ""}
@@ -178,6 +185,52 @@ export function TicketAssets({
           <AlertDescription className="text-xs">{result.error}</AlertDescription>
         </Alert>
       )}
+    </div>
+  );
+}
+
+/**
+ * One labelled block of attachable objects.
+ *
+ * Extracted because there are two of them and they differ only in the heading —
+ * two copies would be two places for the next change to the row layout, and the
+ * one that gets missed is whichever group the author was not looking at.
+ */
+function SuggestionGroup({
+  title,
+  rows,
+  ticketId,
+  action,
+  busy,
+}: {
+  title: string;
+  rows: AssetRow[];
+  ticketId: string;
+  action: (payload: FormData) => void;
+  busy: boolean;
+}) {
+  return (
+    <div className="grid gap-1 border-t border-border pt-3">
+      <span className="label-industrial">{title}</span>
+      {rows.map((row) => (
+        <form key={row.id} action={action}>
+          <input type="hidden" name="ticketId" value={ticketId} />
+          <input type="hidden" name="ciId" value={row.id} />
+          <Button
+            type="submit"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            className="h-auto w-full justify-start rounded-xl px-3 py-2 text-left"
+          >
+            <CIIcon type={row.type} />
+            <span className="min-w-0 flex-1 truncate">
+              {row.name}
+              {row.assetTag ? ` · ${row.assetTag}` : ""}
+            </span>
+          </Button>
+        </form>
+      ))}
     </div>
   );
 }

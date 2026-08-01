@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Kbd } from "@/components/layout/shortcut-hint";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -438,14 +439,11 @@ function SearchTrigger() {
       <span className="flex-1 text-left text-sm font-normal">
         Ticket suchen …
       </span>
-      <Badge
-        variant="secondary"
-        className="hidden rounded-md px-1.5 py-0 font-mono text-[10px] font-normal sm:inline-flex"
-      >
-        {/* Both modifiers named: the page does not know which platform it is on,
-            and guessing wrong labels the wrong key. */}
-        Ctrl K
-      </Badge>
+      {/* The same badge component every other shortcut uses — three hand-rolled
+          variants of this had already drifted on padding. Both modifiers are not
+          named: the page does not know which platform it is on, and Strg is the
+          one this application is written in. */}
+      <Kbd keys={["Strg", "K"]} />
     </Button>
   );
 }

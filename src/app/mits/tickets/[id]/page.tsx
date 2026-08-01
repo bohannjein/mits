@@ -6,7 +6,9 @@ import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
 import { TicketComposer } from "@/components/tickets/ticket-composer";
 import { TicketFrame } from "@/components/tickets/ticket-frame";
+import { ComposerHandleProvider } from "@/components/tickets/composer-handle";
 import { TicketLive } from "@/components/tickets/ticket-live";
+import { TicketShortcuts } from "@/components/tickets/ticket-shortcuts";
 import { TicketMessages } from "@/components/tickets/ticket-messages";
 import { TicketSidebar } from "@/components/tickets/ticket-sidebar";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +50,7 @@ import {
 } from "@/lib/tickets";
 import { getUserProfile } from "@/lib/user-profile";
 import { findUser, listUsers } from "@/lib/users";
+import { templateValuesFor } from "@/lib/template-values";
 import { listWorklogs } from "@/lib/worklogs";
 import {
   fieldsBesidesOpening,
@@ -161,14 +164,17 @@ export default async function AgentTicketPage({
     asset_tag: string;
   }) => ({ id: item.id, name: item.name, type: item.type, assetTag: item.asset_tag });
 
+  const suggested = flags.feature_cmdb
+    ? suggestCIsForTicket(id, ticket.created_by, ticket.location_id)
+    : { assigned: [], onSite: [] };
+
   const assets = flags.feature_cmdb
     ? {
         attached: listCIsForTicket(id).map(toAssetRow),
-        suggestions: suggestCIsForTicket(
-          id,
-          ticket.created_by,
-          ticket.location_id,
-        ).map(toAssetRow),
+        suggestions: {
+          assigned: suggested.assigned.map(toAssetRow),
+          onSite: suggested.onSite.map(toAssetRow),
+        },
         candidates: listConfigurationItems().map(toAssetRow),
       }
     : null;
@@ -186,6 +192,10 @@ export default async function AgentTicketPage({
     links: collectLinks([...(opening ? [opening] : []), ...comments]),
   };
 
+  // One resolver for every template on this page, so the canned responses and the
+  // macros cannot address the same person two different ways.
+  const templateValues = templateValuesFor(ticket, user.name);
+
   const agents = listUsers()
     .filter((candidate) => canViewBoard(candidate.role))
     .map((candidate) => ({ id: candidate.id, name: candidate.name }));
@@ -199,12 +209,20 @@ export default async function AgentTicketPage({
         `TicketFrame` for why a phone gets an ordinary scrolling page instead.
       */}
       <main className="flex flex-1 flex-col items-center px-6 py-6 lg:min-h-0 lg:overflow-hidden">
+        <ComposerHandleProvider>
         <div className="flex w-full max-w-7xl flex-1 flex-col lg:min-h-0">
           {/* Renders nothing. Polls for new replies and status changes and swaps
               the RSC payload in when there are any — see ticket-live.tsx. */}
           <TicketLive
             ticketId={ticket.id}
             fingerprint={ticketActivityFingerprint(ticket, user)}
+          />
+          {/* r / m / i / Esc. The provider is what lets the handler reach the
+              composer — a Server Component cannot create the shared ref. */}
+          <TicketShortcuts
+            ticketId={ticket.id}
+            currentUserId={user.id}
+            mine={ticket.assigned_to === user.id}
           />
           <TicketFrame
             sidebarLabel="Details"
@@ -306,11 +324,9 @@ export default async function AgentTicketPage({
                         title: canned.title,
                         // Filled here, not in the browser: the reporter's name is
                         // not something the client needs handed to it.
-                        body: fillCannedResponse(canned.body, {
-                          ticket_number: formatTicketNumber(ticket.ticket_number),
-                          reporter_name: ticket.created_by_email,
-                          agent_name: user.name,
-                        }),
+                        // Filled here, not in the browser: the reporter's name
+                        // is not something the client needs handed to it.
+                        body: fillCannedResponse(canned.body, templateValues),
                       }))
                     : []
                 }
@@ -390,6 +406,7 @@ export default async function AgentTicketPage({
             }
           />
         </div>
+        </ComposerHandleProvider>
       </main>
     </>
   );

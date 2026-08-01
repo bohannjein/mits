@@ -28,6 +28,7 @@ import {
   searchTickets,
   toPage,
 } from "@/lib/tickets";
+import { OPEN_TICKET_STATUSES, type TicketStatus } from "@/types/mits";
 
 export const metadata: Metadata = {
   title: "Meine Tickets — MITS",
@@ -44,6 +45,9 @@ export default async function MyTicketsPage({
 
   const params = await searchParams;
   const flags = getFeatureFlags();
+
+  const one = (value: string | string[] | undefined) =>
+    Array.isArray(value) ? value[0] : value;
   const searchEnabled = flags.feature_ticket_search;
 
   // Typing a number jumps straight into the ticket. Throws a redirect, so
@@ -60,6 +64,36 @@ export default async function MyTicketsPage({
   const sort = parseTicketSort(params.sort, params.dir);
 
   /*
+   * Two views, and closed tickets are not in the default one.
+   *
+   * A reporter's list is a list of things still happening. Ten resolved tickets
+   * from last quarter above the one they are waiting on is the same failure as an
+   * unfiltered inbox — the page technically shows everything and answers nothing.
+   *
+   * They are not hidden, they are one click away under "Verlauf". Hiding them
+   * outright would mean a reporter cannot look up what the desk did in March,
+   * which is the second most common reason to open this page.
+   *
+   * The agent side is deliberately untouched: a queue that quietly dropped closed
+   * tickets would be a queue an agent cannot audit.
+   */
+  const history = one(params.view) === "verlauf";
+  const scope = history
+    ? { statusIn: ["closed"] as TicketStatus[] }
+    : { statusIn: OPEN_TICKET_STATUSES };
+
+  // Counted per view, so the tabs can say how much is behind each one. Two cheap
+  // indexed counts; the alternative is a badge that lies or no badge at all.
+  const openCount = countSearchTickets(
+    { ...filter, statusIn: OPEN_TICKET_STATUSES },
+    user,
+  );
+  const closedCount = countSearchTickets(
+    { ...filter, statusIn: ["closed"] },
+    user,
+  );
+
+  /*
    * One query for both cases, where the unfiltered path used to call
    * `listOwnTickets`.
    *
@@ -70,10 +104,19 @@ export default async function MyTicketsPage({
    * role clause narrows on top of it, so the scope is unchanged.
    */
   // Same order as the queue: count, clamp the page, then fetch that slice.
-  const total = countSearchTickets({ ...filter, sort }, user);
+  const total = countSearchTickets({ ...scope, ...filter, sort }, user);
   const page = Math.min(toPage(params.page), pageCount(total));
   const tickets = searchTickets(
-    { ...filter, sort, limit: TICKETS_PER_PAGE, offset: pageOffset(page, total) },
+    {
+      // The view first, an explicit filter on top: both are status clauses and
+      // they narrow with AND, so filtering to "Gelöst" inside "Verlauf" finds
+      // nothing rather than quietly widening the view.
+      ...scope,
+      ...filter,
+      sort,
+      limit: TICKETS_PER_PAGE,
+      offset: pageOffset(page, total),
+    },
     user,
   );
 
@@ -112,6 +155,33 @@ export default async function MyTicketsPage({
           </div>
 
           <Separator className="my-8 bg-border" />
+
+          <nav
+            aria-label="Ansicht"
+            className="mb-6 inline-flex w-fit gap-1 rounded-full border border-border bg-card p-1"
+          >
+            {[
+              { key: "", label: "Aktuell", count: openCount },
+              { key: "verlauf", label: "Verlauf", count: closedCount },
+            ].map((tab) => {
+              const active = history === (tab.key === "verlauf");
+              return (
+                <Link
+                  key={tab.key || "offen"}
+                  href={tab.key ? "/customer/tickets?view=verlauf" : "/customer/tickets"}
+                  aria-current={active ? "page" : undefined}
+                  className={
+                    active
+                      ? "inline-flex h-9 items-center gap-2 rounded-full bg-inverse-surface px-3.5 text-sm font-medium text-inverse-surface-foreground"
+                      : "inline-flex h-9 items-center gap-2 rounded-full px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+                  }
+                >
+                  {tab.label}
+                  <span className="text-xs opacity-70">{tab.count}</span>
+                </Link>
+              );
+            })}
+          </nav>
 
           {searchEnabled && (
             <div className="mb-6 grid gap-4">

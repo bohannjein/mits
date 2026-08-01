@@ -42,6 +42,14 @@ export interface RichTextEditorHandle {
   /** Append markup — used by the canned-response dropdown. */
   insert: (html: string) => void;
   clear: () => void;
+  /**
+   * Put the caret in the editor.
+   *
+   * Needed because a contenteditable is not focusable through a ref to an input
+   * element — the `r` shortcut has to go through tiptap's own command chain, or
+   * the caret lands nowhere and the next keystroke goes to the page.
+   */
+  focus: () => void;
 }
 
 export function RichTextEditor({
@@ -221,6 +229,7 @@ export function RichTextEditor({
     if (!editor || !onReady) return;
     onReady({
       insert: (html) => editor.chain().focus().insertContent(html).run(),
+      focus: () => editor.chain().focus("end").run(),
       clear: () => editor.commands.clearContent(true),
     });
   }, [editor, onReady]);

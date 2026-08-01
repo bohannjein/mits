@@ -145,6 +145,10 @@ src/
       ticket-live.tsx           SSE-Signal, sonst Fingerabdruck-Poll
       queue-live.tsx            SSE-Signal, sonst ETag gegen /check-updates
       message-actions.tsx       Bearbeiten + 15-s-Rücknahme an der eigenen Bubble
+      ticket-shortcuts.tsx      r | m | i | Esc auf der Ticketseite
+      queue-shortcuts.tsx       j | k | Enter | c über der Tabelle
+      composer-handle.tsx       Context: Kuerzel erreicht die Antwortzeile
+      ci-icon.tsx               ein Icon je Objektart
       ticket-resources.tsx      Dateien und Links des Tickets
       withdraw-ticket.tsx       Melder zieht sein eigenes Ticket zurück
       ticket-messages.tsx       nur die Bubble-Liste, beide Ansichten
@@ -202,6 +206,8 @@ src/
     notification-settings.ts Kanäle, Darstellung, Schwelle (mits_setting)
     notification-digest.ts  zählt und formuliert (rein, kein server-only!)
     realtime-backoff.ts     Reconnect mit Jitter (kein server-only!)
+    shortcuts.ts            swallowsKeys + Kuerzel-Referenz (kein server-only!)
+    template-values.ts      ein Aufloeser fuer {{kunde.vorname}} & Co.
     retract-window.ts       15 s, Countdown und Prüfung (kein server-only!)
     ticket-resources.ts     Links aus Nachrichten ziehen (kein server-only!)
     services/realtime.ts    Event-Bus: In-Process plus Pump pro Prozess
@@ -1005,6 +1011,155 @@ Werte — recharts nimmt `var(--chart-1)` direkt als `fill`. Die im Auftrag
 genannten Hex-Werte sind die Light-Werte und stehen genau dort. Auf Dark sind sie
 angehoben und leicht entsättigt: dasselbe Indigo, das auf Weiß souverän wirkt,
 ist auf Beinahe-Schwarz ein Loch.
+
+## Tastatur zuerst
+
+`hooks/use-keyboard-shortcuts.ts` ist ein `keydown`-Listener auf `window` und
+eine Regel: `swallowsKeys` (`lib/shortcuts.ts`, rein, in `npm test`).
+
+**Die Regel ist die ganze Sicherheit des Systems.** Zu großzügig, und ein `m`
+mitten in einer Antwort weist das Ticket zu und verschluckt den Buchstaben — ein
+stiller, falscher Schreibvorgang aus einem Tastendruck, der als Text gemeint war.
+Vier Dinge zählen als Tippen, die letzten beiden werden vergessen:
+
+- `<input>`, außer den Typen ohne Text. Ein Formular voller Schalter darf die
+  Kürzel der Seite nicht abschalten.
+- `<textarea>` und `<select>`.
+- **`contenteditable`** — das ist der Rich-Text-Editor. Kein Input-Element, ein
+  `instanceof HTMLInputElement` verfehlt ihn also vollständig, und er ist die
+  wahrscheinlichste Stelle für ein getipptes `r`.
+- Alles in einem offenen Dialog oder Menü. Radix setzt den Fokus auf ein `<div>`;
+  ein Kürzel, das hinter einem Modal feuert, wirkt auf eine unsichtbare Seite.
+
+`swallowsKeys` ist von `isTypingTarget` getrennt: die Entscheidung ist rein und
+prüfbar, der DOM-Zugriff ist es nicht.
+
+**Escape ist die Ausnahme von genau dieser Regel** und wird zuerst behandelt: es
+ist die einzige Taste, deren Aufgabe darin besteht, aus dem Feld herauszuführen,
+in dem man tippt. Es blurrt und löscht nichts — ein Kürzel, das eine halb
+geschriebene Antwort verwirft, weil jemand aus Gewohnheit nach Escape greift,
+wäre unverzeihlich.
+
+| Wo | Taste | Was |
+|---|---|---|
+| überall | `Strg`+`K` · `?` · `Esc` | Suche · Hilfe · Feld verlassen |
+| Queue | `J` `K` · `Enter` · `C` | Zeile tiefer/höher · öffnen · Zuständigkeit |
+| Ticket | `R` · `M` · `I` | Antwortzeile · mir zuweisen · interne Notiz |
+
+- **`m` schreibt aus einem Tastendruck**, als einziges. Vertretbar aus drei
+  Gründen: Zuweisung ist mit einem Klick umkehrbar, `assignTicket` lehnt eine
+  Nicht-Änderung ab, und `swallowsKeys` garantiert, dass die Taste kein
+  Buchstabe war. Gegen eine gehaltene Taste sichert ein `busy`-Ref — ohne das
+  postet ein aufgestützter Ellenbogen dieselbe Zuweisung dreißigmal.
+- **Der j/k-Cursor ist ein DOM-Attribut**, kein React-State. `TicketTable` bleibt
+  Server Component (die relativen Alter werden einmal beim Rendern gerechnet);
+  sie für einen Rahmen zum Client zu machen hieße, fünfzig Zeilen Formatierung in
+  den Browser zu verlegen. `data-cursor` wird gesetzt, `globals.css` malt.
+- **Die Zeilen werden bei jedem Tastendruck neu gesucht.** Ein gecachtes
+  `NodeList` zeigt nach dem nächsten Realtime-Refresh auf Elemente, die nicht
+  mehr im Dokument sind — die Markierung bliebe einfach aus, ohne Hinweis.
+- **`c` fokussiert, es schaltet nicht um.** „Pool" und „Mein Bereich" sind zwei
+  benannte Ziele; eine Taste, die zwischen ihnen kippt, hat eine Wirkung, die
+  davon abhängt, wo man schon war.
+- **Die Hilfe ist geschrieben, nicht generiert.** Eine erzeugte Liste wäre ehrlich
+  darüber, was gebunden ist, und nutzlos als Dokumentation — sie kann nicht
+  sagen, was `c` bedeutet. `npm test` prüft dafür, dass keine Gruppe dieselbe
+  Taste zweimal vergibt.
+- **`Kbd` ist eine Komponente.** Drei handgebaute Kopien der Tastenkappe waren
+  schon beim Padding auseinander. Unter `sm` versteckt, außer im Hilfe-Dialog,
+  wo die Kappen der Inhalt sind.
+
+## Vorlagen: `{{kunde.vorname}}`
+
+`fillCannedResponse` löst beide Schreibweisen auf. `{{kunde.vorname}}`,
+`{{kunde.name}}`, `{{agent.vorname}}`, `{{agent.name}}`, `{{ticket.id}}`,
+`{{ticket.kategorie}}` — und weiterhin `{reporter_name}`, `{agent_name}`,
+`{ticket_number}`.
+
+**Die alte Form bleibt, und zwar nicht aus Bequemlichkeit.** Vorlagen mit
+`{reporter_name}` liegen auf jeder bestehenden Instanz in `mits_setting`. Sie
+fallen zu lassen hieße, das literale `{reporter_name}` an einen Kunden zu mailen
+— die schlechteste denkbare Art, eine Syntax abzulösen.
+
+**`templateValuesFor` ist der einzige Auflöser** (`lib/template-values.ts`,
+`server-only`). Vorher bauten die Baustein-Auswahl und der Makro-Runner das
+Objekt je selbst, drei Felder, und waren schon uneins darüber, was
+`reporter_name` heißt. Bei sechs Feldern mit einer Anrede darunter sind zwei
+handgebaute Objekte zwei verschiedene Arten, dieselbe Person anzusprechen.
+
+- **Aufgelöst wird auf dem Server.** Der gefüllte Text erreicht den Browser, die
+  Eingaben nicht. Dieselbe Regel wie bei der KI-Triage.
+- **Der Meldername kommt über die Id**, nicht über `created_by_email`. Bei einem
+  Mail-Ticket sind die beiden absichtlich verschieden.
+- **`firstNameOf` teilt eine Adresse nicht.** Jemanden mit einem verstümmelten
+  Stück seiner E-Mail zu begrüßen ist schlechter als mit der Adresse.
+- **Ein unbekannter Token bleibt stehen.** Ein Admin, der sich vertippt hat, sieht
+  ihn in der Vorschau, statt später ein Loch in einer gesendeten Nachricht zu
+  finden.
+- **Makros stehen im selben `/`-Menü** wie die Bausteine, als eigene Gruppe
+  markiert: ein Baustein fügt Text ein, ein Makro ändert zusätzlich Felder und
+  sendet unter Umständen. Zwei Menüs für eine Geste hieße raten, in welchem der
+  gesuchte Eintrag liegt. Pfeiltasten und Type-ahead kommen vom Radix-Primitive.
+
+## Was an dieser Runde sonst noch kaputt war
+
+**Das Sende-Kürzel leerte das Feld, statt zu senden.** Das Composer-`<form>` hat
+keine eigene `action` — die beiden Knöpfe tragen `formAction`, weil Antworten und
+Antworten-und-Schließen zwei Server Actions sind. Ein nacktes `requestSubmit()`
+sendet damit **ohne** Action: React hat nichts auszuführen, der Browser macht
+seinen Default-Submit, das Feld wird zurückgesetzt. Jetzt wird der Antwort-Knopf
+als Submitter benannt.
+
+**Der Status änderte sich nicht überall.** Dreizehn Aufrufstellen revalidierten
+von Hand, alle die beiden Detailansichten und die Queue — **keine**
+`/customer/tickets`. Ein Agent schloss ein Ticket, und die Liste des Melders
+nannte es weiter offen. Jetzt ein `revalidateTicket`, das jede Fläche kennt,
+inklusive `/customer` wegen des Portal-Panels.
+
+**Eine Kundenantwort auf ein geschlossenes Ticket öffnet es wieder.** In
+`addComment`, damit der Mail-Ingest es mitbekommt — der häufigste Fall ist eine
+Antwort auf die Schließungsmail, die nie eine Server Action berührt. Nur für
+Melder und nur öffentlich: ein Agent, der auf einem geschlossenen Ticket eine
+Notiz ablegt, archiviert, er reaktiviert nicht. Zurück auf `open`, nicht auf den
+alten Status — was das Ticket vor drei Wochen tat, tut es jetzt nicht mehr.
+
+**Geschlossene Tickets sind beim Melder unter „Verlauf".** Die Liste eines
+Melders ist eine Liste dessen, was noch läuft; zehn erledigte Tickets über dem
+einen, auf das er wartet, ist dasselbe Versagen wie ein ungefilterter Posteingang.
+Nicht versteckt, einen Klick entfernt. **Die Agentenseite bleibt unverändert** —
+eine Queue, die geschlossene Tickets stillschweigend weglässt, ist eine Queue, die
+niemand prüfen kann.
+
+**„Antworten und Ticket schließen" steht nicht mehr neben „Antworten".** Zwei
+gleich große gefüllte Pillen nebeneinander laden im Tempo zur falschen ein, und
+die falsche ist hier die, die das Gespräch beendet.
+
+**Ein Sprung-Knopf statt umgedrehter Reihenfolge.** Beide Ansichten lesen wieder
+älteste zuerst — ein Chat, der an einer Stelle nach unten und an der anderen nach
+oben liest, sind zwei Produkte, und die Antwortzeile ist in beiden unten. Wer
+weggescrollt ist, bekommt stattdessen einen Knopf mit der Zahl der verpassten
+Nachrichten; wer unten steht, scrollt automatisch mit.
+
+## CMDB im Ticket
+
+Die Objekte lagen schon da (`mits_configuration_item`, `mits_ticket_ci`,
+`TicketAssets`). Neu ist, was daran fehlte:
+
+- **Ein Icon pro Objektart** (`components/tickets/ci-icon.tsx`). Eine Liste von
+  Inventarzeilen ist eine Liste von Namen, und `MITS-NB-0431` und `MITS-NB-0413`
+  haben dieselbe Form. In einer eigenen Datei, weil drei Seiten dieselben Zeilen
+  rendern — drei Kopien der Zuordnung wären drei Chancen, dass eine Lizenz
+  irgendwo wie ein Notebook aussieht.
+- **Vorschläge in zwei Gruppen** statt einer Liste: „Dem Melder zugewiesen" und
+  „Am selben Standort". Sie verdienen unterschiedliches Vertrauen, und
+  zusammengeworfen gewinnt der erste plausible Name — an einem geteilten Standort
+  regelmäßig das falsche Gerät. Die Zuordnung des Melders greift zuerst nach den
+  Ids, ein Notebook, das beides ist, ist seines.
+
+**Keine zweite `assets`-Tabelle.** Der Auftrag nennt eine; es gibt sie bereits als
+`mits_configuration_item`, und dass es *eine* Tabelle für alle Objektarten ist,
+ist eine dokumentierte Entscheidung. Eine zweite hieße zwei Bestände, von denen
+der Lizenzzähler nur einen sieht.
 
 ## Echtzeit: gepusht, wo es geht
 

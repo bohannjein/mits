@@ -260,10 +260,6 @@ export default async function CustomerTicketPage({
                 canEdit={flags.feature_message_editing}
                 canRetract={flags.feature_message_retract}
                 seenAt={seenAt}
-                // Newest on top. Somebody opening their own ticket is checking
-                // whether anybody answered, and scrolling a long thread to find
-                // out is the wrong answer to the only question they came with.
-                order="newest-first"
                 emptyText="Noch keine Antwort. Wir melden uns hier."
               />
             }

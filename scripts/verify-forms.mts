@@ -1,3 +1,5 @@
+import { SHORTCUT_GROUPS, isPlainKey, swallowsKeys } from "../src/lib/shortcuts";
+import { fillCannedResponse, firstNameOf } from "../src/types/mits";
 import {
   RECONNECT_BASE_MS,
   RECONNECT_MAX_MS,
@@ -3402,6 +3404,143 @@ console.log("retract window");
   // what the countdown reaching zero means on screen.
   check("...but not at exactly fifteen", !withinRetractWindow(at(15_000), now));
   check("...and not an hour later", !withinRetractWindow(at(3_600_000), now));
+}
+
+/* --------------------------------------------------------------------------
+   Keyboard shortcuts and template tokens.
+
+   `isTypingTarget` is the entire safety rule of the shortcut system in one
+   function, and getting it wrong in the permissive direction means pressing `m`
+   mid-sentence assigns the ticket and swallows a letter — a silent, wrong write
+   from a keystroke somebody meant as text. Worth asserting rather than reasoning
+   about inside a keydown handler.
+   -------------------------------------------------------------------------- */
+console.log("shortcut safety");
+{
+  const probe = (
+    tagName: string,
+    extra: {
+      inputType?: string;
+      contentEditable?: boolean;
+      insideOverlay?: boolean;
+    } = {},
+  ) => ({
+    tagName,
+    inputType: extra.inputType,
+    contentEditable: extra.contentEditable ?? false,
+    insideOverlay: extra.insideOverlay ?? false,
+  });
+
+  check("a textarea swallows keys", swallowsKeys(probe("TEXTAREA")));
+  check(
+    "a text input swallows keys",
+    swallowsKeys(probe("INPUT", { inputType: "text" })),
+  );
+  // No `type` attribute means a text input, and that is the common case.
+  check("an input with no type swallows keys", swallowsKeys(probe("INPUT")));
+  check("a select swallows keys", swallowsKeys(probe("SELECT")));
+  // The one an `instanceof HTMLInputElement` check misses entirely, and the most
+  // likely place in MITS for somebody to type an `r`.
+  check(
+    "contenteditable swallows keys",
+    swallowsKeys(probe("DIV", { contentEditable: true })),
+  );
+  check(
+    "an open dialog swallows keys",
+    swallowsKeys(probe("DIV", { insideOverlay: true })),
+  );
+  // Lower-case tagName happens in XHTML documents and in a few test setups.
+  check("the tag name is compared case-insensitively", swallowsKeys(probe("textarea")));
+
+  check("a plain div does not", !swallowsKeys(probe("DIV")));
+  check("a button does not", !swallowsKeys(probe("BUTTON")));
+  // A form of switches should not disable the shortcuts of the page it sits on.
+  check(
+    "a checkbox does not",
+    !swallowsKeys(probe("INPUT", { inputType: "checkbox" })),
+  );
+  check("a radio does not", !swallowsKeys(probe("INPUT", { inputType: "radio" })));
+
+  check(
+    "a bare key is ours",
+    isPlainKey({ ctrlKey: false, metaKey: false, altKey: false }),
+  );
+  // Ctrl+R reloads and Cmd+M minimises; claiming those takes a keystroke the
+  // operating system already owns.
+  check("ctrl is not", !isPlainKey({ ctrlKey: true, metaKey: false, altKey: false }));
+  check("cmd is not", !isPlainKey({ ctrlKey: false, metaKey: true, altKey: false }));
+  check("alt is not", !isPlainKey({ ctrlKey: false, metaKey: false, altKey: true }));
+}
+
+console.log("shortcut reference");
+{
+  // The failure this catches: two handlers on one page both claiming `r`.
+  for (const group of SHORTCUT_GROUPS) {
+    const combos = group.items.map((item) => item.keys.join("+"));
+    check(
+      `${group.title}: no duplicate binding`,
+      new Set(combos).size === combos.length,
+      combos.join(", "),
+    );
+    check(
+      `${group.title}: every entry is explained`,
+      group.items.every((item) => item.description.trim() !== "" && item.keys.length > 0),
+    );
+  }
+}
+
+console.log("template tokens");
+{
+  const values = {
+    ticket_number: "0000000000000042",
+    ticket_category: "Hardware-Bestellung",
+    reporter_name: "Anna Meier",
+    reporter_first_name: "Anna",
+    agent_name: "Bea Schulz",
+    agent_first_name: "Bea",
+  };
+
+  check(
+    "the dotted form resolves",
+    fillCannedResponse("Hallo {{kunde.vorname}},", values) === "Hallo Anna,",
+  );
+  check(
+    "full names resolve",
+    fillCannedResponse("{{kunde.name}} / {{agent.name}}", values) ===
+      "Anna Meier / Bea Schulz",
+  );
+  check(
+    "ticket tokens resolve",
+    fillCannedResponse("{{ticket.id}} — {{ticket.kategorie}}", values) ===
+      "0000000000000042 — Hardware-Bestellung",
+  );
+  // Templates written before the dotted syntax are sitting in mits_setting on
+  // every existing instance; dropping them would mail the literal token out.
+  check(
+    "the old single-brace form still works",
+    fillCannedResponse("{reporter_name} / {agent_name}", values) ===
+      "Anna Meier / Bea Schulz",
+  );
+  check(
+    "a repeated token is replaced every time",
+    fillCannedResponse("{{kunde.vorname}} {{kunde.vorname}}", values) === "Anna Anna",
+  );
+  // An unknown token is left standing rather than blanked: an admin who mistyped
+  // one sees it in the preview instead of finding a hole in a sent message.
+  check(
+    "an unknown token is left alone",
+    fillCannedResponse("{{kunde.spitzname}}", values) === "{{kunde.spitzname}}",
+  );
+
+  check("a first name is the first word", firstNameOf("Anna Meier") === "Anna");
+  check("one word is its own first name", firstNameOf("Anna") === "Anna");
+  // Greeting somebody by a mangled fragment of their address is worse than
+  // greeting them by the address.
+  check(
+    "an address is not split",
+    firstNameOf("anna.meier@firma.de") === "anna.meier@firma.de",
+  );
+  check("empty stays empty", firstNameOf("   ") === "");
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

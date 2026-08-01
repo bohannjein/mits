@@ -185,7 +185,19 @@ export function TicketTable({
               : undefined;
 
             return (
-              <TableRow key={ticket.id}>
+              /*
+                `data-ticket-row` and `data-ticket-href` are what the j/k cursor
+                walks. Attributes rather than a callback: this stays a Server
+                Component, so the relative ages are computed once at render
+                instead of after hydration — and making it a client component to
+                draw one outline would move fifty rows of formatting into the
+                browser to move a border.
+              */
+              <TableRow
+                key={ticket.id}
+                data-ticket-row=""
+                data-ticket-href={`${detailBase}/${ticket.id}`}
+              >
                 <TableCell
                   className={cn(
                     "font-mono text-xs whitespace-nowrap text-muted-foreground",

@@ -546,29 +546,83 @@ export const CannedResponseSchema = z.object({
 export type CannedResponse = z.infer<typeof CannedResponseSchema>;
 
 /**
- * Fill the placeholders a canned response may carry.
+ * Everything a template may substitute, resolved by the caller.
  *
- * Same shape as `fillPortalText`: literal `{token}` replacement, no expression
- * language. A template that could compute would be a template that could leak.
+ * Flat and complete: every field is required, so adding one is a compile error at
+ * both call sites rather than an empty string in somebody's reply. A partial
+ * object would substitute "undefined" into a message going to a customer.
  */
-export function fillCannedResponse(
-  body: string,
-  values: {
-    ticket_number: string;
-    reporter_name: string;
-    agent_name: string;
-  },
-): string {
-  return body
-    .replaceAll("{ticket_number}", values.ticket_number)
-    .replaceAll("{reporter_name}", values.reporter_name)
-    .replaceAll("{agent_name}", values.agent_name);
+export interface TemplateValues {
+  ticket_number: string;
+  ticket_category: string;
+  reporter_name: string;
+  reporter_first_name: string;
+  agent_name: string;
+  agent_first_name: string;
 }
 
+/**
+ * The tokens a canned response or macro may carry.
+ *
+ * **Two syntaxes, both supported, and that is deliberate.** `{{kunde.vorname}}`
+ * is the documented one — dotted, doubled braces, readable to somebody who has
+ * seen any other template language. `{reporter_name}` is what earlier versions
+ * wrote, and templates using it are sitting in `mits_setting` on every existing
+ * instance. Dropping it would turn those into messages that mail the literal
+ * `{reporter_name}` to a customer, which is the worst possible way to deprecate
+ * a syntax.
+ *
+ * Literal replacement, no expression language. Same rule as `fillPortalText`: a
+ * template that could compute would be a template that could leak.
+ */
+const TEMPLATE_TOKENS: Record<string, keyof TemplateValues> = {
+  // Current syntax.
+  "{{ticket.id}}": "ticket_number",
+  "{{ticket.nummer}}": "ticket_number",
+  "{{ticket.kategorie}}": "ticket_category",
+  "{{kunde.name}}": "reporter_name",
+  "{{kunde.vorname}}": "reporter_first_name",
+  "{{agent.name}}": "agent_name",
+  "{{agent.vorname}}": "agent_first_name",
+  // Kept working for templates written before the dotted form existed.
+  "{ticket_number}": "ticket_number",
+  "{reporter_name}": "reporter_name",
+  "{agent_name}": "agent_name",
+};
+
+export function fillCannedResponse(
+  body: string,
+  values: TemplateValues,
+): string {
+  let out = body;
+  for (const [token, key] of Object.entries(TEMPLATE_TOKENS)) {
+    out = out.replaceAll(token, values[key]);
+  }
+  return out;
+}
+
+/**
+ * A first name, from whatever the display name happens to be.
+ *
+ * The first whitespace-separated word, and an address has none — so
+ * `anna.meier@firma.de` yields the whole address rather than something that looks
+ * like a name and is not. Greeting somebody by a mangled fragment of their email
+ * is worse than greeting them by the address.
+ */
+export function firstNameOf(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed === "" || trimmed.includes("@")) return trimmed;
+  return trimmed.split(/\s+/)[0];
+}
+
+/** Shown in the admin mask, so nobody has to guess the spelling. */
 export const CANNED_PLACEHOLDERS = [
-  "{ticket_number}",
-  "{reporter_name}",
-  "{agent_name}",
+  "{{kunde.vorname}}",
+  "{{kunde.name}}",
+  "{{agent.vorname}}",
+  "{{agent.name}}",
+  "{{ticket.id}}",
+  "{{ticket.kategorie}}",
 ] as const;
 
 /* ──────────────────────────────────────────────────────────────────────────

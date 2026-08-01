@@ -11,6 +11,7 @@ import { PresenceList } from "@/components/dashboard/presence-list";
 import { StatsTiles } from "@/components/dashboard/stats-tiles";
 import { AppHeader } from "@/components/layout/app-header";
 import { QueueLive } from "@/components/tickets/queue-live";
+import { QueueShortcuts } from "@/components/tickets/queue-shortcuts";
 import { QueueTabs } from "@/components/tickets/queue-tabs";
 import type { TicketFilterValues } from "@/components/tickets/ticket-filters";
 import { TicketPager } from "@/components/tickets/ticket-pager";
@@ -155,6 +156,8 @@ export default async function AgentQueuePage({
           {/* Renders nothing. Refreshes the list on a realtime signal, and
               falls back to an ETag check that answers 304 when nothing moved. */}
           <QueueLive />
+          {/* j / k / Enter / c over the table below. Renders nothing. */}
+          <QueueShortcuts />
           <div>
             <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
               Queue

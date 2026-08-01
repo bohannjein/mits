@@ -4,6 +4,7 @@ import {
   CheckCircle2Icon,
   CheckCheckIcon,
   ChevronDownIcon,
+  FileTextIcon,
   Loader2Icon,
   LockIcon,
   SendIcon,
@@ -11,9 +12,11 @@ import {
   ZapIcon,
 } from "lucide-react";
 import {
+  startTransition,
   useActionState,
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -23,6 +26,8 @@ import {
   runMacroAction,
 } from "@/app/actions/tickets";
 import { useToast } from "@/components/feedback/toast";
+import { Kbd } from "@/components/layout/shortcut-hint";
+import { useComposerHandle } from "@/components/tickets/composer-handle";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +35,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -99,6 +105,46 @@ export function TicketComposer({
   );
 
   const rich = variant === "rich";
+
+  /*
+   * Running a macro from the dropdown, where there is no form to submit.
+   *
+   * `useActionState`'s dispatch takes the same `FormData` a form would have
+   * posted, so the action is untouched. `startTransition` because this comes from
+   * a menu selection rather than a submit event — without it React warns and the
+   * pending flag that disables the controls never turns on.
+   */
+  /*
+   * Hand the page two callbacks rather than two DOM nodes.
+   *
+   * Focusing differs by variant — the textarea takes `.focus()`, the rich editor
+   * needs a tiptap command — and the internal switch is React state with no
+   * element to click. A ref to a node would make the page know both of those.
+   */
+  const plainRef = useRef<HTMLTextAreaElement>(null);
+
+  const handle = useComposerHandle();
+
+  useEffect(() => {
+    if (!handle) return;
+
+    handle.focus.current = () => {
+      if (rich) editor?.focus();
+      else plainRef.current?.focus();
+    };
+    // Only an agent has the switch; for a reporter the shortcut does nothing
+    // rather than toggling a control that is not on their screen.
+    handle.toggleInternal.current = isAgent
+      ? () => setInternal((on) => !on)
+      : null;
+  }, [handle, rich, editor, isAgent]);
+
+  const dispatchMacro = (fields: { ticketId: string; macroId: string }) => {
+    const data = new FormData();
+    data.set("ticketId", fields.ticketId);
+    data.set("macroId", fields.macroId);
+    startTransition(() => macroAction(data));
+  };
   const result = replyResult ?? closeResult;
   const busy = replying || closing || runningMacro;
 
@@ -154,12 +200,18 @@ export function TicketComposer({
   const canSend = body.trim() !== "" && !busy;
 
   /*
-   * Ctrl+Enter (Cmd+Enter on a Mac) sends.
+   * Ctrl+Enter, Cmd+Enter and Shift+Enter all send.
    *
    * Plain Enter deliberately does not. This box holds multi-line replies with
    * steps in them, and a bare Enter that submits turns every numbered list into a
    * half-written message — the mistake is unrecoverable in the direction that
    * matters, because the half-message is already in the customer's inbox.
+   *
+   * Shift+Enter is in there because it is what this application was asked for and
+   * what several helpdesk tools use; the cost is that it no longer inserts a
+   * newline. That is affordable **only** because plain Enter still does — in the
+   * textarea natively, and in the rich editor as a new paragraph. Binding plain
+   * Enter to send is the version that would be wrong.
    *
    * On the form rather than on each editor: it then works from the textarea, from
    * the rich editor and from the buttons, and there is one place that knows the
@@ -168,11 +220,28 @@ export function TicketComposer({
    */
   const onKeyDown = (event: React.KeyboardEvent<HTMLFormElement>) => {
     if (event.key !== "Enter") return;
-    if (!event.ctrlKey && !event.metaKey) return;
+    if (!event.ctrlKey && !event.metaKey && !event.shiftKey) return;
     if (!canSend) return;
     event.preventDefault();
-    event.currentTarget.requestSubmit();
+    /*
+     * **With the submitter**, and that is not a detail.
+     *
+     * This form has no `action` of its own — the two buttons carry
+     * `formAction={replyAction}` and `formAction={closeAction}`, because replying
+     * and replying-and-closing are two different server actions. A bare
+     * `requestSubmit()` therefore submits with no action at all: React has
+     * nothing to run, the browser performs the default submit, and the field is
+     * reset. The reported symptom was exact — the shortcut cleared the reply
+     * instead of sending it, which is the worst way for a send shortcut to fail.
+     *
+     * Passing the reply button names the action, so the keystroke does precisely
+     * what pressing that button does.
+     */
+    replyButton.current?.click();
   };
+
+  /** The default submit for the keyboard shortcut. See `onKeyDown`. */
+  const replyButton = useRef<HTMLButtonElement>(null);
 
   return (
     <form
@@ -207,7 +276,7 @@ export function TicketComposer({
 
         {/* Inserted into the field, never sent on its own — the agent confirms
             what goes out, same rule as the AI triage. */}
-        {isAgent && cannedResponses.length > 0 && (
+        {isAgent && (cannedResponses.length > 0 || macros.length > 0) && (
           <DropdownMenu open={snippetsOpen} onOpenChange={setSnippetsOpen}>
             <DropdownMenuTrigger asChild>
               <Button
@@ -217,12 +286,8 @@ export function TicketComposer({
                 className="h-8 rounded-full px-3 text-xs"
                 disabled={busy}
               >
-                Textbaustein
-                {rich && (
-                  <kbd className="rounded border border-border px-1 font-mono text-[10px] text-muted-foreground">
-                    /
-                  </kbd>
-                )}
+                Bausteine
+                {rich && <Kbd keys={["/"]} />}
                 <ChevronDownIcon strokeWidth={1.5} />
               </Button>
             </DropdownMenuTrigger>
@@ -230,18 +295,57 @@ export function TicketComposer({
               align="end"
               className="w-72 rounded-2xl border border-border shadow-elev-2"
             >
-              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                Wird eingefügt, nicht gesendet
-              </DropdownMenuLabel>
-              {cannedResponses.map((canned) => (
-                <DropdownMenuItem
-                  key={canned.id}
-                  className="rounded-xl"
-                  onSelect={() => insertText(canned.body)}
-                >
-                  {canned.title}
-                </DropdownMenuItem>
-              ))}
+              {/*
+                Arrow keys and type-ahead come from the primitive — Radix’s menu
+                is already a roving-focus listbox, so `/` opening it is enough to
+                make the whole thing keyboard-driven. Building a bespoke popover
+                here would mean reimplementing focus trapping and arrow handling
+                to arrive at what this already does.
+              */}
+              {cannedResponses.length > 0 && (
+                <>
+                  <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                    Textbausteine — werden eingefügt, nicht gesendet
+                  </DropdownMenuLabel>
+                  {cannedResponses.map((canned) => (
+                    <DropdownMenuItem
+                      key={canned.id}
+                      className="rounded-xl"
+                      onSelect={() => insertText(canned.body)}
+                    >
+                      <FileTextIcon strokeWidth={1.5} />
+                      {canned.title}
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              )}
+
+              {/*
+                Macros in the same menu, and marked as the different thing they
+                are: a baustein inserts text, a macro also changes fields and may
+                send. Two menus for one gesture would mean guessing which one holds
+                the entry you want.
+              */}
+              {macros.length > 0 && (
+                <>
+                  {cannedResponses.length > 0 && <DropdownMenuSeparator />}
+                  <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                    Makros — ändern auch Felder
+                  </DropdownMenuLabel>
+                  {macros.map((macro) => (
+                    <DropdownMenuItem
+                      key={macro.id}
+                      className="rounded-xl"
+                      onSelect={() =>
+                        dispatchMacro({ ticketId, macroId: macro.id })
+                      }
+                    >
+                      <ZapIcon strokeWidth={1.5} />
+                      {macro.title}
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
@@ -306,6 +410,7 @@ export function TicketComposer({
         />
       ) : (
         <Textarea
+          ref={plainRef}
           id="composer-body"
           value={body}
           onChange={(event) => setBody(event.target.value)}
@@ -343,18 +448,13 @@ export function TicketComposer({
         {/* The shortcut, where the hand already is. Hidden below `sm` — a phone
             has no Ctrl key and the line would be furniture. */}
         <span className="hidden items-center gap-1 text-xs text-muted-foreground sm:inline-flex">
-          <kbd className="rounded border border-border px-1 font-mono text-[10px]">
-            Strg
-          </kbd>
-          +
-          <kbd className="rounded border border-border px-1 font-mono text-[10px]">
-            Enter
-          </kbd>
+          <Kbd keys={["Strg", "Enter"]} />
           senden
         </span>
 
         <div className="flex flex-wrap items-center gap-2">
           <Button
+            ref={replyButton}
             type="submit"
             formAction={replyAction}
             className={cn(
@@ -373,27 +473,45 @@ export function TicketComposer({
               <SendIcon strokeWidth={1.5} />
             )}
             {internal ? "Notiz speichern" : "Antworten"}
+            {/* The shortcut that fills this field, on the button it ends at. */}
+            {isAgent && <Kbd keys={["R"]} className="opacity-60" />}
           </Button>
 
-          {/* Public only. "Answer and close" that filed an internal note would
-              close a ticket the reporter never heard about. */}
-          {isAgent && !internal && (
-            <Button
-              type="submit"
-              formAction={closeAction}
-              className="h-10 rounded-full bg-inverse-surface px-5 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
-              disabled={!canSend}
-            >
-              {closing ? (
-                <Loader2Icon className="animate-spin" />
-              ) : (
-                <CheckCheckIcon strokeWidth={1.5} />
-              )}
-              Antworten &amp; Schließen
-            </Button>
-          )}
         </div>
       </div>
+
+      {/*
+        "Antworten & Schließen" on its own line, away from the send button.
+        
+        It sat beside it as an equally weighted filled pill, and the two are not
+        equally weighted: one adds a message, the other adds a message **and ends
+        the conversation**. Two adjacent buttons of the same size invite the wrong
+        one at speed, and the wrong one here is the irreversible-feeling half —
+        the reporter gets a closed ticket they may not consider closed.
+
+        Below the field, quieter, and full width so it cannot be hit while aiming
+        for the primary action.
+
+        Public only: an "answer and close" that filed an internal note would close
+        a ticket the reporter never heard about.
+      */}
+      {isAgent && !internal && (
+        <Button
+          type="submit"
+          formAction={closeAction}
+          variant="ghost"
+          size="sm"
+          className="h-8 w-full rounded-full text-xs text-muted-foreground"
+          disabled={!canSend}
+        >
+          {closing ? (
+            <Loader2Icon className="animate-spin" />
+          ) : (
+            <CheckCheckIcon strokeWidth={1.5} />
+          )}
+          Antworten und Ticket schließen
+        </Button>
+      )}
 
       {result && (
         <Alert

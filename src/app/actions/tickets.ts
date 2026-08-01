@@ -60,6 +60,26 @@ export type TicketActionResult =
   | { ok: false; error: string };
 
 /**
+ * Every page a ticket shows up on, revalidated together.
+ *
+ * There were thirteen call sites doing this by hand and they had drifted: all of
+ * them refreshed the two detail views and the queue, **none** refreshed
+ * `/customer/tickets`. So an agent could close a ticket and the reporter's own
+ * list went on calling it open until something else happened to rebuild that
+ * page — which is exactly the "the status does not change everywhere" report.
+ *
+ * One function, so a surface added later is added once. `/customer` is in it
+ * because the portal has an open-tickets panel, and that panel counting a closed
+ * ticket is the same bug one page over.
+ */
+function revalidateTicket(ticketId: string): void {
+  revalidateTicket(ticketId);
+  revalidatePath("/customer/tickets");
+  revalidatePath("/customer");
+  revalidatePath("/mits");
+}
+
+/**
  * Shared preamble: authenticated, ticket visible, and staff if required.
  *
  * Explicitly tagged rather than relying on `"error" in result` narrowing — an
@@ -109,9 +129,7 @@ export async function assignTicketAction(
     throw error;
   }
 
-  revalidatePath(`/customer/tickets/${ticketId}`);
-  revalidatePath(`/mits/tickets/${ticketId}`);
-  revalidatePath("/mits");
+  revalidateTicket(ticketId);
 
   return {
     ok: true,
@@ -131,9 +149,7 @@ export async function setTicketStatusAction(
   if (!status.success) return { ok: false, error: "Unbekannter Status." };
 
   setTicketStatus(ticketId, status.data, auth.user);
-  revalidatePath(`/customer/tickets/${ticketId}`);
-  revalidatePath(`/mits/tickets/${ticketId}`);
-  revalidatePath("/mits");
+  revalidateTicket(ticketId);
 
   return { ok: true, message: "Status geändert." };
 }
@@ -150,9 +166,7 @@ export async function setTicketPriorityAction(
   if (!priority.success) return { ok: false, error: "Unbekannte Priorität." };
 
   setTicketPriority(ticketId, priority.data, auth.user);
-  revalidatePath(`/customer/tickets/${ticketId}`);
-  revalidatePath(`/mits/tickets/${ticketId}`);
-  revalidatePath("/mits");
+  revalidateTicket(ticketId);
 
   return { ok: true, message: "Priorität geändert." };
 }
@@ -212,9 +226,7 @@ export async function replyAndCloseAction(
 
   setTicketStatus(ticketId, "closed", auth.user);
 
-  revalidatePath(`/customer/tickets/${ticketId}`);
-  revalidatePath(`/mits/tickets/${ticketId}`);
-  revalidatePath("/mits");
+  revalidateTicket(ticketId);
 
   if (auth.ticket.created_by_email !== comment.author_email) {
     await sendNotification({
@@ -312,8 +324,7 @@ export async function addCommentAction(
     throw error;
   }
 
-  revalidatePath(`/customer/tickets/${ticketId}`);
-  revalidatePath(`/mits/tickets/${ticketId}`);
+  revalidateTicket(ticketId);
 
   /*
    * Notify the reporter, under three conditions that all have to hold:
@@ -390,8 +401,7 @@ export async function editCommentAction(
     throw error;
   }
 
-  revalidatePath(`/customer/tickets/${ticketId}`);
-  revalidatePath(`/mits/tickets/${ticketId}`);
+  revalidateTicket(ticketId);
 
   return { ok: true, message: "Beitrag geändert." };
 }
@@ -422,8 +432,7 @@ export async function retractCommentAction(
     throw error;
   }
 
-  revalidatePath(`/customer/tickets/${ticketId}`);
-  revalidatePath(`/mits/tickets/${ticketId}`);
+  revalidateTicket(ticketId);
 
   return { ok: true, message: "Beitrag zurückgezogen." };
 }
@@ -496,9 +505,7 @@ export async function runMacroAction(
     throw error;
   }
 
-  revalidatePath(`/customer/tickets/${ticketId}`);
-  revalidatePath(`/mits/tickets/${ticketId}`);
-  revalidatePath("/mits");
+  revalidateTicket(ticketId);
 
   /*
    * The mail goes out only for a macro that actually sent something, and only to

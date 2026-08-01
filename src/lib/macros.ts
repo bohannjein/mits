@@ -7,13 +7,13 @@ import type { SessionUser } from "@/lib/auth/session";
 import { listCannedResponses } from "@/lib/canned-responses";
 import { db } from "@/lib/db/sqlite";
 import { addComment } from "@/lib/ticket-comments";
+import { templateValuesFor } from "@/lib/template-values";
 import { assignTicket, setTicketPriority, setTicketStatus } from "@/lib/tickets";
 import {
   MacroSchema,
   TicketPriority,
   TicketStatus,
   fillCannedResponse,
-  formatTicketNumber,
   type Macro,
   type MITSTicket,
 } from "@/types/mits";
@@ -169,11 +169,9 @@ export function runMacro(
       );
     }
 
-    body = fillCannedResponse(canned.body, {
-      ticket_number: formatTicketNumber(ticket.ticket_number),
-      reporter_name: ticket.created_by_email,
-      agent_name: user.name,
-    });
+    // One resolver, shared with the ticket page's dropdown. Two hand-built
+    // objects had already drifted on what `reporter_name` meant.
+    body = fillCannedResponse(canned.body, templateValuesFor(ticket, user.name));
 
     if (macro.reply_mode === "send") {
       // Plain text, not HTML: a canned response is stored as text and handing it
