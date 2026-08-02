@@ -12,6 +12,7 @@ import {
 import {
   CI_STATUS_LABELS,
   CI_TYPE_LABELS,
+  formatInventoryNumber,
   type CIStatus,
   type MITSConfigurationItem,
 } from "@/types/mits";
@@ -69,10 +70,19 @@ export function CITable({
                 >
                   {item.name}
                 </Link>
+                {/*
+                  The MITS number leads the second line and is monospaced, because
+                  that is what somebody compares against a sticker character by
+                  character. The vendor tag follows only when there is one.
+                */}
                 <span className="block truncate text-xs text-muted-foreground">
+                  <span className="font-mono">
+                    {formatInventoryNumber(item.inventory_number)}
+                  </span>
                   {[item.asset_tag, item.manufacturer, item.model]
                     .filter(Boolean)
-                    .join(" · ") || "—"}
+                    .map((part) => ` · ${part}`)
+                    .join("")}
                 </span>
               </TableCell>
 

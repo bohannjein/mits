@@ -18,7 +18,11 @@ import { listActiveLocations } from "@/lib/locations";
 import { listActiveOrganizations, listOrganizations } from "@/lib/organizations";
 import { getSystemTimezone } from "@/lib/system-settings";
 import { listUsers } from "@/lib/users";
-import { LICENCE_EXPIRY_WARN_DAYS, expiryState } from "@/types/mits";
+import {
+  LICENCE_EXPIRY_WARN_DAYS,
+  expiryState,
+  formatInventoryNumber,
+} from "@/types/mits";
 
 export const metadata: Metadata = {
   title: "Lizenzen — MITS",
@@ -160,6 +164,7 @@ export default async function LicencesPage() {
                         </Link>
                         <p className="mt-0.5 truncate text-xs text-muted-foreground">
                           {[
+                            formatInventoryNumber(item.inventory_number),
                             item.manufacturer,
                             item.organization_id
                               ? organizationNames[item.organization_id]

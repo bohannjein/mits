@@ -174,7 +174,9 @@ import {
   fillPortalText,
   formatFileSize,
   isImageAttachment,
+  formatInventoryNumber,
   formatTicketNumber,
+  parseInventoryNumber,
   parseTicketNumber,
   resolveSmtpPassword,
   CIRelationKind,
@@ -587,24 +589,40 @@ console.log("ticket number parsing");
     "formatting round-trips",
     parseTicketNumber(formatTicketNumber(1042)) === 1042,
   );
+  /*
+   * The shape is the contract: prefix, a fixed leading 1, then the counter padded to
+   * fifteen. It ends up in mail subjects and on paper, so it is asserted literally
+   * rather than derived — a formatter that changed width would otherwise pass its own
+   * round-trip test while breaking every reference already sent.
+   */
   check(
-    "a number renders padded to sixteen digits",
-    formatTicketNumber(1042) === "0000000000001042",
+    "a ticket renders as TCK plus sixteen digits",
+    formatTicketNumber(1042) === "TCK-1000000000001042",
     formatTicketNumber(1042),
   );
   check(
-    "the first ticket is all zeros but one",
-    formatTicketNumber(1) === "0000000000000001",
+    "the first ticket ever is TCK-1000000000000001",
+    formatTicketNumber(1) === "TCK-1000000000000001",
     formatTicketNumber(1),
   );
   check(
-    "the padded form parses back",
-    parseTicketNumber("0000000000001042") === 1042,
-    "copy-paste out of a mail is now the common path",
+    "the full form parses back",
+    parseTicketNumber("TCK-1000000000001042") === 1042,
+    "copy-paste out of a mail is the common path",
+  );
+  check(
+    "…without the prefix too",
+    parseTicketNumber("1000000000001042") === 1042,
   );
   check(
     "a bare number still parses",
     parseTicketNumber("1042") === 1042,
+  );
+  // The leading 1 is only dropped at the full width. Otherwise `1042` — which is
+  // what somebody types — would come back as 42.
+  check(
+    "a short number keeps its leading one",
+    parseTicketNumber("TCK-1042") === 1042,
   );
   check(
     "the retired TICK- form is still accepted",
@@ -612,6 +630,37 @@ console.log("ticket number parsing");
       parseTicketNumber("tick 1042") === 1042,
     "sent mail and written-down numbers carry it",
   );
+
+  /*
+   * The inventory series, same shape and eight digits wide. Separate assertions
+   * rather than a loop over both: the widths are the whole point, and a helper that
+   * derived them from the constants would agree with any value they happened to hold.
+   */
+  check(
+    "an object renders as INV plus eight digits",
+    formatInventoryNumber(42) === "INV-10000042",
+    formatInventoryNumber(42),
+  );
+  check(
+    "the first object ever is INV-10000001",
+    formatInventoryNumber(1) === "INV-10000001",
+    formatInventoryNumber(1),
+  );
+  check(
+    "the inventory form parses back",
+    parseInventoryNumber("INV-10000042") === 42,
+  );
+  check(
+    "…case and separator do not matter",
+    parseInventoryNumber("inv 10000042") === 42,
+  );
+  check("a bare inventory number parses", parseInventoryNumber("42") === 42);
+  check(
+    "a ticket number is not an inventory number",
+    parseInventoryNumber("TCK-1000000000001042") === null,
+    "sixteen digits is past the inventory width, and the prefix is not INV",
+  );
+  check("empty is not an inventory number", parseInventoryNumber("") === null);
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -764,11 +813,11 @@ console.log("mail templates");
    * would pass on a subject that merely happened to contain those digits.
    */
   check(
-    "subject carries the padded number in brackets",
-    created.subject.includes("[0000000000001042]"),
+    "subject carries the prefixed number in brackets",
+    created.subject.includes("[TCK-1000000000001042]"),
     created.subject,
   );
-  check("html carries the number", created.html.includes("0000000000001042"));
+  check("html carries the number", created.html.includes("TCK-1000000000001042"));
   check(
     "the retired prefix is gone from the subject",
     !created.subject.includes("TICK"),
@@ -814,7 +863,7 @@ console.log("mail templates");
   );
   check(
     "reply subject carries the number",
-    reply.subject.includes("[0000000000001042]"),
+    reply.subject.includes("[TCK-1000000000001042]"),
   );
 }
 
@@ -2550,10 +2599,13 @@ console.log("macros");
 console.log("mail ingest");
 {
   const num = ticketNumberFromSubject;
-  check("a bracketed padded number is found", num("[0000000000001042] Neue Antwort: Drucker") === 1042);
-  check("a reply prefix does not hide it", num("AW: [0000000000001042] Drucker") === 1042);
+  check("the bracketed number MITS sends is found", num("[TCK-1000000000001042] Neue Antwort: Drucker") === 1042);
+  check("a reply prefix does not hide it", num("AW: [TCK-1000000000001042] Drucker") === 1042);
+  // What clients and people do to a subject: drop the prefix, retype it short.
+  check("the number without the prefix works", num("Re: [1000000000001042] Drucker") === 1042);
   check("a short hand-typed number works", num("Re: [1042] Drucker") === 1042);
   check("a hash inside the brackets works", num("[#1042] Drucker") === 1042);
+  check("an older TICK- subject still matches", num("AW: [TICK-1042] Drucker") === 1042);
   /*
    * The brackets are the whole safety margin. A bare run of digits in a subject is
    * an order number, an invoice or an IBAN fragment as often as it is a ticket,
@@ -2561,7 +2613,7 @@ console.log("mail ingest");
    * worse of the two mistakes.
    */
   check("a bare number is not a ticket reference", num("Rechnung 1042 vom 03.08.") === null);
-  check("a number with no brackets anywhere is refused", num("Bestellung 0000000000001042") === null);
+  check("a number with no brackets anywhere is refused", num("Bestellung 1000000000001042") === null);
   check("zero is refused", num("[0] Test") === null);
   check("a subject with no number is refused", num("Drucker kaputt") === null);
 

@@ -181,51 +181,117 @@ export const STATUS_RANK: Record<TicketStatus, number> = {
   closed: 5,
 };
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Two number series, one shape: a prefix, a leading 1, then the counter.
+
+   `TCK-1000000000000001` is the first ticket ever written on an instance,
+   `INV-10000001` the first inventory object. Sixteen digits for a ticket, eight
+   for an object, the leading 1 included in both counts.
+
+   **The leading 1 is part of the *display*, not of the stored value.** The
+   database keeps the plain counter — 1, 2, 3 — and the formatter builds the rest.
+   That is not decoration: a literal seventeen-digit value would be past
+   `Number.MAX_SAFE_INTEGER` (~9.007e15), so `10000000000000001` cannot be held in
+   a JavaScript number without silently rounding. Everything that sorts, counts or
+   compares therefore works on the counter, and only the two functions below know
+   about the padding.
+
+   Why a leading 1 at all: a fixed first digit makes every number the same width
+   from the very first one, so `TCK-…001` and `TCK-…999` line up in a mail subject,
+   a spreadsheet column and a sorted list. Zero-padding alone did that too, but a
+   run of leading zeros invites somebody to drop them.
+
+   The counter's ceiling is the field width minus that digit: 10^15 - 1 tickets and
+   9,999,999 objects. Recorded rather than left as a surprise.
+   ────────────────────────────────────────────────────────────────────────── */
+
 /**
- * Human-readable ticket number: sixteen digits, zero-padded, counted from 1.
- *
- * `0000000000000001`. Stored as an integer and padded on the way out, so sorting and the
- * search-by-number path still work on a number — and a padded string sorts correctly as
- * text too, which is what makes it usable in a mail subject or a spreadsheet column.
- *
- * Sixteen digits is beyond what JavaScript can represent exactly: `Number.MAX_SAFE_INTEGER`
- * is about 9.007e15, a full sixteen-nine number is 9.999e15. The padding is therefore a
- * display width, not a capacity — the counter would lose precision long before it filled
- * the field, at roughly nine quadrillion tickets. Recorded rather than left as a surprise.
- *
- * `TICKET_NUMBER_START` only affects a fresh instance. An existing one keeps counting from
- * its own highest number: renumbering would invalidate every reference in every mail
+ * Only affects a fresh instance. An existing one keeps counting from its own
+ * highest number: renumbering would invalidate every reference in every mail
  * already sent.
  */
 export const TICKET_NUMBER_START = 1;
 
-/** Display width. Not a capacity — see above. */
+/** Total digits after the prefix, the leading 1 included. */
 export const TICKET_NUMBER_DIGITS = 16;
+export const TICKET_NUMBER_PREFIX = "TCK";
 
 /** Retired from display, kept because the parser still recognises it. */
 export const LEGACY_TICKET_PREFIX = "TICK";
 
-export const formatTicketNumber = (n: number): string =>
-  String(n).padStart(TICKET_NUMBER_DIGITS, "0");
+export const INVENTORY_NUMBER_START = 1;
+export const INVENTORY_NUMBER_DIGITS = 8;
+export const INVENTORY_NUMBER_PREFIX = "INV";
 
 /**
- * Pull a ticket number out of whatever a user typed: `1001`, `TICK-1001`,
- * `tick 1001`, `#1001`. Returns null when there is no plausible number, so the
- * caller can fall back to a text search instead of jumping.
+ * `<PREFIX>-1<counter padded to width - 1>`.
  *
- * The `TICK-` forms are deliberately still accepted although nothing produces them any
- * more. They are in sent mail and in whatever people wrote on a sticky note, and the
- * cost of tolerating them is one optional group in a regex.
+ * Shared by both series so the two cannot drift apart in the one respect that
+ * matters — where the counter starts inside the digit run — and so `parse` below
+ * has exactly one format to reverse.
  */
-export function parseTicketNumber(input: string): number | null {
-  const match = input
-    .trim()
-    .replace(/^#/, "")
-    .match(/^(?:tick[\s-]*)?(\d{1,16})$/i);
+function formatSeries(prefix: string, digits: number, n: number): string {
+  return `${prefix}-1${String(Math.max(0, Math.trunc(n))).padStart(digits - 1, "0")}`;
+}
+
+/**
+ * The counter behind whatever somebody typed, or null.
+ *
+ * Accepts the full form (`TCK-1000000000000042`), the prefix with a short number
+ * (`TCK-42`), a bare number (`42`) and a leading `#`. Case and the separator are
+ * free, because these get read off a sticky note and out of a mail subject.
+ *
+ * **A digit run of exactly the full width beginning with 1 is the display form**
+ * and its leading digit is dropped; anything shorter is taken as the counter
+ * itself. That rule is what makes both `TCK-1000000000000042` and `42` mean ticket
+ * 42 — and it is the reason the leading digit is fixed rather than free: a
+ * variable first digit would make the two readings ambiguous.
+ */
+function parseSeries(
+  input: string,
+  prefixes: string[],
+  digits: number,
+): number | null {
+  const cleaned = input.trim().replace(/^#/, "");
+  const pattern = new RegExp(
+    `^(?:(?:${prefixes.join("|")})[\\s-]*)?#?(\\d{1,${digits}})$`,
+    "i",
+  );
+  const match = cleaned.match(pattern);
   if (!match) return null;
-  const value = Number.parseInt(match[1], 10);
+
+  const shown = match[1];
+  const counter =
+    shown.length === digits && shown.startsWith("1")
+      ? shown.slice(1)
+      : shown;
+
+  const value = Number.parseInt(counter, 10);
   return Number.isSafeInteger(value) && value > 0 ? value : null;
 }
+
+export const formatTicketNumber = (n: number): string =>
+  formatSeries(TICKET_NUMBER_PREFIX, TICKET_NUMBER_DIGITS, n);
+
+export const parseTicketNumber = (input: string): number | null =>
+  parseSeries(
+    input,
+    [TICKET_NUMBER_PREFIX, LEGACY_TICKET_PREFIX],
+    TICKET_NUMBER_DIGITS,
+  );
+
+/**
+ * The inventory number of a CMDB object: `INV-10000001`.
+ *
+ * Assigned by MITS on insert and never editable — see `saveConfigurationItem`. The
+ * free-text `asset_tag` beside it is somebody else's number (a vendor sticker, an
+ * older system) and stays optional.
+ */
+export const formatInventoryNumber = (n: number): string =>
+  formatSeries(INVENTORY_NUMBER_PREFIX, INVENTORY_NUMBER_DIGITS, n);
+
+export const parseInventoryNumber = (input: string): number | null =>
+  parseSeries(input, [INVENTORY_NUMBER_PREFIX], INVENTORY_NUMBER_DIGITS);
 
 /**
  * An attachment as it appears in a stored payload.
@@ -1376,7 +1442,23 @@ export const LIVE_CI_STATUSES: CIStatus[] = ["active", "repair"];
 
 export const MITSConfigurationItemSchema = z.object({
   id: z.string(),
-  /** Inventory number as the organization writes it. Free text, unique per instance. */
+  /**
+   * The number MITS gives the object: `INV-10000001`, sequential, never reused.
+   *
+   * Allocated on insert by `saveConfigurationItem` and never taken from the input —
+   * same rule as `ticket_number` and as `created_by`. `0` is what a row reports
+   * before the migration has assigned it; nothing displays that value, the
+   * backfill runs at startup.
+   */
+  inventory_number: z.number().int().min(0).default(0),
+  /**
+   * Somebody else's number: a vendor sticker, a label from an older system.
+   *
+   * Optional and free text, and still unique where it is filled in. Not the same
+   * thing as `inventory_number` — that one MITS owns, this one is a reference to a
+   * number written down outside MITS, which is why an import can map a column onto
+   * it.
+   */
   asset_tag: z.string().max(64).default(""),
   name: z.string().min(1).max(200),
   type: CIType,
@@ -1774,6 +1856,17 @@ export function channelConfig(
    every visit. Which of the two is right depends on the forms an instance actually
    uses, which is why it is a setting and not a decision taken here.
    ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * What has to be typed to confirm a wipe, letter for letter.
+ *
+ * Here rather than beside the action, and not because it fits the file: a
+ * `"use server"` module may only export async functions, so a constant shared by
+ * the dialog and the action cannot live there — and `lib/purge.ts` is `server-only`,
+ * which puts it out of reach of the dialog. This module is the one both sides can
+ * read.
+ */
+export const PURGE_CONFIRM_WORD = "löschen";
 
 export const TICKET_FORM_DISPLAYS = ["chat", "panel", "both"] as const;
 export type TicketFormDisplay = (typeof TICKET_FORM_DISPLAYS)[number];

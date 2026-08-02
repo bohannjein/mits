@@ -1,5 +1,10 @@
 import { cleanInboundReply, isQuoteMarkerLine } from "@/lib/mail/quotes";
-import { TICKET_NUMBER_DIGITS } from "@/types/mits";
+import {
+  LEGACY_TICKET_PREFIX,
+  TICKET_NUMBER_DIGITS,
+  TICKET_NUMBER_PREFIX,
+  parseTicketNumber,
+} from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Deciding what an arriving mail *is*, before anything is written.
@@ -69,23 +74,34 @@ export function htmlToText(html: string): string {
 /**
  * The ticket number a subject refers to, or null.
  *
- * Outgoing mail puts the padded number in brackets — `[0000000000001042] Neue
+ * Outgoing mail puts the number in brackets — `[TCK-1000000000001042] Neue
  * Antwort: …` — so this is the reverse of `mail-templates.ts`. Brackets are what
  * make it safe to match: a bare sixteen-digit run could be an order number or an
  * IBAN fragment somebody pasted, and appending their mail to whichever ticket that
  * happened to hit is the worse of the two failure modes.
  *
- * Shorter runs are accepted inside the brackets too, because a person forwarding
- * a thread sometimes retypes `[1042]`.
+ * The prefix is optional and the retired `TICK` is accepted, because a person
+ * forwarding a thread sometimes retypes `[1042]` and older mail is still in
+ * mailboxes.
  */
 export function ticketNumberFromSubject(subject: string): number | null {
+  /*
+   * The bracket content is handed to `parseTicketNumber` rather than parsed here.
+   *
+   * That function owns the one rule that matters — a full-width run beginning with
+   * the fixed leading digit is the display form and loses that digit, anything
+   * shorter is the counter itself. Repeating it here is how the outgoing subject and
+   * the incoming match end up disagreeing by a factor of ten million.
+   */
   const match = subject.match(
-    new RegExp(`\\[\\s*#?(\\d{1,${TICKET_NUMBER_DIGITS}})\\s*\\]`),
+    new RegExp(
+      `\\[\\s*((?:${TICKET_NUMBER_PREFIX}|${LEGACY_TICKET_PREFIX})?[\\s-]*#?\\d{1,${TICKET_NUMBER_DIGITS}})\\s*\\]`,
+      "i",
+    ),
   );
   if (!match) return null;
 
-  const value = Number.parseInt(match[1], 10);
-  return Number.isSafeInteger(value) && value > 0 ? value : null;
+  return parseTicketNumber(match[1]);
 }
 
 /**

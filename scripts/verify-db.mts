@@ -253,6 +253,53 @@ try {
     ),
   );
   check("list items", () => cmdb.listConfigurationItems());
+  /*
+   * The inventory number: assigned on insert, unchanged by an update.
+   *
+   * Both halves matter. Without the first, an object has no number and nothing on
+   * screen says so; without the second, editing a note would silently renumber a
+   * device whose sticker is already on a shelf.
+   */
+  check("item gets an inventory number", () => {
+    const item = cmdb.getConfigurationItem(ciId);
+    if (!item) throw new Error("Objekt nicht gefunden");
+    if (item.inventory_number < 1) {
+      throw new Error(`Nummer ist ${item.inventory_number}`);
+    }
+    if (mits.formatInventoryNumber(item.inventory_number) !== "INV-10000001") {
+      throw new Error(mits.formatInventoryNumber(item.inventory_number));
+    }
+    return item.inventory_number;
+  });
+  check("a second item gets the next number", () => {
+    const second = cmdb.saveConfigurationItem(
+      mits.MITSConfigurationItemSchema.omit({
+        created_at: true,
+        updated_at: true,
+      }).parse({ id: "", name: "Notebook 2", type: "hardware" }),
+    );
+    if (second.inventory_number !== 2) {
+      throw new Error(`Nummer ist ${second.inventory_number}`);
+    }
+    // Updating it must not move the number on.
+    const again = cmdb.saveConfigurationItem(
+      mits.MITSConfigurationItemSchema.omit({
+        created_at: true,
+        updated_at: true,
+      }).parse({ id: second.id, name: "Notebook 2b", type: "hardware" }),
+    );
+    if (again.inventory_number !== 2) {
+      throw new Error(`nach dem Update ${again.inventory_number}`);
+    }
+    return again.inventory_number;
+  });
+  check("search finds an object by its number", () => {
+    const hits = cmdb.listConfigurationItems({ q: "INV-10000001" });
+    if (hits.length !== 1 || hits[0].id !== ciId) {
+      throw new Error(`${hits.length} Treffer`);
+    }
+    return hits.length;
+  });
 
   console.log("tickets");
   let ticketId = "";
@@ -348,6 +395,65 @@ try {
   check("publish", () =>
     realtime.publish({ type: "queue", audience: "staff", actorId: agentId }),
   );
+
+  /*
+   * Last, because it empties the database this suite has been filling.
+   *
+   * The interesting part is not that DELETE works — it is that the order inside the
+   * transaction survives `foreign_keys = ON` with real rows present. A ticket with
+   * comments, worklogs, links, read marks, an audit trail and an attached object is
+   * exactly the shape that makes a wrong order fail, and it exists at this point.
+   */
+  console.log("purge");
+  const purge = await import("../src/lib/purge");
+  check("counts before", () => {
+    const counts = purge.purgeCounts();
+    if (counts.tickets < 1 || counts.cmdb < 1) {
+      throw new Error(JSON.stringify(counts));
+    }
+    return counts;
+  });
+  check("nothing selected is a no-op", async () => {
+    const report = await purge.purgeData({
+      tickets: false,
+      cmdb: false,
+      organizations: false,
+      locations: false,
+    });
+    if (report.tickets !== 0 || purge.purgeCounts().tickets < 1) {
+      throw new Error("hat trotzdem gelöscht");
+    }
+    return report;
+  });
+  check("tickets and cmdb go", async () => {
+    const report = await purge.purgeData({
+      tickets: true,
+      cmdb: true,
+      organizations: false,
+      locations: false,
+    });
+    if (report.tickets < 1) throw new Error("kein Ticket gelöscht");
+    const left = purge.purgeCounts();
+    if (left.tickets !== 0 || left.cmdb !== 0) {
+      throw new Error(JSON.stringify(left));
+    }
+    // Sites were not selected, so they stay — the scopes have to be independent.
+    if (left.locations < 1) throw new Error("Standorte mitgelöscht");
+    return report;
+  });
+  check("sites go on their own", async () => {
+    const report = await purge.purgeData({
+      tickets: false,
+      cmdb: false,
+      organizations: true,
+      locations: true,
+    });
+    const left = purge.purgeCounts();
+    if (left.locations !== 0 || left.organizations !== 0) {
+      throw new Error(JSON.stringify(left));
+    }
+    return report;
+  });
 } finally {
   /*
    * Close before deleting, and do not fail on the delete.

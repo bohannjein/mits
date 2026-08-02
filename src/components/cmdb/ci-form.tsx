@@ -40,6 +40,7 @@ import {
   CI_TYPE_LABELS,
   NO_LOCATION,
   NO_ORGANIZATION,
+  formatInventoryNumber,
   type MITSConfigurationItem,
   type MITSLocation,
   type MITSOrganization,
@@ -57,7 +58,17 @@ import {
    asking a agent to write JSON to note a MAC address is asking for a parse error.
    ────────────────────────────────────────────────────────────────────────── */
 
-type Draft = Omit<MITSConfigurationItem, "created_at" | "updated_at">;
+/**
+ * What the form edits.
+ *
+ * `inventory_number` is not in here: MITS assigns it on insert and it never
+ * changes, so the form neither collects it nor could send it. The number of an
+ * existing object is shown read-only beside the name — see below.
+ */
+type Draft = Omit<
+  MITSConfigurationItem,
+  "created_at" | "updated_at" | "inventory_number"
+>;
 
 interface AttributeRow {
   key: string;
@@ -130,8 +141,15 @@ export function CIForm({
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{item ? "Objekt bearbeiten" : "Objekt anlegen"}</DialogTitle>
+          {/*
+            The number, not a sentence about numbers. A new object has none yet and
+            the line says what it will get, which is the only thing somebody about to
+            press save can act on.
+          */}
           <DialogDescription>
-            Die Inventarnummer ist eindeutig, sofern eine vergeben wird.
+            {item
+              ? `Inventarnummer ${formatInventoryNumber(item.inventory_number)}`
+              : "Die Inventarnummer wird beim Speichern vergeben."}
           </DialogDescription>
         </DialogHeader>
 
@@ -151,11 +169,14 @@ export function CIForm({
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="ci-tag">Inventarnummer</Label>
+              {/* Not the MITS number — that one is in the header and cannot be
+                  typed. This is the label somebody else put on the thing. */}
+              <Label htmlFor="ci-tag">Fremdnummer</Label>
               <Input
                 id="ci-tag"
                 value={draft.asset_tag}
                 onChange={(event) => patch({ asset_tag: event.target.value })}
+                placeholder="Aufkleber, Altsystem"
                 disabled={saving}
                 className="h-10 rounded-xl font-mono"
               />

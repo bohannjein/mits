@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { db } from "@/lib/db/sqlite";
+import { db, nextInventoryNumber } from "@/lib/db/sqlite";
 import {
   CIRelationKind,
   CIStatus,
@@ -11,6 +11,7 @@ import {
   MITSConfigurationItemSchema,
   SEAT_RELATION,
   normaliseCIAttributes,
+  parseInventoryNumber,
   seatUsage,
   type MITSCIRelation,
   type MITSConfigurationItem,
@@ -39,15 +40,17 @@ import {
 const ALIVE = "deleted_at IS NULL";
 
 const SELECT_CI = `
-  SELECT id, asset_tag, name, type, status, organization_id, location_id,
-         assigned_user_id, manufacturer, model, serial_number, purchased_on,
-         warranty_until, seats_total, expires_at, note, attributes,
+  SELECT id, inventory_number, asset_tag, name, type, status, organization_id,
+         location_id, assigned_user_id, manufacturer, model, serial_number,
+         purchased_on, warranty_until, seats_total, expires_at, note, attributes,
          created_at, updated_at
     FROM mits_configuration_item
 `;
 
 interface CIRow {
   id: string;
+  /** NULL only between the column being added and the startup backfill. */
+  inventory_number: number | null;
   asset_tag: string;
   name: string;
   type: string;
@@ -113,13 +116,26 @@ export function listConfigurationItems(
 
   const q = filter.q?.trim();
   if (q) {
+    /*
+     * An inventory number is searched as a number, not as text.
+     *
+     * `INV-10000042`, `inv 42` and `42` all mean object 42 — the counter is stored
+     * without the prefix and without the leading digit, so a `LIKE '%INV-100…%'`
+     * over the column would match nothing at all. `parseInventoryNumber` does the
+     * reverse of the formatter, and a term that is not a number simply leaves this
+     * clause out.
+     */
+    const number = parseInventoryNumber(q);
     clauses.push(
-      "(name LIKE ? OR asset_tag LIKE ? OR serial_number LIKE ? OR model LIKE ?)",
+      `(name LIKE ? OR asset_tag LIKE ? OR serial_number LIKE ? OR model LIKE ?${
+        number === null ? "" : " OR inventory_number = ?"
+      })`,
     );
     // Escaped nowhere on purpose: LIKE has no injection surface through a bound
     // parameter, and a literal % in a search term matching more is not a defect.
     const like = `%${q}%`;
     params.push(like, like, like, like);
+    if (number !== null) params.push(number);
   }
   if (filter.type) {
     clauses.push("type = ?");
@@ -205,8 +221,19 @@ export function cmdbCounts(): {
 
 /* ── Writing ─────────────────────────────────────────────────────────────── */
 
+/**
+ * What a caller may set on an item.
+ *
+ * `inventory_number` is left **out** rather than made optional, the same way
+ * `MITSTicketDraftSchema` omits `created_by`: MITS owns that number, and a field a
+ * form could fill in is a field a hand-built request can fill in too. An attempt to
+ * pass one does not compile.
+ */
 export interface CIInput
-  extends Omit<MITSConfigurationItem, "created_at" | "updated_at"> {}
+  extends Omit<
+    MITSConfigurationItem,
+    "created_at" | "updated_at" | "inventory_number"
+  > {}
 
 /**
  * Create or update one item. An empty `id` means create.
@@ -229,10 +256,28 @@ export function saveConfigurationItem(input: CIInput): MITSConfigurationItem {
     );
   }
 
+  /*
+   * The inventory number comes from the counter, never from the caller.
+   *
+   * Same rule as `created_by` on a ticket: `CIInput` cannot set it, an existing row
+   * keeps the number it already has, and a new one is allocated here. Read
+   * *including* soft-deleted rows — an object that is restored has to come back
+   * with the number that is on the sticker.
+   *
+   * Allocation and insert are one statement apart inside the same synchronous
+   * writer, which is what makes `MAX + 1` safe; see `nextInventoryNumber`.
+   */
+  const stored = db
+    .prepare(
+      "SELECT inventory_number FROM mits_configuration_item WHERE id = ?",
+    )
+    .get(parsed.data.id) as { inventory_number: number | null } | undefined;
+
   const item = {
     ...parsed.data,
     name: parsed.data.name.trim(),
     asset_tag: parsed.data.asset_tag.trim(),
+    inventory_number: stored?.inventory_number ?? nextInventoryNumber(),
   };
 
   if (item.asset_tag) {
@@ -243,21 +288,30 @@ export function saveConfigurationItem(input: CIInput): MITSConfigurationItem {
       )
       .get(item.asset_tag, item.id) as { id: string } | undefined;
     if (clash) {
-      throw new CMDBError(`Inventarnummer bereits vergeben: ${item.asset_tag}`);
+      throw new CMDBError(`Fremdnummer bereits vergeben: ${item.asset_tag}`);
     }
   }
 
   db.prepare(
+    /*
+     * `inventory_number` is in the INSERT and deliberately **not** in the UPDATE
+     * list: it is assigned once and then immutable. An update that carried it would
+     * make a relabelled object silently change its number.
+     *
+     * Every key the bound object carries has to appear here — better-sqlite3
+     * refuses an object with unused keys rather than ignoring them, which is how
+     * `edited_at` once turned every reply into a 500. Two halves, one contract.
+     */
     `INSERT INTO mits_configuration_item
-       (id, asset_tag, name, type, status, organization_id, location_id,
-        assigned_user_id, manufacturer, model, serial_number, purchased_on,
-        warranty_until, seats_total, expires_at, note, attributes,
+       (id, inventory_number, asset_tag, name, type, status, organization_id,
+        location_id, assigned_user_id, manufacturer, model, serial_number,
+        purchased_on, warranty_until, seats_total, expires_at, note, attributes,
         created_at, updated_at)
      VALUES
-       (@id, @asset_tag, @name, @type, @status, @organization_id, @location_id,
-        @assigned_user_id, @manufacturer, @model, @serial_number, @purchased_on,
-        @warranty_until, @seats_total, @expires_at, @note, @attributes,
-        @created_at, @updated_at)
+       (@id, @inventory_number, @asset_tag, @name, @type, @status,
+        @organization_id, @location_id, @assigned_user_id, @manufacturer, @model,
+        @serial_number, @purchased_on, @warranty_until, @seats_total, @expires_at,
+        @note, @attributes, @created_at, @updated_at)
      ON CONFLICT(id) DO UPDATE SET
        asset_tag        = excluded.asset_tag,
        name             = excluded.name,

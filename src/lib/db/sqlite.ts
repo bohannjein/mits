@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import { join } from "node:path";
 
 import { dataDir } from "@/lib/auth/secret";
-import { TICKET_NUMBER_START } from "@/types/mits";
+import { INVENTORY_NUMBER_START, TICKET_NUMBER_START } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    SQLite connection.
@@ -216,6 +216,10 @@ function migrateAppTables(database: Database.Database): void {
     -- existed. Every read filters on deleted_at IS NULL.
     CREATE TABLE IF NOT EXISTS mits_configuration_item (
       id               TEXT PRIMARY KEY,
+      -- The number MITS assigns: INV-10000001 on the way out. Nullable because the
+      -- migration for older databases backfills it; a fresh row always gets one.
+      inventory_number INTEGER,
+      -- Somebody else's number: a vendor sticker, a label from an older system.
       asset_tag        TEXT NOT NULL DEFAULT '',
       name             TEXT NOT NULL,
       type             TEXT NOT NULL,
@@ -326,6 +330,7 @@ function migrateAppTables(database: Database.Database): void {
 
   addColumns(database);
   backfillTicketNumbers(database);
+  backfillInventoryNumbers(database);
   renamePriorities(database);
   renameAgentRole(database);
 }
@@ -576,6 +581,18 @@ function addColumns(database: Database.Database): void {
       column: "major_incident",
       definition: "INTEGER NOT NULL DEFAULT 0",
     },
+    /*
+     * The number MITS gives an inventory object — `INV-10000001` on the way out.
+     *
+     * Nullable rather than `NOT NULL DEFAULT 0`, and that is what makes the
+     * backfill possible: NULL means "not numbered yet" and is skipped by the
+     * unique index, while a table full of zeros would collide on the second row.
+     */
+    {
+      table: "mits_configuration_item",
+      column: "inventory_number",
+      definition: "INTEGER",
+    },
   ];
 
   for (const { table, column, definition } of additions) {
@@ -592,6 +609,22 @@ function addColumns(database: Database.Database): void {
   database.exec(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_mits_ticket_number
        ON mits_ticket (ticket_number) WHERE ticket_number IS NOT NULL`,
+  );
+
+  /*
+   * Same guarantee for the inventory number, and for the same reason: a number
+   * that appears twice is a label on two things, which is the one property an
+   * inventory number has to have. Here rather than in the CREATE TABLE block, so
+   * it also lands on a database that predates the column.
+   *
+   * A soft-deleted object keeps its number — no `deleted_at IS NULL` in the
+   * predicate. Handing a removed object's number to the next one would make an old
+   * label point at something else, and the deletion is reversible.
+   */
+  database.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_mits_ci_inventory_number
+       ON mits_configuration_item (inventory_number)
+       WHERE inventory_number IS NOT NULL`,
   );
 }
 
@@ -636,4 +669,57 @@ export function nextTicketNumber(): number {
     .prepare("SELECT MAX(ticket_number) AS n FROM mits_ticket")
     .get() as { n: number | null };
   return Math.max(row.n ?? 0, TICKET_NUMBER_START - 1) + 1;
+}
+
+/**
+ * Give inventory objects written before the column existed a number, oldest first.
+ *
+ * Same shape as the ticket backfill and for the same reason: the sequence should
+ * follow the order things were actually recorded, not the order SQLite happens to
+ * return rows in.
+ *
+ * Soft-deleted objects are numbered too. They can be restored, and a restored
+ * object without a number would be the only one on the instance that cannot be
+ * labelled.
+ */
+function backfillInventoryNumbers(database: Database.Database): void {
+  const pending = database
+    .prepare(
+      `SELECT id FROM mits_configuration_item
+        WHERE inventory_number IS NULL
+        ORDER BY created_at ASC, id ASC`,
+    )
+    .all() as { id: string }[];
+
+  if (pending.length === 0) return;
+
+  const highest = database
+    .prepare("SELECT MAX(inventory_number) AS n FROM mits_configuration_item")
+    .get() as { n: number | null };
+
+  let next = Math.max(highest.n ?? 0, INVENTORY_NUMBER_START - 1) + 1;
+  const update = database.prepare(
+    "UPDATE mits_configuration_item SET inventory_number = ? WHERE id = ?",
+  );
+
+  database.transaction(() => {
+    for (const row of pending) update.run(next++, row.id);
+  })();
+
+  console.warn(`[MITS] Inventarnummern nachgetragen: ${pending.length} Objekt(e).`);
+}
+
+/**
+ * Allocate the next inventory number.
+ *
+ * `MAX + 1`, called inside the caller's transaction — see `nextTicketNumber` for
+ * why that is enough. `MAX` ignores nothing: a soft-deleted object still holds its
+ * number, so the counter never walks back over a label that exists on a shelf
+ * somewhere.
+ */
+export function nextInventoryNumber(): number {
+  const row = db
+    .prepare("SELECT MAX(inventory_number) AS n FROM mits_configuration_item")
+    .get() as { n: number | null };
+  return Math.max(row.n ?? 0, INVENTORY_NUMBER_START - 1) + 1;
 }

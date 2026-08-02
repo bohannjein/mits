@@ -192,7 +192,15 @@ export function importItemRecords(records: ImportRecord[]): ImportSummary {
     const typeValue = value("type");
     const statusValue = value("status");
 
-    const draft: Omit<MITSConfigurationItem, "created_at" | "updated_at"> = {
+    /*
+     * No `inventory_number` here, and it is not an omission: the store assigns it on
+     * insert and keeps the existing one on update. An importer that could set it
+     * would let a CSV column overwrite the number on a sticker.
+     */
+    const draft: Omit<
+      MITSConfigurationItem,
+      "created_at" | "updated_at" | "inventory_number"
+    > = {
       id: existing?.id ?? "",
       asset_tag: assetTag || (existing?.asset_tag ?? ""),
       name,

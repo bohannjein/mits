@@ -24,6 +24,8 @@ import { setMacros } from "@/lib/macros";
 import { setAnalyticsSettings } from "@/lib/analytics/settings";
 import { invalidateAnalytics } from "@/lib/services/analytics-cache";
 import { setNotificationSettings } from "@/lib/notification-settings";
+import { verifyUserPassword } from "@/lib/auth/verify-password";
+import { nothingSelected, purgeData, type PurgeScopes } from "@/lib/purge";
 import { setTicketDisplaySettings } from "@/lib/ticket-display";
 import { verifyS3 } from "@/lib/services/s3";
 import { getS3Settings, setS3Settings } from "@/lib/services/storage";
@@ -103,6 +105,7 @@ import {
   PortalMaintenanceSchema,
   PortalServiceSchema,
   REFRESH_LABELS,
+  PURGE_CONFIRM_WORD,
   SmtpSettingsSchema,
   SystemSettingsSchema,
   TICKET_FORM_DISPLAY_META,
@@ -745,6 +748,103 @@ export async function saveAnalyticsSettingsAction(
       on === 0
         ? "Gespeichert. Es ist keine Kachel eingeschaltet — das Panel zeigt nur die Kennzahlen."
         : `Gespeichert. ${on} von ${ANALYTICS_WIDGETS.length} Kacheln aktiv.`,
+  };
+}
+
+/* ── Bestand löschen ────────────────────────────────────────────────────── */
+
+/**
+ * Delete tickets and CMDB data for good.
+ *
+ * The only action in MITS that issues real DELETEs, so it is also the only one
+ * that asks for more than a session:
+ *
+ * 1. admin role, re-checked here rather than trusted from the page,
+ * 2. the word `löschen`, typed rather than clicked,
+ * 3. the account password, verified against the stored hash.
+ *
+ * The three confirmations before that are in the dialog. They are not security —
+ * anybody who can call this action can skip them — which is exactly why the two
+ * checks that *are* security live on this side of the wire.
+ *
+ * The password is what a stolen session does not have. A forgotten laptop in a
+ * meeting room is the realistic threat for a helpdesk admin account, and it carries
+ * a valid cookie.
+ *
+ * Recorded to the server log rather than to `mits_audit_log`: that table is one of
+ * the things being emptied, so an entry in it would be deleted by the operation it
+ * documents. The container log is the copy that survives.
+ */
+export async function purgeDataAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const actor = await requireRole("admin");
+
+  const confirmWord = String(formData.get("confirm") ?? "").trim();
+  if (confirmWord.toLowerCase() !== PURGE_CONFIRM_WORD) {
+    return {
+      ok: false,
+      error: `Bitte „${PURGE_CONFIRM_WORD}“ eintippen, um fortzufahren.`,
+    };
+  }
+
+  const scopes: PurgeScopes = {
+    tickets: formData.get("scope_tickets") === "on",
+    cmdb: formData.get("scope_cmdb") === "on",
+    organizations: formData.get("scope_organizations") === "on",
+    locations: formData.get("scope_locations") === "on",
+  };
+  if (nothingSelected(scopes)) {
+    return { ok: false, error: "Es ist kein Bereich ausgewählt." };
+  }
+
+  const password = String(formData.get("password") ?? "");
+  if (!(await verifyUserPassword(actor.id, password))) {
+    // Deliberately one message for a wrong password and a missing credential row:
+    // this endpoint is reachable with a stolen cookie, and the difference is
+    // information about the account rather than about the request.
+    return { ok: false, error: "Das Passwort stimmt nicht." };
+  }
+
+  const report = await purgeData(scopes);
+
+  console.warn(
+    `[MITS] Bestand gelöscht von ${actor.email}: ` +
+      `${report.tickets} Ticket(s), ${report.comments} Beitrag/Beiträge, ` +
+      `${report.attachments} Anhang/Anhänge (${report.blobsSwept} Blob(s)), ` +
+      `${report.items} Objekt(e), ${report.relations} Beziehung(en), ` +
+      `${report.organizations} Firma/Firmen, ${report.locations} Standort(e).`,
+  );
+
+  /*
+   * Everything that counts, lists or links tickets and objects. The layout reads
+   * none of this, but every one of these pages would otherwise serve a cached
+   * render of rows that no longer exist.
+   */
+  for (const path of [
+    "/admin/settings/data",
+    "/admin",
+    "/customer",
+    "/customer/tickets",
+    "/mits",
+    "/mits/analytics",
+    "/mits/cmdb",
+    "/mits/cmdb/licenses",
+  ]) {
+    revalidatePath(path);
+  }
+
+  const parts = [
+    scopes.tickets ? `${report.tickets} Ticket(s)` : null,
+    scopes.cmdb ? `${report.items} Objekt(e)` : null,
+    scopes.organizations ? `${report.organizations} Firma/Firmen` : null,
+    scopes.locations ? `${report.locations} Standort(e)` : null,
+  ].filter(Boolean);
+
+  return {
+    ok: true,
+    message: `Gelöscht: ${parts.join(", ")}. Das ist nicht rückholbar.`,
   };
 }
 

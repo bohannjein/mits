@@ -13,7 +13,8 @@
 /** What a mapped column writes into. */
 export const CI_IMPORT_TARGETS = [
   { key: "name", label: "Bezeichnung", required: true },
-  { key: "asset_tag", label: "Inventarnummer" },
+  // Not the MITS number — that one is assigned on insert and no column can set it.
+  { key: "asset_tag", label: "Fremdnummer (Aufkleber, Altsystem)" },
   { key: "type", label: "Art" },
   { key: "status", label: "Zustand" },
   { key: "organization", label: "Firma (Name oder Kurzcode)" },

@@ -238,7 +238,7 @@ mit Dateien, Entscheidungen und Stolperfallen steht in **[ROADMAP.md](ROADMAP.md
 | 6 | Prioritäten `low/medium/high/critical` migriert | ✅ |
 | 7 | Ticket-Verknüpfung + Textbausteine | ✅ |
 | 8 | Formular-Builder (Canvas, bedingte Logik, abhängige Dropdowns) | ✅ |
-| — | 16-stellige Ticketnummern ab 1 (Anzeigebreite, keine Kapazität) | ✅ |
+| — | Nummernkreise `TCK-1…` und `INV-1…`, Löschknopf mit Passwortabfrage | ✅ |
 | — | CMDB: Firmen, Objekte, Beziehungen, Lizenzen, Import, REST (12. Flag) | ✅ |
 | — | Dual-Theme, Rollen-Rename, Bubbles, Toasts, Queue, Zeit, Makros, S3, Mail-Abruf | ✅ |
 
@@ -272,6 +272,40 @@ melderseitigen Anfrage auf `medium` — das ist die Grenze, nicht das fehlende F
 Formular. `QUICK_TICKET_SCHEMA` ist deshalb auf Version 2 und ohne
 `priority`-Feld; dessen `optionLabels` zeigten seit der Prioritäts-Umbenennung
 ohnehin die Rohwerte an.
+
+## Zwei Nummernkreise, eine Form
+
+`TCK-1000000000000001` ist das erste Ticket einer Instanz, `INV-10000001` das erste
+Inventarobjekt. Sechzehn Ziffern beim Ticket, acht beim Objekt, die führende `1`
+jeweils mitgezählt.
+
+**Die führende 1 gehört zur Anzeige, nicht zum gespeicherten Wert.** In der
+Datenbank steht der Zähler — 1, 2, 3 —, das Format baut der Rest. Das ist keine
+Kosmetik: `10000000000000001` liegt jenseits von `Number.MAX_SAFE_INTEGER`
+(~9,007e15) und ließe sich in einer JavaScript-Zahl nicht ohne Rundung halten.
+Sortieren, Zählen und Vergleichen laufen deshalb auf dem Zähler, und nur
+`formatTicketNumber`/`formatInventoryNumber` und ihre `parse`-Gegenstücke kennen
+die Polsterung. Kapazität ist damit 10^15−1 Tickets und 9.999.999 Objekte.
+
+**Ein Ziffernblock in voller Breite mit führender 1 ist die Anzeigeform** und
+verliert diese Ziffer beim Parsen; alles Kürzere ist der Zähler selbst. Genau
+deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
+(Ticket 1042, handgetippt) und `TCK-1000000000001042` nicht unterscheidbar.
+
+- **Der Mailbetreff trägt die Anzeigeform**: `[TCK-1000000000001042] Neue
+  Antwort: …`. `ticketNumberFromSubject` gibt den Klammerinhalt an
+  `parseTicketNumber` weiter, statt die Regel zu wiederholen — zwei Kopien wären
+  zwei Orte, an denen ausgehender Betreff und eingehender Treffer um einen Faktor
+  auseinanderlaufen.
+- **`TICK-` wird weiter erkannt**, obwohl nichts es mehr erzeugt: es steht in
+  gesendeter Mail und auf Notizzetteln.
+- **Bestehende Zeilen werden nicht umnummeriert.** Sie behalten ihren Zähler und
+  erscheinen im neuen Format; ein Renumbering würde jede bereits versendete
+  Referenz ungültig machen.
+- **Die Inventarnummer vergibt MITS beim Anlegen** und ändert sie nie mehr —
+  `CIInput` lässt das Feld weg, ein Import kann es nicht setzen. Der freie
+  `asset_tag` daneben ist **Fremdnummer**: ein Aufkleber, eine Nummer aus einem
+  Altsystem.
 
 ## Zwei Welten
 
@@ -594,6 +628,16 @@ Nachrichten; wer unten steht, scrollt automatisch mit.
 - **Portal-Links:** `isSafeResourceHref` lässt nur `http`, `https` und Pfade ab `/`
   zu — geprüft beim Speichern **und** beim Lesen, weil eine handeditierte Zeile sonst
   ein `javascript:`-Ziel in jede Portal-Seite bringen würde.
+- **Bestand löschen ist die einzige Aktion mit Passwortabfrage.** `purgeDataAction`
+  (`/admin/settings/data`) setzt echte `DELETE`s ab, nicht `deleted_at`. Geprüft
+  wird serverseitig: Admin-Rolle, das getippte Wort `löschen`, und das Passwort des
+  Kontos gegen den gespeicherten Hash (`verifyUserPassword`). Die sechs Schritte im
+  Dialog sind kein Schutz — wer die Action erreicht, überspringt sie —, deshalb
+  liegen die zwei Prüfungen, die zählen, auf der Serverseite. Das Passwort ist das,
+  was ein gestohlenes Sitzungscookie nicht hat, und ein im Besprechungsraum
+  vergessener Laptop ist für ein Helpdesk-Admin-Konto das realistische Szenario.
+  Protokolliert wird in das Containerlog, nicht in `mits_audit_log` — diese Tabelle
+  ist eine der geleerten.
 
 ## Workflow
 

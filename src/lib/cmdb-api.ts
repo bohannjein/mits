@@ -3,7 +3,10 @@ import "server-only";
 import { API_TOKEN_HEADER, isValidApiToken } from "@/lib/api-tokens";
 import { requireApiRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
-import type { MITSConfigurationItem } from "@/types/mits";
+import {
+  formatInventoryNumber,
+  type MITSConfigurationItem,
+} from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Shared guard and shape for the CMDB REST endpoints.
@@ -51,6 +54,14 @@ export async function guardCMDBRequest(request: Request): Promise<ApiGuard> {
 export function itemToJson(item: MITSConfigurationItem): Record<string, unknown> {
   return {
     id: item.id,
+    /*
+     * Both forms of the MITS number: the counter for a caller that stores it, the
+     * formatted string so an external system prints the same thing MITS does. It is
+     * read-only over the wire — `itemFromJson` does not accept either, and the store
+     * would ignore it if it did.
+     */
+    inventory_number: item.inventory_number,
+    inventory_label: formatInventoryNumber(item.inventory_number),
     asset_tag: item.asset_tag,
     name: item.name,
     type: item.type,

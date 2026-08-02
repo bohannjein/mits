@@ -34,7 +34,8 @@ verlöre ein fehlgeschlagener DB-Write die Mail lautlos.
 
 **Die Betreffnummer allein hängt bei einem fremden Absender nichts an.** Die
 Zuordnung einer eingehenden Antwort läuft über die Nummer in eckigen Klammern
-(`ticketNumberFromSubject`) — und Ticketnummern zählen ab 1 hoch, `[42]` wird
+(`ticketNumberFromSubject`, Form `[TCK-1000000000001042]`) — und der Zähler dahinter
+läuft ab 1 hoch, `[42]` wird
 akzeptiert, ein `From` ist in einer Minute gefälscht. `getTicketByNumberFor` fragt
 „darf dieses **Konto** das Ticket sehen"; bei einem Absender ohne Konto ist das
 Konto das Auffang-Konto, und das ist Technik — die Antwort wäre also für jedes

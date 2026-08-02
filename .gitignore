@@ -45,7 +45,14 @@ yarn-error.log*
 logs/
 
 # local runtime data (users, sessions, tickets, auth secret) — never committed
-data/
+#
+# Anchored with a leading slash, and that is not tidiness: an unanchored `data/`
+# matches a directory of that name at *every* depth, so it also swallowed
+# `src/app/admin/settings/data/` — the whole "Daten & Aufbewahrung" page was
+# ignored and never committed. It built locally and was missing from every image
+# CI produced, which is the worst shape a gitignore mistake can take: invisible
+# in the working copy, absent in production.
+/data/
 .tmp-e2e/
 *.sqlite
 *.sqlite3

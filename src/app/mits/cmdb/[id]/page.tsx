@@ -33,6 +33,7 @@ import {
   CI_TYPE_LABELS,
   TICKET_STATUS_LABELS,
   expiryState,
+  formatInventoryNumber,
   formatTicketNumber,
 } from "@/types/mits";
 
@@ -100,7 +101,13 @@ export default async function CIDetailPage({
   const facts: { label: string; value: string }[] = [
     { label: "Art", value: CI_TYPE_LABELS[item.type] },
     { label: "Zustand", value: CI_STATUS_LABELS[item.status] },
-    { label: "Inventarnummer", value: item.asset_tag || "—" },
+    // Two numbers, and they answer different questions: the first is the one MITS
+    // gave the object, the second whatever was already written on it.
+    {
+      label: "Inventarnummer",
+      value: formatInventoryNumber(item.inventory_number),
+    },
+    { label: "Fremdnummer", value: item.asset_tag || "—" },
     { label: "Hersteller", value: item.manufacturer || "—" },
     { label: "Modell", value: item.model || "—" },
     { label: "Seriennummer", value: item.serial_number || "—" },

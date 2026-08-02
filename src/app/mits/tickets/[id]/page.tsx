@@ -65,6 +65,7 @@ import {
   TICKET_PRIORITY_LABELS,
   TICKET_STATUS_LABELS,
   fillCannedResponse,
+  formatInventoryNumber,
   formatTicketNumber,
   isAIFeatureOn,
   isElevatedPriority,
@@ -168,12 +169,24 @@ export default async function AgentTicketPage({
    * lookup uses the ticket's own location, so a device at the right site is offered even
    * when nothing is assigned to the person.
    */
+  /*
+   * The MITS inventory number, not the vendor sticker.
+   *
+   * This line is what an agent reads out to the person on the phone, and it is the
+   * one number that exists on every object — `asset_tag` is optional and empty on
+   * most of them, which made the second line of an asset row usually blank.
+   */
   const toAssetRow = (item: {
     id: string;
     name: string;
     type: MITSConfigurationItem["type"];
-    asset_tag: string;
-  }) => ({ id: item.id, name: item.name, type: item.type, assetTag: item.asset_tag });
+    inventory_number: number;
+  }) => ({
+    id: item.id,
+    name: item.name,
+    type: item.type,
+    assetTag: formatInventoryNumber(item.inventory_number),
+  });
 
   const suggested = flags.feature_cmdb
     ? suggestCIsForTicket(id, ticket.created_by, ticket.location_id)

@@ -30,6 +30,26 @@ Anlagen, Lizenzen und Firmen. Fünf Tabellen, ein Modul, hinter `feature_cmdb`.
 | `mits_ticket_ci` | welche Objekte ein Ticket betrifft, Paar als Primärschlüssel |
 | `mits_user_profile.organization_id` | Firma einer Person (Spalte, keine eigene Tabelle) |
 
+**Zwei Nummern pro Objekt, und sie beantworten verschiedene Fragen.**
+`inventory_number` ist die Nummer, die MITS vergibt — fortlaufend, eindeutig,
+angezeigt als `INV-10000001` (`formatInventoryNumber`). `asset_tag` ist die
+**Fremdnummer**: ein Aufkleber, eine Nummer aus einem Altsystem, optional und frei.
+
+- **Vergeben wird beim Einfügen, danach nie wieder.** `CIInput` lässt das Feld weg
+  statt es optional zu machen — dieselbe Regel wie `created_by` beim Ticket, und ein
+  Feld, das ein Formular füllen kann, kann auch ein handgebauter Request füllen. Im
+  `INSERT` steht die Spalte, in der `DO UPDATE`-Liste **nicht**: eine Umbenennung darf
+  keine Nummer verschieben, die schon auf einem Gerät klebt.
+- **Ein soft-deletes Objekt behält seine Nummer**, und der Zähler läuft darüber
+  hinweg (`MAX + 1`, ohne `deleted_at`-Filter). Die Nummer weiterzugeben hieße, dass
+  ein altes Etikett auf etwas anderes zeigt.
+- **Gesucht wird als Zahl, nicht als Text.** Der Zähler steht ohne Präfix und ohne
+  führende Ziffer in der Spalte, ein `LIKE '%INV-1…%'` träfe also nie.
+  `parseInventoryNumber` dreht das Format zurück; ein Suchbegriff, der keine Nummer
+  ist, lässt die Klausel weg.
+- **Der Import kann sie nicht setzen.** Die CSV-Spalte „Fremdnummer“ bildet auf
+  `asset_tag` ab; die MITS-Nummer entsteht beim Speichern.
+
 **Firma ist nicht Standort.** Eine Firma hat mehrere Niederlassungen, ein geteiltes
 Gebäude beherbergt mehrere Firmen. Zusammenlegen war die naheliegende Abkürzung und
 hätte „alle Objekte von Kunde X" unbeantwortbar gemacht.
