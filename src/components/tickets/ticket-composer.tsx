@@ -7,8 +7,10 @@ import {
   FileTextIcon,
   Loader2Icon,
   LockIcon,
+  PaperclipIcon,
   SendIcon,
   TriangleAlertIcon,
+  TypeIcon,
   ZapIcon,
 } from "lucide-react";
 import {
@@ -90,6 +92,16 @@ export function TicketComposer({
   const [body, setBody] = useState("");
   const [editor, setEditor] = useState<RichTextEditorHandle | null>(null);
   const [snippetsOpen, setSnippetsOpen] = useState(false);
+
+  /*
+   * The formatting bar starts folded.
+   *
+   * A permanent row of sixteen buttons over a one-line field is more chrome than
+   * content, and the overwhelming majority of replies are prose. Teams and Slack
+   * both made this call; the bar is one click away and stays open once opened,
+   * so somebody who formats a lot pays for it once per reply.
+   */
+  const [formatting, setFormatting] = useState(false);
 
   const [replyResult, replyAction, replying] = useActionState(
     addCommentAction,
@@ -236,6 +248,23 @@ export function TicketComposer({
    * the built-in validation is not skipped.
    */
   const onKeyDown = (event: React.KeyboardEvent<HTMLFormElement>) => {
+    /*
+     * Ctrl+Shift+X folds the formatting bar out and back.
+     *
+     * On the form for the same reason the send shortcut is: it then works from
+     * the editor, from the textarea and from the buttons. Checked before the
+     * Enter branch because `X` is not `Enter` and would otherwise fall through.
+     */
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      event.shiftKey &&
+      event.key.toLowerCase() === "x"
+    ) {
+      event.preventDefault();
+      setFormatting((on) => !on);
+      return;
+    }
+
     if (event.key !== "Enter") return;
     if (!event.ctrlKey && !event.metaKey && !event.shiftKey) return;
     if (!canSend) return;
@@ -259,6 +288,42 @@ export function TicketComposer({
 
   /** The default submit for the keyboard shortcut. See `onKeyDown`. */
   const replyButton = useRef<HTMLButtonElement>(null);
+
+  /**
+   * The send button, shared by both variants.
+   *
+   * Declared here rather than duplicated into each branch: it carries the ref the
+   * Ctrl+Enter shortcut clicks, and two copies would mean the shortcut works in
+   * whichever one happened to render — a failure that looks like the keystroke
+   * being unreliable rather than like a missing ref.
+   */
+  const SendButton = () => (
+    <Button
+      ref={replyButton}
+      type="submit"
+      formAction={replyAction}
+      size="icon-sm"
+      disabled={!canSend}
+      title={internal ? "Notiz speichern (Strg+Enter)" : "Antworten (Strg+Enter)"}
+      className={cn(
+        "rounded-lg",
+        internal
+          ? "bg-bubble-internal-accent/15 text-bubble-internal-accent hover:bg-bubble-internal-accent/25"
+          : "bg-inverse-surface text-inverse-surface-foreground hover:bg-inverse-surface-hover",
+      )}
+    >
+      {replying ? (
+        <Loader2Icon className="animate-spin" />
+      ) : internal ? (
+        <LockIcon strokeWidth={1.5} />
+      ) : (
+        <SendIcon strokeWidth={1.5} />
+      )}
+      <span className="sr-only">
+        {internal ? "Notiz speichern" : "Antworten"}
+      </span>
+    </Button>
+  );
 
   return (
     <form
@@ -410,48 +475,143 @@ export function TicketComposer({
       <input type="hidden" name="bodyFormat" value={rich ? "html" : "text"} />
 
       {rich ? (
-        <RichTextEditor
-          value={body}
-          onChange={setBody}
-          disabled={busy}
-          tone={internal ? "warning" : "default"}
-          onReady={setEditor}
-          // Only when there is something to offer: a shortcut that opens an empty
-          // menu is a swallowed keystroke.
-          onSlash={
-            isAgent && cannedResponses.length > 0
-              ? () => setSnippetsOpen(true)
-              : undefined
-          }
-          placeholder={placeholderFor(internal)}
-        />
+        /*
+         * One row: the field, and the three things you do to it.
+         *
+         * The actions sit *inside* the field's border rather than under it, which
+         * is what makes the whole thing read as a single chat input instead of a
+         * form. `items-end` so they stay on the last line as the text grows.
+         */
+        <div
+          className={cn(
+            "flex items-end gap-1 rounded-xl border bg-background transition-colors focus-within:ring-1",
+            internal
+              ? "border-warning/50 focus-within:ring-warning/40"
+              : "border-border focus-within:ring-ring/40",
+          )}
+        >
+          <div className="min-w-0 flex-1">
+            <RichTextEditor
+              value={body}
+              onChange={setBody}
+              disabled={busy}
+              tone={internal ? "warning" : "default"}
+              onReady={setEditor}
+              // Only when there is something to offer: a shortcut that opens an
+              // empty menu is a swallowed keystroke.
+              onSlash={
+                isAgent && cannedResponses.length > 0
+                  ? () => setSnippetsOpen(true)
+                  : undefined
+              }
+              placeholder={placeholderFor(internal)}
+              showToolbar={formatting}
+              compact
+              // The border and the ring belong to the row above, or there would be
+              // two outlines a pixel apart around one field.
+              bare
+            />
+          </div>
+
+          <div className="flex shrink-0 items-center gap-0.5 p-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-pressed={formatting}
+              onClick={() => setFormatting((on) => !on)}
+              disabled={busy}
+              title="Formatierung (Strg+Umschalt+X)"
+              className={cn(
+                "rounded-lg text-muted-foreground",
+                formatting && "bg-surface-elevated text-foreground",
+              )}
+            >
+              <TypeIcon strokeWidth={1.5} />
+              <span className="sr-only">Formatierung ein- oder ausblenden</span>
+            </Button>
+
+            {/* Not behind the formatting toggle: attaching a file is not a
+                formatting decision, and burying it there is how people conclude
+                the reply box cannot take attachments. */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => editor?.pickImage()}
+              disabled={busy || !editor}
+              title="Datei anhängen"
+              className="rounded-lg text-muted-foreground"
+            >
+              <PaperclipIcon strokeWidth={1.5} />
+              <span className="sr-only">Datei anhängen</span>
+            </Button>
+
+            <SendButton />
+          </div>
+        </div>
       ) : (
-        <Textarea
-          ref={plainRef}
-          id="composer-body"
-          value={body}
-          onChange={(event) => setBody(event.target.value)}
-          rows={3}
-          disabled={busy}
-          placeholder={placeholderFor(internal)}
-          // `resize-none`: inside a fixed-height column a draggable textarea can
-          // be pulled taller than the frame, which pushes the send button out.
-          className="resize-none rounded-xl"
-        />
+        /*
+         * The reporter's field, in the same shape.
+         *
+         * The plain variant gets the identical action row — minus the two
+         * controls that only mean something for rich text. It briefly did not,
+         * because the send button had been moved *inside* the rich branch, and a
+         * reply box with no way to send is as broken as a page that will not load.
+         */
+        <div
+          className={cn(
+            "flex items-end gap-1 rounded-xl border bg-background transition-colors focus-within:ring-1",
+            "border-border focus-within:ring-ring/40",
+          )}
+        >
+          <Textarea
+            ref={plainRef}
+            id="composer-body"
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            rows={1}
+            disabled={busy}
+            placeholder={placeholderFor(internal)}
+            /*
+             * `resize-none` and `field-sizing-content`: the box grows with the
+             * text and cannot be dragged taller than the frame, which would push
+             * the send button out of a fixed-height column.
+             */
+            className="max-h-64 min-h-9 resize-none border-0 bg-transparent px-3 py-2 shadow-none focus-visible:ring-0 field-sizing-content"
+          />
+
+          <div className="flex shrink-0 items-center gap-0.5 p-1.5">
+            <SendButton />
+          </div>
+        </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/*
+        One thin line under the field, and only what cannot live inside it.
+
+        The send button moved into the input row, so what is left is the note
+        switch — which has to stay visible, because writing an internal note by
+        accident is the mistake with the worst consequence in this component — and
+        the shortcut hint. Everything is `text-xs` and `h-7`: this is a status
+        line, not a second toolbar.
+      */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         {isAgent ? (
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <Switch
               id="composer-internal"
               checked={internal}
               onCheckedChange={setInternal}
               disabled={busy}
+              className="scale-90"
             />
             <Label
               htmlFor="composer-internal"
-              className="text-sm font-normal text-muted-foreground"
+              className={cn(
+                "text-xs font-normal",
+                internal ? "text-bubble-internal-accent" : "text-muted-foreground",
+              )}
             >
               Interne Notiz
             </Label>
@@ -468,33 +628,6 @@ export function TicketComposer({
           <Kbd keys={["Strg", "Enter"]} />
           senden
         </span>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            ref={replyButton}
-            type="submit"
-            formAction={replyAction}
-            className={cn(
-              "h-10 rounded-full px-4",
-              internal
-                ? "bg-bubble-internal-accent/15 text-bubble-internal-accent hover:bg-bubble-internal-accent/25 hover:text-bubble-internal-accent"
-                : "bg-surface-elevated text-foreground hover:bg-accent hover:text-accent-foreground",
-            )}
-            disabled={!canSend}
-          >
-            {replying ? (
-              <Loader2Icon className="animate-spin" />
-            ) : internal ? (
-              <LockIcon strokeWidth={1.5} />
-            ) : (
-              <SendIcon strokeWidth={1.5} />
-            )}
-            {internal ? "Notiz speichern" : "Antworten"}
-            {/* The shortcut that fills this field, on the button it ends at. */}
-            {isAgent && <Kbd keys={["R"]} className="opacity-60" />}
-          </Button>
-
-        </div>
       </div>
 
       {/*

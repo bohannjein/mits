@@ -95,7 +95,7 @@ export function TicketFrame({
         it sits on. The column is the shell; the bubbles and the reply box are
         what is raised on it.
       */}
-      <div className="flex flex-col rounded-2xl border border-border bg-background p-4 lg:min-h-0 lg:min-w-0 lg:flex-1 lg:overflow-hidden">
+      <div className="flex flex-col rounded-2xl border border-border bg-background p-3 lg:min-h-0 lg:min-w-0 lg:flex-1 lg:overflow-hidden">
         {/*
           The title block is capped at 38vh and scrolls past that.
 
@@ -111,7 +111,7 @@ export function TicketFrame({
           parent with a resolved height, and this row's height is its content —
           `max-h-[40%]` there computes to `none` and caps nothing at all.
         */}
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border pb-4">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border pb-3">
           {/* The cap is on the title block, not on the row — the toggle beside it
               has to stay put rather than scroll out of its own header. */}
           <div className="scrollbar-thin min-w-0 flex-1 lg:max-h-[38vh] lg:overflow-y-auto">
@@ -155,7 +155,7 @@ export function TicketFrame({
           </div>
         ) : (
           <>
-            <div className="scrollbar-thin py-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-2">
+            <div className="scrollbar-thin py-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-2">
               {messages}
             </div>
 
@@ -191,7 +191,7 @@ export function TicketFrame({
         the status dropdowns out of reach on a phone.
       */}
       {showSidebar && open && (
-        <aside className="scrollbar-thin grid gap-4 lg:block lg:min-h-0 lg:w-80 lg:shrink-0 lg:space-y-4 lg:overflow-y-auto lg:pr-1">
+        <aside className="scrollbar-thin grid gap-4 lg:block lg:min-h-0 lg:w-[19rem] lg:shrink-0 lg:space-y-4 lg:overflow-y-auto lg:pr-1">
           {sidebar}
         </aside>
       )}

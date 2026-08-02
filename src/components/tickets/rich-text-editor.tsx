@@ -43,6 +43,15 @@ export interface RichTextEditorHandle {
   insert: (html: string) => void;
   clear: () => void;
   /**
+   * Open the image picker.
+   *
+   * Exposed because the paperclip that opens it now lives in the composer's
+   * action row rather than in a toolbar that is folded away by default — and
+   * attaching a file is not a formatting decision, so it must not be behind the
+   * formatting toggle.
+   */
+  pickImage: () => void;
+  /**
    * Put the caret in the editor.
    *
    * Needed because a contenteditable is not focusable through a ref to an input
@@ -61,6 +70,21 @@ export function RichTextEditor({
   tone = "default",
   onReady,
   onSlash,
+  /**
+   * The formatting toolbar. Off by default in the reply box, which starts as a
+   * single line — a permanent bar of sixteen buttons over a one-line field is
+   * more chrome than content.
+   */
+  showToolbar = true,
+  /** One line to start, growing with the text. */
+  compact = false,
+  /**
+   * Drop the own border and focus ring.
+   *
+   * For the chat bar, where the row around the editor already draws both — two
+   * outlines a pixel apart read as a rendering fault.
+   */
+  bare = false,
 }: {
   value: string;
   onChange: (html: string) => void;
@@ -74,6 +98,9 @@ export function RichTextEditor({
    * opinion about what a slash command offers.
    */
   onSlash?: () => void;
+  showToolbar?: boolean;
+  compact?: boolean;
+  bare?: boolean;
 }) {
   const [uploading, setUploading] = useState(false);
   /*
@@ -157,7 +184,11 @@ export function RichTextEditor({
     editorProps: {
       attributes: {
         class: cn(
-          "min-h-24 max-h-80 overflow-y-auto px-3 py-2.5 text-sm leading-relaxed outline-none",
+          // `compact` starts at one line and grows; the old fixed 6rem floor is
+          // dead space above the first character in a chat.
+          compact
+            ? "min-h-9 max-h-64 overflow-y-auto px-3 py-2 text-sm leading-relaxed outline-none"
+            : "min-h-24 max-h-80 overflow-y-auto px-3 py-2.5 text-sm leading-relaxed outline-none",
           // Prose-ish spacing by hand: no typography plugin in this project, and the
           // set of tags is small enough to style directly.
           "[&_p]:my-1 [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5",
@@ -229,6 +260,7 @@ export function RichTextEditor({
     if (!editor || !onReady) return;
     onReady({
       insert: (html) => editor.chain().focus().insertContent(html).run(),
+      pickImage: () => fileInput.current?.click(),
       focus: () => editor.chain().focus("end").run(),
       clear: () => editor.commands.clearContent(true),
     });
@@ -246,20 +278,39 @@ export function RichTextEditor({
 
   if (!editor) {
     // Same box as the mounted editor, so the composer does not jump on hydration.
+    // Same box as the mounted editor, so the composer does not jump on hydration.
     return (
-      <div className="min-h-32 rounded-xl border border-border bg-background" />
+      <div
+        className={cn(
+          compact ? "min-h-9" : "min-h-32",
+          bare ? "" : "rounded-xl border border-border bg-background",
+        )}
+      />
     );
   }
 
   return (
     <div
       className={cn(
-        "grid overflow-hidden rounded-xl border bg-background focus-within:ring-1",
-        tone === "warning"
-          ? "border-warning/50 focus-within:ring-warning/40"
-          : "border-border focus-within:ring-ring/40",
+        "grid overflow-hidden",
+        bare
+          ? "bg-transparent"
+          : cn(
+              "rounded-xl border bg-background focus-within:ring-1",
+              tone === "warning"
+                ? "border-warning/50 focus-within:ring-warning/40"
+                : "border-border focus-within:ring-ring/40",
+            ),
       )}
     >
+      {/*
+        Folded away unless asked for.
+
+        Conditionally rendered rather than given the `hidden` attribute: this
+        element also carries `flex`, and a class-based `display` beats the
+        user-agent rule behind `[hidden]` — the bar would have stayed visible.
+      */}
+      {showToolbar && (
       <div className="flex flex-wrap items-center gap-0.5 border-b border-border px-1.5 py-1">
         <Tool
           icon={BoldIcon}
@@ -369,18 +420,25 @@ export function RichTextEditor({
           onClick={() => fileInput.current?.click()}
         />
 
-        <input
-          ref={fileInput}
-          type="file"
-          accept="image/png,image/jpeg,image/gif,image/webp"
-          multiple
-          className="hidden"
-          onChange={(event) =>
-            void uploadAndInsert(editor, Array.from(event.target.files ?? []))
-          }
-          aria-label="Bild einfügen"
-        />
       </div>
+      )}
+
+      {/*
+        Outside the toolbar on purpose. Folding the formatting away must not take
+        the file picker with it — the composer's paperclip opens this through
+        `pickImage`, and attaching a file is not a formatting decision.
+      */}
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        multiple
+        className="hidden"
+        onChange={(event) =>
+          void uploadAndInsert(editor, Array.from(event.target.files ?? []))
+        }
+        aria-label="Bild einfügen"
+      />
 
       <EditorContent editor={editor} />
 

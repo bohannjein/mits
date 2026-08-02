@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { AlertTriangleIcon, TagIcon } from "lucide-react";
+import { AlertTriangleIcon, TagIcon, UserIcon } from "lucide-react";
 
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
@@ -231,13 +231,22 @@ export default async function AgentTicketPage({
             // open in a pop-out or a pinned panel.
             detachableId={ticket.id}
             header={
+              /*
+                Chat-first: three lines where there were five.
+
+                The back link, the number and the title share a row; everything
+                that used to have its own line — reporter, timestamp, status,
+                priority, tags — is one wrapping strip of badges under it. None of
+                it is gone, it is just no longer stacked: every line here comes
+                straight off the conversation, which is the thing the page is for.
+              */
               <>
-                <BackLink href="/mits" label="Zurück zur Queue" />
-                <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                  <span className="font-mono text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <BackLink href="/mits" label="Queue" />
+                  <span className="font-mono text-xs text-muted-foreground">
                     {formatTicketNumber(ticket.ticket_number)}
                   </span>
-                  <h1 className="min-w-0 flex-1 text-xl font-medium tracking-tight sm:text-2xl">
+                  <h1 className="min-w-0 flex-1 truncate text-base font-medium tracking-tight sm:text-lg">
                     {ticket.title}
                   </h1>
                   {/* Beside the title rather than in a toolbar: detaching is about
@@ -247,20 +256,17 @@ export default async function AgentTicketPage({
                     label={formatTicketNumber(ticket.ticket_number)}
                   />
                 </div>
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  {ticket.created_by_email} ·{" "}
-                  {formatDateTime(ticket.created_at, getSystemTimezone())}
-                </p>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
                   {ticket.major_incident && (
-                    <Badge className="h-auto rounded-full bg-bubble-internal-accent/15 px-2.5 py-0.5 text-xs font-normal text-bubble-internal-accent">
+                    <Badge className="h-auto rounded-full bg-bubble-internal-accent/15 px-2 py-0 text-[11px] font-normal text-bubble-internal-accent">
                       <AlertTriangleIcon className="size-3" strokeWidth={1.5} />
                       Hauptstörung
                     </Badge>
                   )}
                   <Badge
                     variant="secondary"
-                    className="h-auto rounded-full px-2.5 py-0.5 text-xs font-normal"
+                    className="h-auto rounded-full px-2 py-0 text-[11px] font-normal"
                   >
                     {TICKET_STATUS_LABELS[ticket.status]}
                   </Badge>
@@ -268,12 +274,29 @@ export default async function AgentTicketPage({
                     variant="outline"
                     className={
                       isElevatedPriority(ticket.priority)
-                        ? "h-auto rounded-full border-destructive/40 px-2.5 py-0.5 text-xs font-normal text-destructive"
-                        : "h-auto rounded-full px-2.5 py-0.5 text-xs font-normal"
+                        ? "h-auto rounded-full border-destructive/40 px-2 py-0 text-[11px] font-normal text-destructive"
+                        : "h-auto rounded-full px-2 py-0 text-[11px] font-normal"
                     }
                   >
                     {TICKET_PRIORITY_LABELS[ticket.priority]}
                   </Badge>
+
+                  {/* Assignment as a badge rather than a sidebar-only field: it is
+                      the attribute most often checked and least often changed, so
+                      it belongs where it can be read without opening anything. */}
+                  <Badge
+                    variant="outline"
+                    className="h-auto rounded-full px-2 py-0 text-[11px] font-normal"
+                  >
+                    <UserIcon className="size-3" strokeWidth={1.5} />
+                    {ticket.assigned_to_name ?? "Nicht zugewiesen"}
+                  </Badge>
+
+                  <span className="truncate">
+                    {ticket.created_by_email} ·{" "}
+                    {formatDateTime(ticket.created_at, getSystemTimezone())}
+                  </span>
+
                   {/*
                     Machine-written labels, marked as such by the icon rather than
                     by a word: an agent has to be able to tell at a glance which
@@ -284,7 +307,7 @@ export default async function AgentTicketPage({
                     <Badge
                       key={tag}
                       variant="outline"
-                      className="h-auto rounded-full px-2.5 py-0.5 text-xs font-normal text-muted-foreground"
+                      className="h-auto rounded-full px-2 py-0 text-[11px] font-normal text-muted-foreground"
                     >
                       <TagIcon className="size-3" strokeWidth={1.5} />
                       {isRoutingHint(tag)
