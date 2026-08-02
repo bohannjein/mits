@@ -18,7 +18,7 @@ Formular-Builder mit Live-Vorschau.
 - **Frontend:** Next.js 16 (App Router), React 19, TypeScript, Tailwind v4, shadcn/ui, Lucide
 - **Forms:** react-hook-form + zod, eigener JSON-Schema-Renderer
 - **State:** TanStack Query (Server-State), Zustand (UI-State)
-- **Auth:** Better Auth (E-Mail/Passwort) mit den Rollen `user`, `technician`, `admin`
+- **Auth:** Better Auth (E-Mail/Passwort) mit den Rollen `user`, `agent`, `admin`
 - **Persistenz:** SQLite + Datei-Ablage auf Platte — beides im Datenverzeichnis, kein externer Dienst
 - **KI-Backend:** FastAPI (Python), spricht eine bestehende Ollama-Instanz an
 
@@ -39,7 +39,7 @@ Die Startseite ist das Portal für Endnutzer:
 | Rolle | Darf |
 |---|---|
 | `user` | Tickets erfassen und **nur die eigenen** sehen, inklusive eigener Anhänge |
-| `technician` | zusätzlich das Ticket-Board mit allen Meldungen und deren Anhängen |
+| `agent` | zusätzlich die Queue unter `/mits` mit allen Meldungen und deren Anhängen |
 | `admin` | zusätzlich den Admin-Desk: Registrierungspolicy, Rollen, Portal-Inhalte, Formular-Builder |
 
 Das **erste** Konto einer Instanz wird immer angelegt und erhält automatisch `admin`.

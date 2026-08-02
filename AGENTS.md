@@ -108,7 +108,6 @@ src/
     forbidden/             Landung für angemeldet-aber-zu-wenig-Rechte
     tickets/page.tsx       eigene Tickets
     tickets/new/page.tsx   Ticket-Eingang (Tri-Modal)
-    board/page.tsx         alle Tickets (technician + admin)
     admin/page.tsx         Registrierungspolicy + Rollen (admin)
     admin/portal/          Portal-Editor in vier Tabs: Layout & Texte, FAQ,
                            Betrieb, Meldungen & Kacheln (admin)
@@ -707,7 +706,7 @@ Maschinenaufruf bekommt also JSON statt eines Redirects auf die Anmeldung.
 **Eintrittsweg und In-App-Navigation sind zwei verschiedene Ziele.** Wer den bloßen
 Host aufruft, will das Portal — `/`, `/login` und `/register` schicken **jeden** nach
 `/customer`, auch die Technik. Innerhalb der App entscheidet weiter `homeFor(role)`:
-Logo und Benutzermenü bringen einen Techniker zurück in die Queue, nicht ins Portal,
+Logo und Benutzermenü bringen einen Agenten zurück in die Queue, nicht ins Portal,
 sonst wäre der Arbeitsweg zwei Klicks statt einem. Ein `?next=` aus einer geschützten
 Seite schlägt beides — ein Deep-Link auf ein Ticket landet nach der Anmeldung auf
 diesem Ticket.
@@ -904,7 +903,7 @@ eine Queue mit den falschen Tickets sieht aus wie eine funktionierende Queue.
 
 **Rollenwechsel greifen verzögert.** Eine per SQL oder im Admin-Desk geänderte Rolle wirkt
 erst nach Ablauf des Session-Cookie-Caches (60 s) oder nach einer Neuanmeldung. Beim Testen
-die Sitzung neu aufbauen, sonst sieht ein frisch befördeter Techniker weiter `/forbidden`.
+die Sitzung neu aufbauen, sonst sieht ein frisch beförderter Agent weiter `/forbidden`.
 
 **Ticket-Tabellen scrollen nie seitwärts, und zeigen 50 Zeilen.** Beides hängt
 zusammen: eine horizontal scrollende Tabelle versteckt Status und Alter hinter
@@ -1778,7 +1777,7 @@ Grenzen und Regeln:
 
 ## Auth-Modell
 
-- **Rollen:** `user` < `technician` < `admin`. Vergleiche immer über `hasAtLeast`,
+- **Rollen:** `user` < `agent` < `admin`. Vergleiche immer über `hasAtLeast`,
   nie über `===`. Unbekannte Rollenwerte fallen auf `user` zurück, nie nach oben.
 - **Standard-Admin (Seeding):** `instrumentation.ts` ruft beim Serverstart
   `ensureDefaultAdmin()`. Tut nichts, solange die Instanz **irgendeinen** Admin hat —

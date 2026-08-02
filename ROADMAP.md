@@ -222,7 +222,7 @@ zuerst schiefgeht:
   wäre die zweite Wahrheit.
 - **Neue Beziehungsart:** Eintrag in `CIRelationKind`, `CI_RELATION_LABELS` **und**
   `CI_RELATION_INVERSE_LABELS`. Der Offline-Check erzwingt alle drei.
-- **Objekt-Detailseite ist Technik-only** (`requireRole("technician")`) und zusätzlich
+- **Objekt-Detailseite ist Technik-only** (`requireRole("agent")`) und zusätzlich
   hinter dem Flag. Ein abgeschaltetes Modul antwortet 404, nicht mit einer leeren Liste —
   eine leere Liste ist eine Aussage über den Bestand.
 
