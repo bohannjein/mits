@@ -73,7 +73,8 @@ export type TicketActionResult =
  * ticket is the same bug one page over.
  */
 function revalidateTicket(ticketId: string): void {
-  revalidateTicket(ticketId);
+  revalidatePath(`/customer/tickets/${ticketId}`);
+  revalidatePath(`/mits/tickets/${ticketId}`);
   revalidatePath("/customer/tickets");
   revalidatePath("/customer");
   revalidatePath("/mits");

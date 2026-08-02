@@ -1018,6 +1018,41 @@ genannten Hex-Werte sind die Light-Werte und stehen genau dort. Auf Dark sind si
 angehoben und leicht entsättigt: dasselbe Indigo, das auf Weiß souverän wirkt,
 ist auf Beinahe-Schwarz ein Loch.
 
+## Massenersetzung hat dieses Projekt jetzt dreimal beschaedigt
+
+Erst `sed` beim Umbenennen von `technician` auf `agent`, das die gerade
+geschriebene `LEGACY_ROLES`-Zuordnung zu `agent: "agent"` machte. Dann ein
+`.replace()` ohne Zaehler, das die Kommentarzeile und ihr `INSERT` auseinander
+laufen liess. Und zuletzt das hier:
+
+```ts
+// Der Helfer, gerade eingefuegt:
+function revalidateTicket(ticketId: string): void {
+  revalidatePath(`/customer/tickets/${ticketId}`);
+  revalidatePath(`/mits/tickets/${ticketId}`);
+  …
+}
+
+// …und im selben Lauf die Ersetzung, die dreizehn Aufrufstellen zusammenfassen
+// sollte — und dabei den Rumpf des Helfers mit erwischte:
+function revalidateTicket(ticketId: string): void {
+  revalidateTicket(ticketId);   // <-- Endlosrekursion
+  …
+}
+```
+
+Ergebnis: `RangeError: Maximum call stack size exceeded` bei **jeder**
+Ticket-Mutation — Antworten, Status, Prioritaet, Zuweisung, Verknuepfungen,
+Zeiten. Das ist der Serverfehler, der als „fast im ganzen System die ganze Zeit"
+gemeldet wurde.
+
+**Die Regel, die daraus folgt und schon zweimal haette gelten muessen:** eine
+Ersetzung, die auf mehr als eine Stelle passt, darf nicht ueber Code laufen, der
+im selben Durchgang eingefuegt wurde. Entweder mit Zaehler ersetzen, oder erst
+einfuegen und in einem zweiten, getrennten Lauf zusammenfassen. Alle drei Faelle
+haben `typecheck`, `test` und `build` passiert: das Ergebnis war jedes Mal
+syntaktisch gueltiger Code mit vertauschter Bedeutung.
+
 ## Wenn etwas wirft: Grenzen, Kennung, Protokoll
 
 **`error.tsx` und nicht `react-error-boundary`.** Der gejagte Absturz passiert
