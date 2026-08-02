@@ -13,13 +13,23 @@
 #     thanks to the extra_hosts mapping.
 #
 # Every variable below is therefore optional. Set one only to override.
+#
+# IMAGES: pulled from ghcr.io by default, built from this checkout with
+# `docker compose up -d --build`. Both work from the same file. To pin a stack to
+# one build rather than following main, set MITS_IMAGE_WEB and MITS_IMAGE_BACKEND
+# to a tag with the short commit sha, e.g. ghcr.io/bohannjein/mits-web:sha-1a2b3c4.
 
 services:
   mits-web:
+    # Both keys on purpose. `docker compose up --build` builds from source and
+    # tags the result; `docker compose pull` fetches the image CI already built.
+    # Portainer's "Pull and redeploy" runs the second one, and with a local-only
+    # tag it failed with "pull access denied for mits-web" — the registry had
+    # never heard of it. See .github/workflows/images.yml.
     build:
       context: .
       dockerfile: Dockerfile.web
-    image: mits-web:local
+    image: ${MITS_IMAGE_WEB:-ghcr.io/bohannjein/mits-web:latest}
     container_name: mits-web
     restart: unless-stopped
     ports:
@@ -59,7 +69,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.backend
-    image: mits-backend:local
+    image: ${MITS_IMAGE_BACKEND:-ghcr.io/bohannjein/mits-backend:latest}
     container_name: mits-backend
     restart: unless-stopped
     # No `ports`: the AI endpoint is reachable only from mits-web inside the

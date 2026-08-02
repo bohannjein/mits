@@ -1,0 +1,98 @@
+# Builds both images and pushes them to the GitHub Container Registry.
+#
+# WHY THIS EXISTS: Portainer's "Pull and redeploy" runs `docker compose pull`.
+# With images that only exist as a local `build:` context that fails with
+# "pull access denied for mits-web" — the registry has never heard of them.
+# Building on the Docker host instead works, but means every deploy depends on
+# a build toolchain being present and healthy on the machine that serves the app.
+#
+# So the images are built here and pulled there. `docker-compose.yml` keeps its
+# `build:` sections, so building from source locally still works unchanged; the
+# `image:` tags now name something that actually exists to be pulled.
+name: images
+
+on:
+  push:
+    branches: [main]
+    # Only when something that lands in an image changed. A README commit should
+    # not push two new layers and restart a production stack.
+    paths:
+      - "src/**"
+      - "backend/**"
+      - "public/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - "next.config.*"
+      - "tsconfig.json"
+      - "Dockerfile.web"
+      - ".dockerignore"
+      - ".github/workflows/images.yml"
+  # Manual runs, for the case where an image has to be rebuilt without a code
+  # change — a base image security update, most often.
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # What lets the built-in GITHUB_TOKEN push to ghcr.io. No secret to create.
+      packages: write
+
+    strategy:
+      # One job per image rather than one job building both: they are independent,
+      # and a backend that fails to build should not stop the web image from
+      # shipping a fix.
+      fail-fast: false
+      matrix:
+        include:
+          - name: mits-web
+            context: .
+            dockerfile: Dockerfile.web
+          - name: mits-backend
+            context: ./backend
+            dockerfile: Dockerfile.backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # Lower-cased by the action: ghcr.io rejects an upper-case path, and a
+          # GitHub owner may legitimately have capitals in it.
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.name }}
+          # Two tags. `latest` is what the stack follows; the short commit sha is
+          # what says which build is actually running — the question during an
+          # incident — and what a stack pins to when `latest` is too loose.
+          #
+          # No comments inside the block below: every line there is parsed as a
+          # tag definition.
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Layer cache in the registry, so a dependency install is not repeated
+          # on every run. `mode=max` keeps the intermediate stages too, which is
+          # what makes the multi-stage web build worth caching at all.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
