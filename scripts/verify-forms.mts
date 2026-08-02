@@ -218,6 +218,11 @@ import {
   TICKET_FORM_DISPLAYS,
   TICKET_FORM_DISPLAY_META,
   toTicketFormDisplay,
+  CHECKLIST_ITEM_KINDS,
+  CHECKLIST_ITEM_KIND_LABELS,
+  isChecklistAnswered,
+  isChecklistValueFor,
+  parseFormSchema,
 } from "../src/types/mits";
 import {
   EMPTY_BODY_SHA256,
@@ -1563,6 +1568,70 @@ console.log("\nrich-text sanitising");
     "an outside link is not an upload",
     uploadIdsInHtml('<a href="https://example.com/x.pdf">x.pdf</a>').length === 0,
   );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   The agent checklist.
+
+   Two things are worth checking without a database: that a value is only accepted
+   for a step that can hold it, and that the steps survive the schema parse. The
+   first is the boundary `setChecklistValue` leans on; the second decides whether a
+   saved checklist comes back at all.
+   ────────────────────────────────────────────────────────────────────────── */
+console.log("\nagent checklist");
+{
+  check("a check step takes done", isChecklistValueFor("check", "done"));
+  check("…and the empty value", isChecklistValueFor("check", ""));
+  check("…but not yes", !isChecklistValueFor("check", "yes"));
+  check("a yesno step takes yes", isChecklistValueFor("yesno", "yes"));
+  check("…and no", isChecklistValueFor("yesno", "no"));
+  check("…and the empty value too", isChecklistValueFor("yesno", ""));
+  // `done` on a Ja/Nein step could only come from a kind an admin changed after the
+  // fact, and it is not an answer to the question now being asked.
+  check("…but not done", !isChecklistValueFor("yesno", "done"));
+  check("nonsense is refused", !isChecklistValueFor("check", "maybe"));
+
+  check("empty counts as unanswered", !isChecklistAnswered(""));
+  check("an answer counts", isChecklistAnswered("no"));
+
+  check(
+    "every kind has a label",
+    CHECKLIST_ITEM_KINDS.every((kind) => CHECKLIST_ITEM_KIND_LABELS[kind] !== ""),
+  );
+
+  /*
+   * The parse carries a checklist from the builder into the store and back. A schema
+   * that silently dropped it would lose every step on the first save.
+   */
+  const withList = parseFormSchema({
+    ...QUICK_TICKET_SCHEMA,
+    checklist: [
+      { id: "step-1", label: "Gerät geprüft" },
+      { id: "step-2", label: "Ersatzteil vorhanden?", kind: "yesno" },
+    ],
+  });
+  check("the parse keeps the steps", withList.checklist?.length === 2);
+  check(
+    "…and defaults the kind to a checkbox",
+    withList.checklist?.[0]?.kind === "check",
+  );
+  check("…and keeps an explicit kind", withList.checklist?.[1]?.kind === "yesno");
+  check(
+    "a schema without a checklist parses",
+    parseFormSchema({ ...QUICK_TICKET_SCHEMA }).checklist === undefined,
+  );
+
+  const refuses = (checklist: unknown): boolean => {
+    try {
+      parseFormSchema({ ...QUICK_TICKET_SCHEMA, checklist });
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  check("an unknown kind is refused", refuses([{ id: "step-1", label: "x", kind: "dropdown" }]));
+  check("a step id with a space is refused", refuses([{ id: "step 1", label: "x" }]));
+  check("an empty label is refused", refuses([{ id: "step-1", label: "" }]));
 }
 
 console.log("\ncustomer profile");

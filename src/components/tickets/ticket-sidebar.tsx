@@ -35,6 +35,10 @@ import {
 } from "@/components/layout/sidebar-section";
 import { AuditTrail } from "@/components/tickets/audit-trail";
 import {
+  TicketChecklist,
+  type ChecklistRowProps,
+} from "@/components/tickets/ticket-checklist";
+import {
   TicketResources,
   type SharedFile,
 } from "@/components/tickets/ticket-resources";
@@ -124,6 +128,13 @@ export function TicketSidebar({
   auditEntries = null,
   /** Resolved server-side; the sidebar is a client component and cannot read it. */
   timezone,
+  /**
+   * The ticket type's checklist with its answers, or null when it declares none.
+   *
+   * Resolved by the page: the steps live in the form schema and the answers in
+   * their own table, and neither is readable from a client component.
+   */
+  checklist = null,
   /** Null when the linking module is off — the section then does not exist. */
   links = null,
   /** Null when the CMDB module is off. Same rule as `links`. */
@@ -151,6 +162,7 @@ export function TicketSidebar({
   reporter?: MITSUserProfile | null;
   auditEntries?: AuditEntry[] | null;
   timezone: string;
+  checklist?: ChecklistRowProps[] | null;
   links?: LinkRow[] | null;
   assets?: {
     attached: AssetRow[];
@@ -408,6 +420,38 @@ export function TicketSidebar({
         </div>
       ),
     },
+    /*
+     * The checklist, directly under the workflow panel.
+     *
+     * That position is the point: it is the second thing an agent touches on a
+     * ticket that has one — status and assignment, then "what do I have to do
+     * here". Further down it would be documentation somebody fills in afterwards
+     * from memory, which is the failure mode a checklist exists to prevent.
+     *
+     * Absent when the ticket type declares no steps. Same rule as every optional
+     * section here: an empty panel is something to read before learning there is
+     * nothing to read.
+     */
+    ...(checklist && checklist.length > 0
+      ? [
+          {
+            id: "checklist",
+            title: "Checkliste",
+            badge: (
+              <Badge
+                variant="secondary"
+                className="h-auto rounded-full px-1.5 py-0 text-[10px] font-normal tabular-nums"
+              >
+                {checklist.filter((row) => row.value !== "").length}/
+                {checklist.length}
+              </Badge>
+            ),
+            content: (
+              <TicketChecklist ticketId={ticket.id} rows={checklist} />
+            ),
+          },
+        ]
+      : []),
     /*
      * Files and links, collected out of the conversation.
      *

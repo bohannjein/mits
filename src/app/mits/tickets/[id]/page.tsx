@@ -54,6 +54,7 @@ import { getUserProfile } from "@/lib/user-profile";
 import { findUser, listUsers } from "@/lib/users";
 import { templateValuesFor } from "@/lib/template-values";
 import { listWorklogs } from "@/lib/worklogs";
+import { checklistFor } from "@/lib/ticket-checklist";
 import { getTicketFormDisplay } from "@/lib/ticket-display";
 import {
   openingFieldName,
@@ -162,6 +163,14 @@ export default async function AgentTicketPage({
   const formDisplay = getTicketFormDisplay();
   const fieldsInBubble = formDisplay !== "panel" && opening !== null;
   const fieldsInPanel = !fieldsInBubble || formDisplay === "both";
+
+  /*
+   * The agent checklist for this ticket type, with the answers given so far.
+   *
+   * Read from the schema and the answer table together — see `checklistFor`. No
+   * feature flag: a type with no steps has no panel, which is the off switch.
+   */
+  const checklist = checklistFor(id, schema);
 
   /*
    * Assets, only while the module is on. Three lists rather than one: what is attached,
@@ -414,6 +423,9 @@ export default async function AgentTicketPage({
                   canAdminister(user.role) ? listAuditFor(id) : null
                 }
                 timezone={getSystemTimezone()}
+                // The steps this ticket type declares, with what has been answered.
+                // Empty list means the type has none, and the section is skipped.
+                checklist={checklist.length > 0 ? checklist : null}
                 assets={assets}
                 // Only past the point where reading the thread is slower than
                 // reading a summary of it — and only when an admin turned it on.

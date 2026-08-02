@@ -1622,12 +1622,34 @@ export async function saveFormSchemaAction(
     };
   }
 
+  /*
+   * Checklist step ids have to be unique.
+   *
+   * The builder generates them and cannot collide; the JSON pane accepts anything.
+   * Two steps sharing an id would share a row in `mits_ticket_checklist`, so
+   * answering one would answer the other — a documentation feature quietly
+   * recording something that did not happen. `parseFormSchema` checks the shape of
+   * each item, not the set.
+   */
+  const stepIds = (schema.checklist ?? []).map((item) => item.id);
+  const duplicate = stepIds.find((id, index) => stepIds.indexOf(id) !== index);
+  if (duplicate) {
+    return {
+      ok: false,
+      error: `Zwei Checklisten-Schritte haben dieselbe ID: ${duplicate}.`,
+    };
+  }
+
   saveFormSchema(schema, actor.id);
   revalidatePath("/admin/forms/builder");
   revalidatePath("/customer/new");
 
+  const steps = stepIds.length;
+
   return {
     ok: true,
-    message: `„${schema.title}“ gespeichert — ${fieldCount} Feld(er), ab sofort im Service-Katalog.`,
+    message: `„${schema.title}“ gespeichert — ${fieldCount} Feld(er)${
+      steps > 0 ? `, ${steps} Checklisten-Schritt(e)` : ""
+    }, ab sofort im Service-Katalog.`,
   };
 }

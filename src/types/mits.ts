@@ -1060,6 +1060,7 @@ export const AuditAction = z.enum([
   "attachment_deleted",
   "link_added",
   "link_removed",
+  "checklist_set",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
@@ -1079,6 +1080,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   attachment_deleted: "Anhang gelöscht",
   link_added: "Verknüpfung gesetzt",
   link_removed: "Verknüpfung entfernt",
+  checklist_set: "Checkliste beantwortet",
 };
 
 export const AuditEntrySchema = z.object({
@@ -2190,6 +2192,11 @@ export interface MITSFormSchema {
   schema: JSONSchema7;
   /** Presentation metadata, keyed by property name. */
   uiHints?: Record<string, MITSFieldUIHint>;
+  /**
+   * Steps the agent works through on a ticket of this type. See the block above
+   * `ChecklistItemSchema`: it documents what was done, and it is not a form field.
+   */
+  checklist?: ChecklistItem[];
   submitLabel?: string;
   /**
    * Free-text description of when this form applies. Phase 3 puts this in the
@@ -2197,6 +2204,74 @@ export interface MITSFormSchema {
    */
   aiHint?: string;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   The agent's checklist for a ticket type.
+
+   Not part of the reporter's form and deliberately stored beside it: the schema
+   describes what is *asked*, this describes what is *done*. An admin writes the
+   steps once per ticket type — "Gerät geprüft", "Ersatzteil bestellt", "Rückgabe
+   erhalten" — and every ticket of that type carries them for the agent to work
+   through. It exists to make the work traceable afterwards, which is why each answer
+   records who gave it and when, and why nothing here is ever locked: a step ticked
+   by mistake has to be correctable, and a correction is itself part of the record
+   (`checklist_set` in the audit trail).
+
+   Two kinds, and that is the whole vocabulary:
+
+   - `check` — one box. Done, or not yet.
+   - `yesno` — Ja or Nein, because "Ersatzteil vorhanden?" has a *No* that means
+     something. A checkbox cannot express that: an unticked box is indistinguishable
+     from a step nobody has reached yet.
+
+   The item id is what a stored answer points at, so it survives a renamed label —
+   an admin fixing a typo must not orphan the answers already given on open tickets.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const CHECKLIST_ITEM_KINDS = ["check", "yesno"] as const;
+export type ChecklistItemKind = (typeof CHECKLIST_ITEM_KINDS)[number];
+
+export const CHECKLIST_ITEM_KIND_LABELS: Record<ChecklistItemKind, string> = {
+  check: "Haken",
+  yesno: "Ja / Nein",
+};
+
+export const ChecklistItemSchema = z.object({
+  /** Stable across label edits — stored answers point at it. */
+  id: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Za-z0-9_-]+$/, "Nur Buchstaben, Ziffern, - und _."),
+  label: z.string().min(1).max(200),
+  kind: z.enum(CHECKLIST_ITEM_KINDS).default("check"),
+});
+export type ChecklistItem = z.infer<typeof ChecklistItemSchema>;
+
+/** How many steps one ticket type may carry. A list nobody reads is not a checklist. */
+export const CHECKLIST_ITEM_LIMIT = 40;
+
+/**
+ * The stored answers, one string per kind plus the empty one.
+ *
+ * `""` is "not answered yet" and is what an item without a row reports. Kept as a
+ * value rather than as an absent row so clearing an answer is a write like any
+ * other — and so the audit trail can record the correction.
+ */
+export const CHECKLIST_VALUES = ["", "done", "yes", "no"] as const;
+export type ChecklistValue = (typeof CHECKLIST_VALUES)[number];
+
+/** Which answers a kind accepts. Anything else is a rejected write, not a shrug. */
+export function isChecklistValueFor(
+  kind: ChecklistItemKind,
+  value: string,
+): value is ChecklistValue {
+  if (value === "") return true;
+  return kind === "check" ? value === "done" : value === "yes" || value === "no";
+}
+
+/** Answered at all — what the progress count counts. */
+export const isChecklistAnswered = (value: string): boolean => value !== "";
 
 /**
  * Boundary validation for form schemas arriving from the API or the filesystem.
@@ -2214,6 +2289,12 @@ export const MITSFormSchemaMeta = z.object({
   uiHints: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
   submitLabel: z.string().optional(),
   aiHint: z.string().optional(),
+  /**
+   * The agent checklist. Absent and empty mean the same thing — no section on the
+   * ticket — which is why there is no switch beside it: a checklist with no steps is
+   * a checklist that is off.
+   */
+  checklist: z.array(ChecklistItemSchema).max(CHECKLIST_ITEM_LIMIT).optional(),
 });
 
 /** Parse untrusted input into a MITSFormSchema, throwing on a malformed payload. */

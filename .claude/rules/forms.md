@@ -47,6 +47,41 @@ eine nie gestellte Frage käme unbemerkt in die Datenbank.
   Ein Admin-Schalter darf nicht die Pflichtfelder bereits veröffentlichter Formulare
   verändern; sonst kippen Formulare, die niemand angefasst hat.
 
+## Agenten-Checkliste am Ticket-Typ
+
+`schema.checklist` — Schritte, die der Agent auf **jedem** Ticket dieses Typs
+abarbeitet, gepflegt im Formular-Builder (eigene Karte über dem Canvas). Sie stehen
+nicht im Formular des Melders: das Schema beschreibt, was *gefragt* wird, die
+Checkliste, was *getan* wurde. Zweck ist Nachvollziehbarkeit, deshalb hält jede
+Antwort Name und Zeitpunkt, und deshalb ist nichts jemals gesperrt.
+
+Zwei Arten, mehr gibt es nicht: `check` (ein Haken) und `yesno` (Ja / Nein). Das
+zweite ist kein Luxus — „Ersatzteil vorhanden?" hat ein *Nein*, das etwas bedeutet,
+und ein leerer Haken ist von „noch nicht dran gewesen" nicht zu unterscheiden.
+
+- **Die Schritte liegen im Schema, die Antworten in `mits_ticket_checklist`.**
+  Gekoppelt über die Schritt-Id, und die wird beim Anlegen erzeugt, **nie** aus dem
+  Label abgeleitet: ein Admin, der einen Tippfehler korrigiert, würde sonst die
+  Antworten aller offenen Tickets verwaisen lassen.
+- **Das Schema entscheidet, was existiert.** Eine Zeile zu einem entfernten Schritt
+  wird nicht gelesen und nicht gelöscht — ein Schritt kann zurückkommen, und die
+  Antwort ist die Aufzeichnung tatsächlich getaner Arbeit.
+- **Doppelte Ids lehnt `saveFormSchemaAction` ab.** Der Builder kann keine erzeugen,
+  die JSON-Spalte schon: zwei Schritte mit einer Id teilen eine Zeile, das Beantworten
+  des einen beantwortet den anderen — eine Doku-Funktion, die still etwas festhält,
+  was nicht passiert ist.
+- **Geprüft wird gegen das Schema, nicht gegen den Request.** `setChecklistValue`
+  lehnt eine Id ab, die der Typ nicht kennt, und einen Wert, den die Art nicht
+  tragen kann. Ein `yes` auf einem Haken käme sonst als „unbeantwortet" zurück und
+  sähe wie ein verlorener Schreibvorgang aus.
+- **Jeder Schreibvorgang ist ein `checklist_set` im Audit-Trail**, inklusive
+  Zurücknehmen. Das Panel zeigt den Zustand, die Historie die Reihenfolge — und
+  genau die ist die Frage, mit der jemand später kommt.
+- **Kein Feature-Flag.** Ein Typ ohne Schritte hat kein Panel; das ist der Schalter.
+- **Nur Agenten**, geprüft in `setChecklistValue` und nicht bloß in der Action. Beim
+  Melder wird das Panel gar nicht gerendert, und `publish` schickt kein `notify`:
+  eine Benachrichtigung über interne Doku wäre ein Einblick in laufende Arbeit.
+
 **`location` und `user` sind Picker, keine Fremdschlüssel.** Ihre Optionen kommen zur
 Laufzeit aus `mits_location` bzw. der Benutzerliste und werden per Context übergeben — nicht
 ins Schema einbetoniert, sonst wäre die Liste nach jeder neuen Filiale veraltet. Validiert

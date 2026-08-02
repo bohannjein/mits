@@ -367,7 +367,103 @@ try {
   check("worklog", () =>
     worklogs.addWorklog(ticketId, agent, 30, "Vor Ort", new Date().toISOString().slice(0, 10)),
   );
-  check("audit trail", () => audit.listAuditFor(ticketId));
+  /*
+   * The agent checklist. The steps come from a schema, the answers from their own
+   * table, and the interesting part is the contract between them: an id the type
+   * does not declare and a value its kind cannot hold are both refused, and every
+   * accepted write leaves an audit row.
+   */
+  const checklist = await import("../src/lib/ticket-checklist");
+  const listSchema = mits.parseFormSchema({
+    id: "with-checklist",
+    title: "Mit Checkliste",
+    category: "Test",
+    version: 1,
+    schema: { type: "object", properties: { title: { type: "string" } } },
+    checklist: [
+      { id: "step-1", label: "Gerät geprüft" },
+      { id: "step-2", label: "Ersatzteil vorhanden?", kind: "yesno" },
+    ],
+  });
+
+  check("checklist starts unanswered", () => {
+    const rows = checklist.checklistFor(ticketId, listSchema);
+    if (rows.length !== 2) throw new Error(`${rows.length} Schritte`);
+    if (rows.some((row) => row.value !== "")) throw new Error("schon beantwortet");
+    return rows.length;
+  });
+  check("tick a step", () => {
+    const rows = checklist.setChecklistValue(
+      ticketId,
+      listSchema,
+      "step-1",
+      "done",
+      agent,
+    );
+    const first = rows.find((row) => row.id === "step-1");
+    if (first?.value !== "done") throw new Error(`Wert ${first?.value}`);
+    if (first.answeredBy !== agent.name) throw new Error(first.answeredBy);
+    return first.value;
+  });
+  check("answer a yes/no step", () =>
+    checklist.setChecklistValue(ticketId, listSchema, "step-2", "no", agent),
+  );
+  check("clear it again", () => {
+    const rows = checklist.setChecklistValue(
+      ticketId,
+      listSchema,
+      "step-1",
+      "",
+      agent,
+    );
+    const first = rows.find((row) => row.id === "step-1");
+    if (first?.value !== "") throw new Error(`Wert ${first?.value}`);
+    // Cleared means unattributed: the line under the step is about the answer that
+    // stands, and there is none.
+    if (first.answeredBy !== "") throw new Error(first.answeredBy);
+    return "leer";
+  });
+  check("a value the kind cannot hold is refused", () => {
+    try {
+      checklist.setChecklistValue(ticketId, listSchema, "step-1", "yes", agent);
+      throw new Error("wurde angenommen");
+    } catch (error) {
+      if (error instanceof checklist.ChecklistError) return "abgelehnt";
+      throw error;
+    }
+  });
+  check("a step the type does not declare is refused", () => {
+    try {
+      checklist.setChecklistValue(ticketId, listSchema, "step-99", "done", agent);
+      throw new Error("wurde angenommen");
+    } catch (error) {
+      if (error instanceof checklist.ChecklistError) return "abgelehnt";
+      throw error;
+    }
+  });
+  check("a reporter cannot answer", () => {
+    try {
+      checklist.setChecklistValue(ticketId, listSchema, "step-1", "done", reporter);
+      throw new Error("wurde angenommen");
+    } catch (error) {
+      if (error instanceof checklist.ChecklistError) return "abgelehnt";
+      throw error;
+    }
+  });
+  check("a ticket type without steps has no checklist", () => {
+    const rows = checklist.checklistFor(ticketId, undefined);
+    if (rows.length !== 0) throw new Error(`${rows.length} Schritte`);
+    return 0;
+  });
+
+  check("audit trail", () => {
+    const entries = audit.listAuditFor(ticketId);
+    // Three accepted writes above, each one a row. The trail is the whole reason the
+    // checklist exists, so an unlogged answer is a failed feature, not a detail.
+    const ticks = entries.filter((entry) => entry.action === "checklist_set");
+    if (ticks.length !== 3) throw new Error(`${ticks.length} Einträge`);
+    return entries.length;
+  });
   check("mark read", () => tickets.markTicketRead(ticketId, agentId));
   check("seen at", () => tickets.getTicketSeenAt(ticketId, agentId));
   check("queue fingerprint", () => tickets.queueFingerprint(agent));

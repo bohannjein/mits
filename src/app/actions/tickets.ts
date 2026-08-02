@@ -6,7 +6,9 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { canViewBoard } from "@/lib/auth/roles";
 import { requireUser, type SessionUser } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
+import { getFormSchema } from "@/lib/form-schemas";
 import { ticketReplyMail } from "@/lib/mail-templates";
+import { ChecklistError, setChecklistValue } from "@/lib/ticket-checklist";
 import { MacroError, getMacro, runMacro } from "@/lib/macros";
 import { TicketLinkError, addLink, removeLink } from "@/lib/ticket-links";
 import { sendNotification, ticketUrl } from "@/lib/smtp";
@@ -646,6 +648,45 @@ export async function addWorklogAction(
   revalidatePath("/mits");
 
   return { ok: true, message: `${formatMinutes(minutes)} erfasst.` };
+}
+
+/**
+ * Answer one checklist step, or clear it.
+ *
+ * The step list comes from the ticket's own form schema, read here on the server:
+ * the client sends an id and a value, never a definition. `setChecklistValue`
+ * refuses an id the type does not declare and a value the step's kind does not
+ * accept, which is what keeps a hand-built request from writing documentation for a
+ * step nobody ever wrote.
+ *
+ * Only the two agent surfaces are revalidated. The reporter's page does not render
+ * the panel, so refreshing it would be work for a view that cannot change.
+ */
+export async function setChecklistValueAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, true);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  try {
+    setChecklistValue(
+      ticketId,
+      getFormSchema(auth.ticket.form_schema_id),
+      String(formData.get("itemId") ?? ""),
+      String(formData.get("value") ?? ""),
+      auth.user,
+    );
+  } catch (error) {
+    if (error instanceof ChecklistError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath(`/mits/tickets/${ticketId}`);
+  revalidatePath(`/mits/tickets/${ticketId}/popout`);
+
+  return { ok: true, message: "Checkliste aktualisiert." };
 }
 
 export async function deleteWorklogAction(

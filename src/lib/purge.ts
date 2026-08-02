@@ -132,6 +132,7 @@ export async function purgeData(scopes: PurgeScopes): Promise<PurgeReport> {
       run("DELETE FROM mits_ticket_link");
       run("DELETE FROM mits_ticket_read");
       run("DELETE FROM mits_ticket_worklog");
+      run("DELETE FROM mits_ticket_checklist");
       run("DELETE FROM mits_ticket_ci");
       // The history of the tickets that are going. Nothing in it refers to anything
       // that survives, and a log about rows nobody can open is not a record.

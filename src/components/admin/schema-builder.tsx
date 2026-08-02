@@ -47,11 +47,16 @@ import {
 } from "@/lib/forms/registry";
 import { ICON_NAMES } from "@/lib/icons";
 import { cn } from "@/lib/utils";
-import type {
-  MITSFieldUIHint,
-  MITSFieldWidget,
-  MITSFormSchema,
-  MITSTicketDraft,
+import {
+  CHECKLIST_ITEM_KINDS,
+  CHECKLIST_ITEM_KIND_LABELS,
+  CHECKLIST_ITEM_LIMIT,
+  type ChecklistItem,
+  type ChecklistItemKind,
+  type MITSFieldUIHint,
+  type MITSFieldWidget,
+  type MITSFormSchema,
+  type MITSTicketDraft,
 } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -403,6 +408,55 @@ export function SchemaBuilder({
     patchHint(name, { optionsFrom: { field, map } });
   };
 
+  /* ── agent checklist ──────────────────────────────────────────────────
+   *
+   * Steps live on the schema beside the fields, not in a table of their own: they
+   * belong to the ticket type, are edited in the same mask, and travel with the
+   * schema through export, import and the JSON pane.
+   *
+   * The id is generated once and never derived from the label. A stored answer
+   * points at it, so an admin fixing a typo in "Gerät geprft" must not orphan the
+   * answers already given on open tickets — which is exactly what a slug of the
+   * label would do.
+   */
+  const checklist = draft.checklist ?? [];
+
+  const writeChecklist = (next: ChecklistItem[]) =>
+    applyDraft({ ...draft, checklist: next });
+
+  const addChecklistItem = () => {
+    // Highest existing number plus one rather than `length + 1`: after a removal
+    // the latter would hand out an id that stored answers still point at.
+    const used = checklist
+      .map((item) => Number.parseInt(item.id.replace(/^step-/, ""), 10))
+      .filter((value) => Number.isSafeInteger(value));
+    const next = (used.length > 0 ? Math.max(...used) : 0) + 1;
+
+    writeChecklist([
+      ...checklist,
+      { id: `step-${next}`, label: "Neuer Schritt", kind: "check" },
+    ]);
+  };
+
+  const patchChecklistItem = (id: string, patch: Partial<ChecklistItem>) =>
+    writeChecklist(
+      checklist.map((item) =>
+        item.id === id ? { ...item, ...patch, id: item.id } : item,
+      ),
+    );
+
+  const removeChecklistItem = (id: string) =>
+    writeChecklist(checklist.filter((item) => item.id !== id));
+
+  const moveChecklistItem = (id: string, delta: -1 | 1) => {
+    const from = checklist.findIndex((item) => item.id === id);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= checklist.length) return;
+    const next = [...checklist];
+    [next[from], next[to]] = [next[to], next[from]];
+    writeChecklist(next);
+  };
+
   const idPattern = /^[a-z0-9][a-z0-9-]{1,48}$/;
   const idValid = idPattern.test(draft.id);
   const fieldCount = order.length;
@@ -539,6 +593,127 @@ export function SchemaBuilder({
                   }
                 />
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ── agent checklist ─────────────────────────────────────────── */}
+        <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
+          <CardHeader>
+            <CardTitle className="text-lg font-medium">Checkliste</CardTitle>
+            <CardDescription>
+              Schritte, die der Agent auf jedem Ticket dieses Typs abarbeitet. Sie
+              stehen nicht im Formular des Melders — jede Antwort wird mit Name und
+              Zeitpunkt festgehalten.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            {checklist.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                Keine Schritte — dann gibt es am Ticket auch kein Panel.
+              </p>
+            )}
+
+            {checklist.map((item, index) => (
+              <div
+                key={item.id}
+                className="grid gap-2 rounded-2xl border border-border px-3 py-3 sm:grid-cols-[1fr_10rem_auto] sm:items-end"
+              >
+                <div className="grid gap-1.5">
+                  <Label htmlFor={`checklist-label-${item.id}`}>
+                    Schritt {index + 1}
+                  </Label>
+                  <Input
+                    id={`checklist-label-${item.id}`}
+                    value={item.label}
+                    placeholder="z. B. Gerät geprüft"
+                    className="h-10 rounded-xl"
+                    onChange={(event) =>
+                      patchChecklistItem(item.id, { label: event.target.value })
+                    }
+                  />
+                </div>
+
+                <div className="grid gap-1.5">
+                  <Label>Antwort</Label>
+                  <Select
+                    value={item.kind}
+                    onValueChange={(kind) =>
+                      patchChecklistItem(item.id, {
+                        kind: kind as ChecklistItemKind,
+                      })
+                    }
+                  >
+                    <SelectTrigger className="h-10 w-full rounded-xl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CHECKLIST_ITEM_KINDS.map((kind) => (
+                        <SelectItem key={kind} value={kind}>
+                          {CHECKLIST_ITEM_KIND_LABELS[kind]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    title="Nach oben"
+                    disabled={index === 0}
+                    onClick={() => moveChecklistItem(item.id, -1)}
+                    className="rounded-lg"
+                  >
+                    <ArrowUpIcon strokeWidth={1.5} />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    title="Nach unten"
+                    disabled={index === checklist.length - 1}
+                    onClick={() => moveChecklistItem(item.id, 1)}
+                    className="rounded-lg"
+                  >
+                    <ArrowDownIcon strokeWidth={1.5} />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    title="Schritt entfernen"
+                    onClick={() => removeChecklistItem(item.id)}
+                    className="rounded-lg text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2Icon strokeWidth={1.5} />
+                  </Button>
+                </div>
+              </div>
+            ))}
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={checklist.length >= CHECKLIST_ITEM_LIMIT}
+                onClick={addChecklistItem}
+                className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent hover:text-accent-foreground"
+              >
+                <PlusIcon strokeWidth={1.5} />
+                Schritt hinzufügen
+              </Button>
+              {/*
+                The one thing that is not obvious from the fields: an id is what
+                answers already given point at, so a renamed step keeps its history
+                and a removed one loses it.
+              */}
+              <span className="text-xs text-muted-foreground">
+                Umbenennen behält die Antworten offener Tickets. Entfernen blendet sie aus.
+              </span>
             </div>
           </CardContent>
         </Card>

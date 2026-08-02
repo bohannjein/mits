@@ -326,6 +326,31 @@ function migrateAppTables(database: Database.Database): void {
       ON mits_ticket_worklog (ticket_id, performed_at);
     CREATE INDEX IF NOT EXISTS idx_mits_worklog_user
       ON mits_ticket_worklog (user_id);
+
+    -- The answers to the agent checklist, one row per step that has one.
+    --
+    -- The *steps* are not here: they live in the ticket type's schema, where an
+    -- admin edits them once for every ticket of that type. This table holds only
+    -- what somebody answered, keyed on the step's id — so a renamed label keeps its
+    -- answers, and a step deleted from the schema takes nothing with it. Its rows
+    -- simply stop being read; nothing joins on a definition that has to exist.
+    --
+    -- user_name is denormalised beside the id, exactly like the comment and
+    -- worklog tables: the panel says who did it, and a deleted account must not
+    -- turn the record of the work into a blank. (No backticks in here — this whole
+    -- block is a template literal, and one would end it mid-statement.)
+    CREATE TABLE IF NOT EXISTS mits_ticket_checklist (
+      ticket_id  TEXT NOT NULL,
+      item_id    TEXT NOT NULL,
+      value      TEXT NOT NULL,
+      user_id    TEXT NOT NULL,
+      user_name  TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (ticket_id, item_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mits_checklist_ticket
+      ON mits_ticket_checklist (ticket_id);
   `);
 
   addColumns(database);
