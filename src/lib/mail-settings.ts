@@ -41,6 +41,31 @@ export function setMailSettings(next: MailSettings): MailSettings {
 }
 
 /**
+ * The mailbox MITS actually reads, as an address — or empty.
+ *
+ * This is what a reply has to reach, and it is not necessarily the SMTP sender: a
+ * stack can perfectly well send as `mits@firma.de` and poll `support@firma.de`.
+ * Without it, `sendMail` has no way to point replies at the right box, and the
+ * failure is silent in the worst way — the customer answers, the mail lands in a
+ * mailbox nobody fetches, and nothing anywhere reports a problem.
+ *
+ * Only something containing an `@` is handed back: `graphMailbox` may hold an
+ * object id instead of an address, and an object id in a `Reply-To` header is a
+ * bounced reply.
+ */
+export function inboundAddress(settings = getMailSettings()): string {
+  const raw =
+    settings.transport === "imap"
+      ? settings.imapUser
+      : settings.transport === "graph"
+        ? settings.graphMailbox
+        : "";
+
+  const address = raw.trim();
+  return address.includes("@") ? address : "";
+}
+
+/**
  * The settings the incident rule takes, derived from the stored ones.
  *
  * A separate shape so the rule stays a pure function with no opinion about where its

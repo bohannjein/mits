@@ -4,6 +4,8 @@ import { createTransport, type Transporter } from "nodemailer";
 
 import { db } from "@/lib/db/sqlite";
 import { isFeatureEnabled } from "@/lib/features";
+import { inboundAddress } from "@/lib/mail-settings";
+import { sameMailbox } from "@/lib/mail/inbound-parse";
 import {
   DEFAULT_SMTP_SETTINGS,
   SmtpSettingsSchema,
@@ -157,10 +159,32 @@ export async function sendMail(
     return { ok: false, reason: "SMTP ist nicht konfiguriert." };
   }
 
+  /*
+   * Replies go to the mailbox MITS reads, not to whatever it sends as.
+   *
+   * A stack may send as `mits@firma.de` and poll `support@firma.de`; without this
+   * header every answer lands in the sending box, which nothing fetches. The
+   * customer replies, the ticket stays silent, and no error is raised anywhere.
+   *
+   * Here rather than in the templates: it applies to every outgoing mail, and a
+   * template that knew the return path would be a second place to keep it right.
+   * Omitted when the two are the same address — a `Reply-To` identical to `From`
+   * is noise some clients display.
+   */
+  /*
+   * Only while the ingest is switched on. A configured-but-disabled mailbox is one
+   * nothing fetches, so pointing replies at it would be the very failure this
+   * header exists to prevent.
+   */
+  const inbound = isFeatureEnabled("feature_mail_inbound") ? inboundAddress() : "";
+  const replyTo =
+    inbound && !sameMailbox(inbound, settings.from) ? inbound : undefined;
+
   try {
     await transporterFor(settings).sendMail({
       from: settings.from,
       to: mail.to,
+      replyTo,
       subject: mail.subject,
       text: mail.text,
       html: mail.html,

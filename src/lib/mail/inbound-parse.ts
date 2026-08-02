@@ -89,6 +89,35 @@ export function ticketNumberFromSubject(subject: string): number | null {
 }
 
 /**
+ * Whether two addresses mean the same mailbox.
+ *
+ * The ingest needs this to decide whether a mailed reply may append to the ticket
+ * its subject names: for a sender MITS has no account for, the bracketed number is
+ * the *only* thing tying the message to a ticket, and numbers count up from 1. A
+ * subject reading `[42]` from a forged `From` would otherwise write a public
+ * comment into ticket 42 under whatever name the sender put there.
+ *
+ * **Empty never matches empty.** A ticket whose `created_by_email` is blank would
+ * otherwise be open to every message that arrives without a sender — the one case
+ * where "these two are equal" is the wrong conclusion from two identical values.
+ *
+ * The display form is stripped, because a transport that hands over
+ * `Support <support@firma.de>` rather than the bare address must not turn into a
+ * mismatch. Case is folded: the local part is technically case-sensitive per RFC,
+ * and no mail system on earth treats it that way.
+ */
+export function sameMailbox(a: string, b: string): boolean {
+  const normalise = (value: string): string => {
+    const angled = value.match(/<([^>]+)>/);
+    return (angled ? angled[1] : value).trim().toLowerCase();
+  };
+
+  const left = normalise(a);
+  if (left === "") return false;
+  return left === normalise(b);
+}
+
+/**
  * Strip the reply and forward prefixes a subject collects.
  *
  * Only used for the *title* of a new ticket. German and English, repeated —

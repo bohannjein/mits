@@ -1,14 +1,18 @@
+import { MailWarningIcon } from "lucide-react";
 import type { Metadata } from "next";
 
 import { MailSettingsForm } from "@/components/admin/mail-settings-form";
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { canViewBoard } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
 import { getFeatureFlags } from "@/lib/features";
-import { getMailSettings } from "@/lib/mail-settings";
+import { getMailSettings, inboundAddress } from "@/lib/mail-settings";
+import { sameMailbox } from "@/lib/mail/inbound-parse";
+import { getEffectiveSmtpSettings } from "@/lib/smtp";
 import { listUsers } from "@/lib/users";
 
 export const metadata: Metadata = {
@@ -34,6 +38,22 @@ export default async function AdminMailPage() {
    * queue anyway, which is where an inbound mail belongs.
    */
   const accounts = staff;
+
+  /*
+   * Where a reply would go, and where MITS looks for it.
+   *
+   * Only worth saying while the ingest is on: with the module off nothing is
+   * fetched at all, and a hint about the return path would describe something that
+   * does not run.
+   */
+  const inboundEnabled = getFeatureFlags().feature_mail_inbound;
+  const smtp = getEffectiveSmtpSettings();
+  const inbound = inboundAddress(settings);
+  const mismatch =
+    inboundEnabled &&
+    smtp.from.trim() !== "" &&
+    inbound !== "" &&
+    !sameMailbox(inbound, smtp.from);
 
   return (
     <>
@@ -61,6 +81,25 @@ export default async function AdminMailPage() {
 
           <Separator className="my-8 bg-border" />
 
+          {/*
+            Two different addresses are a legitimate setup, and also the quiet way
+            the return path breaks: without the header below, an answer goes to the
+            sending box and nothing fetches that one. Shown rather than silently
+            handled, because a client that drops `Reply-To` puts the mail exactly
+            where nobody looks.
+          */}
+          {mismatch && (
+            <Alert className="mb-6 rounded-2xl border-border">
+              <MailWarningIcon strokeWidth={1.5} />
+              <AlertDescription className="text-xs">
+                Gesendet wird als <strong>{smtp.from}</strong>, abgerufen wird{" "}
+                <strong>{inbound}</strong>. Antworten werden auf das abgerufene
+                Postfach gelenkt; ein Mail-Programm, das das ignoriert, antwortet an
+                die Absenderadresse.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* The two secrets never leave the server — only whether one exists. */}
           <MailSettingsForm
             settings={{
@@ -72,7 +111,7 @@ export default async function AdminMailPage() {
             accounts={accounts}
             hasImapPassword={settings.imapPassword !== ""}
             hasGraphSecret={settings.graphClientSecret !== ""}
-            inboundEnabled={getFeatureFlags().feature_mail_inbound}
+            inboundEnabled={inboundEnabled}
           />
         </div>
       </main>

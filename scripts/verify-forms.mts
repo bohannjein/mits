@@ -94,6 +94,7 @@ import {
   htmlToText,
   isAutomatedMail,
   planIngest,
+  sameMailbox,
   ticketNumberFromSubject,
   type InboundMail as InboundMailShape,
 } from "../src/lib/mail/inbound-parse";
@@ -2575,6 +2576,23 @@ console.log("mail ingest");
   check("bulk precedence is caught", isAutomatedMail({ precedence: "bulk" }));
   check("Exchange suppression is caught", isAutomatedMail({ "x-auto-response-suppress": "All" }));
   check("an ordinary mail is not", !isAutomatedMail({ from: "anna@firma.de" }));
+
+  /*
+   * The sender binding for a mailed reply. For an address MITS has no account for,
+   * the bracketed number is the only thing tying the mail to a ticket — and numbers
+   * count up from 1, so `[42]` plus a forged `From` would otherwise be write access
+   * to a stranger's conversation.
+   */
+  check("the same address matches", sameMailbox("anna@firma.de", "anna@firma.de"));
+  check("case is folded", sameMailbox("Anna@Firma.de", "anna@firma.de"));
+  check("surrounding space does not matter", sameMailbox("  anna@firma.de ", "anna@firma.de"));
+  check("a display name is stripped", sameMailbox("Anna Weber <anna@firma.de>", "anna@firma.de"));
+  check("a different address does not match", !sameMailbox("mallory@fremd.de", "anna@firma.de"));
+  check("a lookalike does not match", !sameMailbox("anna@firma.de.fremd.de", "anna@firma.de"));
+  // The one case where two identical values must not count as equal: a ticket with
+  // no reporter address would otherwise be open to every mail without a sender.
+  check("empty never matches empty", !sameMailbox("", ""));
+  check("empty does not match an address", !sameMailbox("", "anna@firma.de"));
 
   const mail = (over: Partial<InboundMailShape>): InboundMailShape => ({
     uid: "1",

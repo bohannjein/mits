@@ -3,7 +3,7 @@ import "server-only";
 import { toRole } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/session";
 import { getMailSettings, incidentRuleConfig } from "@/lib/mail-settings";
-import { planIngest } from "@/lib/mail/inbound-parse";
+import { planIngest, sameMailbox } from "@/lib/mail/inbound-parse";
 import { planSecurityIncident } from "@/lib/mail/incident-rule";
 import { ticketCreatedMail } from "@/lib/mail-templates";
 import { fetchInbox, MailInboundError } from "@/lib/services/mail-inbound";
@@ -44,6 +44,11 @@ import { formatTicketNumber, type MITSTicket } from "@/types/mits";
    error and not an append: `getTicketByNumberFor` answers null for both "gone" and
    "not yours", and appending on the strength of a number in a subject line would
    let anybody who guesses one write into a stranger's conversation.
+
+   That check is per *account*, which is not enough for a sender who has none — the
+   account is then the fallback, and the fallback is staff. A foreign sender must
+   additionally be the reporter of the ticket they answer (`sameMailbox` against
+   `created_by_email`); see `applyReply`.
    ────────────────────────────────────────────────────────────────────────── */
 
 export interface IngestReport {
@@ -137,14 +142,22 @@ export async function ingestMailbox(): Promise<IngestReport> {
 
       try {
         if (plan.kind === "reply") {
-          const handled = await applyReply(plan.ticketNumber, plan.body, mail, actor, foreign);
+          const handled = await applyReply(
+            plan.ticketNumber,
+            plan.body,
+            mail,
+            actor,
+            foreign,
+            report,
+          );
           if (handled) {
             report.replied += 1;
           } else {
             /*
-             * The number pointed at nothing this sender may see. Filed as a new
-             * ticket rather than dropped: the customer wrote to support and is
-             * owed an answer, and the alternative is a message that disappears.
+             * The number pointed at nothing this sender may see, or at a ticket
+             * somebody else reported. Filed as a new ticket rather than dropped:
+             * the customer wrote to support and is owed an answer, and the
+             * alternative is a message that disappears.
              */
             await openTicket(plan.body, mail, actor, foreign, report);
           }
@@ -187,9 +200,38 @@ async function applyReply(
   mail: { from: string; fromName: string },
   actor: SessionUser,
   foreign: boolean,
+  report: IngestReport,
 ): Promise<boolean> {
   const ticket = getTicketByNumberFor(ticketNumber, actor);
   if (!ticket) return false;
+
+  /*
+   * A sender without an account has to be the reporter of the ticket they answer.
+   *
+   * `getTicketByNumberFor` asks "may this *account* see the ticket", and for a
+   * foreign sender the account is the fallback — which is staff, so the answer is
+   * yes for every ticket in the instance. The question that matters here is a
+   * different one: did this *mailbox* write this ticket. Two questions, and the
+   * second only exists in the ingest, which is why it is answered here rather than
+   * pushed into the query.
+   *
+   * Without it the bracketed number is the whole authentication, and it is not a
+   * secret: numbers count up from 1, `[42]` is accepted, and `From` is trivially
+   * forged. A mail could append a public comment to a stranger's ticket under any
+   * name it liked.
+   *
+   * A mismatch is not dropped — the caller files it as a new ticket. Somebody wrote
+   * to support and is owed an answer; what they are not owed is write access to a
+   * conversation that is not theirs.
+   */
+  if (foreign && !sameMailbox(mail.from, ticket.created_by_email)) {
+    report.notes.push(
+      `${formatTicketNumber(ticket.ticket_number)}: Antwort kam von ${
+        mail.from || "einer leeren Adresse"
+      } und nicht von der Melderadresse — nicht angehängt.`,
+    );
+    return false;
+  }
 
   try {
     addComment(

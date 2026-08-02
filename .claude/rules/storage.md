@@ -32,6 +32,21 @@ zwei Worker heißt jede Mail zweimal, also jedes Ticket doppelt. Getrieben wird 
 wird erst **nach** dem erfolgreichen Schreiben als gelesen markiert; andersherum
 verlöre ein fehlgeschlagener DB-Write die Mail lautlos.
 
+**Die Betreffnummer allein hängt bei einem fremden Absender nichts an.** Die
+Zuordnung einer eingehenden Antwort läuft über die Nummer in eckigen Klammern
+(`ticketNumberFromSubject`) — und Ticketnummern zählen ab 1 hoch, `[42]` wird
+akzeptiert, ein `From` ist in einer Minute gefälscht. `getTicketByNumberFor` fragt
+„darf dieses **Konto** das Ticket sehen"; bei einem Absender ohne Konto ist das
+Konto das Auffang-Konto, und das ist Technik — die Antwort wäre also für jedes
+Ticket der Instanz ja. `applyReply` verlangt deshalb zusätzlich, dass Absender und
+`created_by_email` dasselbe Postfach sind (`sameMailbox`, in `npm test`). Passt es
+nicht, wird die Mail ein **neues** Ticket samt Notiz im Abrufbericht: wer an den
+Support schreibt, hat eine Antwort verdient — Schreibrecht in einem fremden
+Gespräch nicht.
+
+`sameMailbox` hält leer gegen leer für **nicht** gleich. Ein Ticket ohne
+Melderadresse wäre sonst für jede Nachricht ohne Absender offen.
+
 **Mail-Eigentümerschaft kommt nie aus der Nachricht.** Kennt MITS die Absenderadresse,
 ist es deren Ticket. Sonst läuft es unter dem konfigurierten Auffang-Konto, während
 `created_by_email` die echte Adresse behält — Sichtbarkeit beim Konto, Antwortweg
