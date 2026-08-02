@@ -5,6 +5,8 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   CheckCircle2Icon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   EyeIcon,
   GripVerticalIcon,
   Loader2Icon,
@@ -175,6 +177,7 @@ export function SchemaBuilder({
   const [draft, setDraft] = useState<MITSFormSchema>(EMPTY_SCHEMA);
   const [jsonText, setJsonText] = useState(() => pretty(EMPTY_SCHEMA));
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [jsonOpen, setJsonOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, formAction, saving] = useActionState(saveFormSchemaAction, null);
@@ -778,22 +781,48 @@ export function SchemaBuilder({
           </CardContent>
         </Card>
 
+        {/*
+          Collapsed by default. Sixteen rows of monospace under the canvas is
+          the tallest thing on the page, and the canvas plus inspector is the
+          way this form is built — the pane is the escape hatch, not the tool.
+          The error stays visible either way: it is the only thing on screen
+          that explains why "Formular speichern" is dead.
+        */}
         <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
           <CardHeader>
-            <CardTitle className="text-lg font-medium">JSON</CardTitle>
-            <CardDescription>
-              Dieselbe Definition, direkt editierbar.
-            </CardDescription>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="grid gap-1.5">
+                <CardTitle className="text-lg font-medium">JSON</CardTitle>
+                <CardDescription>
+                  Dieselbe Definition, direkt editierbar.
+                </CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 shrink-0 rounded-full px-4"
+                onClick={() => setJsonOpen((open) => !open)}
+                aria-expanded={jsonOpen}
+                aria-controls="schema-json-pane"
+              >
+                {jsonOpen ? <ChevronUpIcon strokeWidth={1.5} /> : <ChevronDownIcon strokeWidth={1.5} />}
+                {jsonOpen ? "Einklappen" : "Bearbeiten"}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="grid gap-3">
-            <Textarea
-              value={jsonText}
-              onChange={(event) => onJsonChange(event.target.value)}
-              rows={16}
-              spellCheck={false}
-              className="rounded-xl font-mono text-xs"
-              aria-label="Schema als JSON"
-            />
+            {jsonOpen && (
+              <Textarea
+                id="schema-json-pane"
+                value={jsonText}
+                onChange={(event) => onJsonChange(event.target.value)}
+                rows={16}
+                spellCheck={false}
+                className="rounded-xl font-mono text-xs"
+                aria-label="Schema als JSON"
+              />
+            )}
             {jsonError && (
               <Alert variant="destructive" className="rounded-2xl border-border px-4 py-3">
                 <TriangleAlertIcon />

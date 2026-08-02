@@ -1,33 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import {
-  BarChart3Icon,
-  BellIcon,
-  BookOpenIcon,
-  BuildingIcon,
-  HeadsetIcon,
-  ClockIcon,
-  DatabaseIcon,
-  HardDriveIcon,
-  ShieldAlertIcon,
-  UsersIcon,
-  BrainIcon,
-  MailIcon,
-  LayoutPanelLeftIcon,
-  MessageSquareTextIcon,
-  MapPinIcon,
-  MegaphoneIcon,
-  ServerIcon,
-  ToggleRightIcon,
-  WandSparklesIcon,
-  ZapIcon,
-} from "lucide-react";
 
 import { RegistrationSettingsForm } from "@/components/admin/registration-settings-form";
+import { SettingsSearch } from "@/components/admin/settings-search";
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { canViewBoard } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
@@ -71,133 +48,25 @@ export default async function AdminPage() {
               <Badge variant="outline" className="rounded-full">
                 {total} Tickets · {open} offen
               </Badge>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/settings/features">
-                  <ToggleRightIcon strokeWidth={1.5} />
-                  Module
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/locations">
-                  <MapPinIcon strokeWidth={1.5} />
-                  Standorte
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/organizations">
-                  <BuildingIcon strokeWidth={1.5} />
-                  Firmen
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/cmdb">
-                  <ServerIcon strokeWidth={1.5} />
-                  CMDB-Verwaltung
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/canned-responses">
-                  <MessageSquareTextIcon strokeWidth={1.5} />
-                  Textbausteine
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/macros">
-                  <ZapIcon strokeWidth={1.5} />
-                  Makros
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/settings/storage">
-                  <HardDriveIcon strokeWidth={1.5} />
-                  Dateispeicher
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/settings/analytics">
-                  <BarChart3Icon strokeWidth={1.5} />
-                  Statistiken
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/settings/notifications">
-                  <BellIcon strokeWidth={1.5} />
-                  Benachrichtigungen
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/settings/tickets">
-                  <LayoutPanelLeftIcon strokeWidth={1.5} />
-                  Ticket-Darstellung
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/settings/email">
-                  <MailIcon strokeWidth={1.5} />
-                  E-Mail
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/settings/ai">
-                  <BrainIcon />
-                  KI-Einstellungen
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/portal">
-                  <MegaphoneIcon />
-                  Portal-Inhalte
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/settings/data">
-                  <DatabaseIcon />
-                  Daten &amp; Aufbewahrung
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/mail">
-                  <ShieldAlertIcon />
-                  Mail &amp; Automation
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/staff">
-                  <HeadsetIcon />
-                  Agenten &amp; Administration
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/customers">
-                  <UsersIcon />
-                  Anwender
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/settings/system">
-                  <ClockIcon />
-                  System & Zeit
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/faq">
-                  <BookOpenIcon />
-                  Selbsthilfe / FAQ
-                </Link>
-              </Button>
-              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-                <Link href="/admin/forms/builder">
-                  <WandSparklesIcon />
-                  Formular-Builder
-                </Link>
-              </Button>
             </div>
+          </div>
+
+          {/*
+            The destinations used to sit as a wrapping row of pills beside the
+            heading — twenty of them, in no order anyone could name. They are
+            the same links, behind a field that also matches on what is inside
+            each page.
+          */}
+          <div className="mt-8">
+            <SettingsSearch />
           </div>
 
           <Separator className="my-8 bg-border" />
 
-          <RegistrationSettingsForm settings={settings} />
-
+          {/* Anchor target of the "Registrierung" entry in the search index. */}
+          <div id="registrierung" className="scroll-mt-24">
+            <RegistrationSettingsForm settings={settings} />
+          </div>
         </div>
       </main>
     </>
