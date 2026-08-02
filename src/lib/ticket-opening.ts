@@ -147,3 +147,64 @@ export function fieldsBesidesOpening<T extends { name: string }>(
     ? fields
     : fields.filter((field) => field.name !== openingName);
 }
+
+/** One answer, ready to render: what it was called and what it says. */
+export interface PayloadField {
+  name: string;
+  label: string;
+  text: string;
+}
+
+/**
+ * One payload value as a line of text.
+ *
+ * Was a private copy in each of the two ticket pages, which is two places for the
+ * same answer to start reading differently — and they are shown side by side to a
+ * reporter and an agent talking to each other.
+ *
+ * An object that is not an array yields nothing: the only ones in a payload are
+ * attachment descriptors, and those belong to the file list rather than to a
+ * labelled line saying `[object Object]`.
+ */
+export function formatPayloadValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "boolean") return value ? "Ja" : "Nein";
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "";
+    return value
+      .map((entry) =>
+        entry && typeof entry === "object" && "name" in entry
+          ? String((entry as { name: unknown }).name)
+          : String(entry),
+      )
+      .join(", ");
+  }
+  if (typeof value === "object") return "";
+  return String(value).trim();
+}
+
+/**
+ * The answers worth showing, labelled, in payload order.
+ *
+ * Empty values drop out — a schema with optional fields would otherwise render a
+ * column of labels with nothing beside them, which reads as data that failed to
+ * load rather than as a question nobody answered.
+ *
+ * `openingName` is the field that became the bubble, or null when none did. A
+ * mailed ticket passes null on purpose: its opening message is a stored comment,
+ * so nothing was removed from the list.
+ */
+export function payloadFields(
+  payload: Record<string, unknown>,
+  labels: Map<string, string>,
+  openingName: string | null,
+): PayloadField[] {
+  return fieldsBesidesOpening(
+    Object.entries(payload).map(([name, value]) => ({
+      name,
+      label: labels.get(name) ?? name,
+      text: formatPayloadValue(value),
+    })),
+    openingName,
+  ).filter((field) => field.text !== "");
+}

@@ -50,6 +50,7 @@ try {
   const system = await import("../src/lib/system-settings");
   const features = await import("../src/lib/features");
   const notificationSettings = await import("../src/lib/notification-settings");
+  const ticketDisplay = await import("../src/lib/ticket-display");
   const canned = await import("../src/lib/canned-responses");
   const macros = await import("../src/lib/macros");
   const portal = await import("../src/lib/portal");
@@ -174,6 +175,15 @@ try {
   check("notifications", () =>
     notificationSettings.setNotificationSettings(mits.DEFAULT_NOTIFICATION_SETTINGS),
   );
+  check("ticket display", () => {
+    ticketDisplay.setTicketDisplaySettings({ formDisplay: "panel" });
+    const back = ticketDisplay.getTicketFormDisplay();
+    if (back !== "panel") throw new Error(`read back ${back}`);
+    // Left on the default, so the rest of the suite sees a fresh instance's value.
+    return ticketDisplay.setTicketDisplaySettings(
+      mits.DEFAULT_TICKET_DISPLAY_SETTINGS,
+    );
+  });
   check("ai", () => ai.setAISettings(mits.DEFAULT_AI_SETTINGS));
   check("portal content", () =>
     portal.setPortalContent({ announcements: [], resources: [] }),

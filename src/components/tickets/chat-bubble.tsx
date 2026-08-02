@@ -115,6 +115,16 @@ export function ChatBubble({
    * saved.
    */
   editor,
+  /**
+   * Rendered under the body, inside the bubble.
+   *
+   * Used for the form answers on the opening message: a submission is one thing
+   * somebody said, and splitting it between a bubble and a list at the edge of the
+   * page makes the conversational half read as though most of it was left out.
+   * Hidden while the editor is open — that form is about the text, not about the
+   * payload behind it.
+   */
+  details,
 }: {
   comment: TicketComment;
   tone: BubbleTone;
@@ -122,6 +132,7 @@ export function ChatBubble({
   isNew?: boolean;
   menu?: ReactNode;
   editor?: ReactNode;
+  details?: ReactNode;
 }) {
   const style = TONES[tone];
   const label = roleLabel(comment);
@@ -203,7 +214,12 @@ export function ChatBubble({
         */}
         {menu}
       </header>
-      {editor ?? <CommentBody comment={comment} />}
+      {editor ?? (
+        <>
+          <CommentBody comment={comment} />
+          {details}
+        </>
+      )}
     </article>
   );
 }

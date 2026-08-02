@@ -64,9 +64,11 @@ import {
 import { isRoutingHint, normaliseTags } from "../src/lib/services/ai/tags";
 import {
   fieldsBesidesOpening,
+  formatPayloadValue,
   isSyntheticOpening,
   openingFieldName,
   openingMessageFor,
+  payloadFields,
 } from "../src/lib/ticket-opening";
 import {
   ATTRIBUTE_PREFIX,
@@ -210,6 +212,10 @@ import {
   isS3Endpoint,
   macroIsEmpty,
   normaliseS3Prefix,
+  DEFAULT_TICKET_DISPLAY_SETTINGS,
+  TICKET_FORM_DISPLAYS,
+  TICKET_FORM_DISPLAY_META,
+  toTicketFormDisplay,
 } from "../src/types/mits";
 import {
   EMPTY_BODY_SHA256,
@@ -2762,6 +2768,62 @@ console.log("opening message");
     "…and nothing drops when there is no bubble",
     fieldsBesidesOpening([{ name: "title" }, { name: "description" }], null)
       .length === 2,
+  );
+
+  /*
+   * The answer list, now shared by the bubble, the sidebar and the accordion. It
+   * was a private copy in each of the two ticket pages — two places for the same
+   * answer to start reading differently, shown side by side to a reporter and an
+   * agent talking about it.
+   */
+  check("a boolean reads as a word", formatPayloadValue(true) === "Ja");
+  check("…and so does false", formatPayloadValue(false) === "Nein");
+  check("a list is joined", formatPayloadValue(["Maus", "Dock"]) === "Maus, Dock");
+  check(
+    "an attachment list uses its names",
+    formatPayloadValue([{ fileId: "f1", name: "angebot.pdf" }]) === "angebot.pdf",
+  );
+  check("an empty list is empty", formatPayloadValue([]) === "");
+  check("a number becomes a string", formatPayloadValue(3) === "3");
+  check("null is empty", formatPayloadValue(null) === "");
+  // The only objects in a payload are attachment descriptors, and those belong to
+  // the file list rather than to a line reading [object Object].
+  check("a bare object yields nothing", formatPayloadValue({ a: 1 }) === "");
+
+  const rows = payloadFields(
+    { title: "Drucker", description: long, room: "", quantity: 2 },
+    new Map([
+      ["title", "Titel"],
+      ["quantity", "Menge"],
+    ]),
+    "description",
+  );
+  check("the opening field is gone", !rows.some((row) => row.name === "description"));
+  check("an empty answer is dropped", !rows.some((row) => row.name === "room"));
+  check("a label from the schema is used", rows[0]?.label === "Titel");
+  check(
+    "a field without a label keeps its name",
+    payloadFields({ room: "3.14" }, new Map(), null)[0]?.label === "room",
+  );
+  check("values are formatted", rows.some((row) => row.text === "2"));
+
+  /*
+   * The display mode decides a layout on two pages. An unrecognised value must
+   * fall back rather than throw — a row from an older version or a hand-edited
+   * database would otherwise take both ticket views down over where a list goes.
+   */
+  check("chat is the default", DEFAULT_TICKET_DISPLAY_SETTINGS.formDisplay === "chat");
+  check("a known mode is kept", toTicketFormDisplay("panel") === "panel");
+  check("nonsense falls back", toTicketFormDisplay("sidebar") === "chat");
+  check("undefined falls back", toTicketFormDisplay(undefined) === "chat");
+  check("the fallback is overridable", toTicketFormDisplay(null, "both") === "both");
+  check(
+    "every mode has admin copy",
+    TICKET_FORM_DISPLAYS.every(
+      (mode) =>
+        TICKET_FORM_DISPLAY_META[mode].label !== "" &&
+        TICKET_FORM_DISPLAY_META[mode].description !== "",
+    ),
   );
 
   /*

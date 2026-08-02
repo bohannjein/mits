@@ -1756,6 +1756,73 @@ export function channelConfig(
   };
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Where a filled-in form ends up on the ticket page.
+
+   Every ticket carries a payload: the answers somebody gave to a schema. Those
+   answers used to live in a labelled list beside the thread — the sidebar for an
+   agent, a collapsed accordion for the reporter — while only the free-text field
+   became a message. That splits one submission into two places, and the half that
+   reads like a conversation is missing most of what was said.
+
+   `chat` puts the answers in the opening bubble, under the reporter's own words.
+   That is the default, because a ticket is a conversation and a form submission is
+   the first thing said in it.
+
+   `panel` is the old arrangement, kept because a schema with twenty fields — a
+   hardware order, an onboarding — makes a bubble somebody has to scroll past on
+   every visit. Which of the two is right depends on the forms an instance actually
+   uses, which is why it is a setting and not a decision taken here.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const TICKET_FORM_DISPLAYS = ["chat", "panel", "both"] as const;
+export type TicketFormDisplay = (typeof TICKET_FORM_DISPLAYS)[number];
+
+/** Admin-facing copy, beside the values so a new mode cannot ship unlabelled. */
+export const TICKET_FORM_DISPLAY_META: Record<
+  TicketFormDisplay,
+  { label: string; description: string }
+> = {
+  chat: {
+    label: "Im Verlauf",
+    description:
+      "Die Antworten stehen in der ersten Nachricht, unter dem Text des Melders.",
+  },
+  panel: {
+    label: "Daneben",
+    description:
+      "Die Antworten stehen als Liste in der Seitenspalte, beim Melder aufklappbar.",
+  },
+  both: {
+    label: "Beides",
+    description: "Die Antworten stehen in der Nachricht und in der Liste.",
+  },
+};
+
+export const TicketDisplaySettingsSchema = z.object({
+  formDisplay: z.enum(TICKET_FORM_DISPLAYS).default("chat"),
+});
+export type TicketDisplaySettings = z.infer<typeof TicketDisplaySettingsSchema>;
+
+export const DEFAULT_TICKET_DISPLAY_SETTINGS: TicketDisplaySettings =
+  TicketDisplaySettingsSchema.parse({});
+
+/**
+ * A stored or posted value, or the default.
+ *
+ * Falls back rather than throwing: this decides a layout, and a row written by an
+ * older version — or a hand-edited one — must not take the ticket page down over
+ * where a list of answers goes.
+ */
+export function toTicketFormDisplay(
+  value: unknown,
+  fallback: TicketFormDisplay = DEFAULT_TICKET_DISPLAY_SETTINGS.formDisplay,
+): TicketFormDisplay {
+  return TICKET_FORM_DISPLAYS.includes(value as TicketFormDisplay)
+    ? (value as TicketFormDisplay)
+    : fallback;
+}
+
 /**
  * Flags that are declared but gate nothing yet.
  *

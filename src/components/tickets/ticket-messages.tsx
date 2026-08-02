@@ -1,7 +1,13 @@
 "use client";
 
 import { ArrowDownIcon, SparkleIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { AttachmentViewer } from "@/components/tickets/attachment-viewer";
 import { ChatBubble, toneFor } from "@/components/tickets/chat-bubble";
@@ -91,6 +97,17 @@ export function TicketMessages({
   seenAt = null,
   /** Shown when there is nothing yet. The two views word it differently. */
   emptyText,
+  /**
+   * Rendered inside the opening bubble: the form answers, when the admin has the
+   * display set to show them there.
+   *
+   * Attached to the synthetic opening rather than to a position in the list,
+   * because the reporter's view reads the same order and a "first" bubble is a
+   * different message in a thread that has grown. A ticket with no synthetic
+   * opening — a mailed one — has nowhere to put this, and the page keeps the panel
+   * instead; see `ticket-display.ts`.
+   */
+  openingDetails,
 }: {
   comments: TicketComment[];
   viewerId: string;
@@ -99,6 +116,7 @@ export function TicketMessages({
   canRetract?: boolean;
   seenAt?: string | null;
   emptyText: string;
+  openingDetails?: ReactNode;
 }) {
   const bottom = useRef<HTMLDivElement>(null);
   const mounted = useRef(false);
@@ -266,6 +284,11 @@ export function TicketMessages({
                       onDone={stopEditing}
                     />
                   ) : undefined
+                }
+                // The form answers belong to the message that *is* the submission,
+                // so they hang off the synthetic opening and nothing else.
+                details={
+                  isSyntheticOpening(comment.id) ? openingDetails : undefined
                 }
               />
             </div>

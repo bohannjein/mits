@@ -10,6 +10,7 @@ import { ComposerHandleProvider } from "@/components/tickets/composer-handle";
 import { DetachButtons } from "@/components/tickets/detach-buttons";
 import { TicketLive } from "@/components/tickets/ticket-live";
 import { TicketShortcuts } from "@/components/tickets/ticket-shortcuts";
+import { PayloadFields } from "@/components/tickets/payload-fields";
 import { TicketMessages } from "@/components/tickets/ticket-messages";
 import { TicketSidebar } from "@/components/tickets/ticket-sidebar";
 import { Badge } from "@/components/ui/badge";
@@ -53,10 +54,11 @@ import { getUserProfile } from "@/lib/user-profile";
 import { findUser, listUsers } from "@/lib/users";
 import { templateValuesFor } from "@/lib/template-values";
 import { listWorklogs } from "@/lib/worklogs";
+import { getTicketFormDisplay } from "@/lib/ticket-display";
 import {
-  fieldsBesidesOpening,
   openingFieldName,
   openingMessageFor,
+  payloadFields,
 } from "@/lib/ticket-opening";
 import {
   type MITSConfigurationItem,
@@ -141,16 +143,24 @@ export default async function AgentTicketPage({
   const aiSettings = getAISettings();
   const openingField = openingFieldName(ticket.payload, schema);
 
-  const fields = fieldsBesidesOpening(
-    Object.entries(ticket.payload).map(([name, value]) => ({
-      name,
-      label: labels.get(name) ?? name,
-      text: formatValue(value),
-    })),
+  const fields = payloadFields(
+    ticket.payload,
+    labels,
     // Only hidden when a bubble actually replaced it. A mailed ticket keeps the
     // field, because its opening bubble is the stored comment rather than this.
     opening ? openingField : null,
-  ).filter((row) => row.text !== "");
+  );
+
+  /*
+   * Where the answers go, per the admin setting.
+   *
+   * `chat` needs somewhere to put them, and the synthetic opening is that place —
+   * a mailed ticket has none, so it falls back to the panel. Answers nobody can see
+   * would be the one outcome worse than answers in the wrong place.
+   */
+  const formDisplay = getTicketFormDisplay();
+  const fieldsInBubble = formDisplay !== "panel" && opening !== null;
+  const fieldsInPanel = !fieldsInBubble || formDisplay === "both";
 
   /*
    * Assets, only while the module is on. Three lists rather than one: what is attached,
@@ -332,6 +342,11 @@ export default async function AgentTicketPage({
                 canRetract={flags.feature_message_retract}
                 seenAt={seenAt}
                 emptyText="Noch keine Beiträge. Die erste Antwort geht an den Melder."
+                openingDetails={
+                  fieldsInBubble ? (
+                    <PayloadFields fields={fields} variant="bubble" />
+                  ) : undefined
+                }
               />
             }
             composer={
@@ -373,7 +388,10 @@ export default async function AgentTicketPage({
                 location={
                   ticket.location_id ? getLocation(ticket.location_id) : null
                 }
-                fields={fields}
+                // Empty when the answers are in the bubble: the sidebar hides its
+                // own section on an empty list, so the mode needs no second switch
+                // inside the component.
+                fields={fieldsInPanel ? fields : []}
                 // The reporter's own details, so the agent does not have to ask
                 // where they sit. Read here because the sidebar is a client component.
                 reporter={getUserProfile(ticket.created_by)}
@@ -445,19 +463,3 @@ export default async function AgentTicketPage({
   );
 }
 
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "boolean") return value ? "Ja" : "Nein";
-  if (Array.isArray(value)) {
-    if (value.length === 0) return "";
-    return value
-      .map((entry) =>
-        entry && typeof entry === "object" && "name" in entry
-          ? String((entry as { name: unknown }).name)
-          : String(entry),
-      )
-      .join(", ");
-  }
-  if (typeof value === "object") return "";
-  return String(value).trim();
-}

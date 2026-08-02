@@ -24,6 +24,7 @@ import { setMacros } from "@/lib/macros";
 import { setAnalyticsSettings } from "@/lib/analytics/settings";
 import { invalidateAnalytics } from "@/lib/services/analytics-cache";
 import { setNotificationSettings } from "@/lib/notification-settings";
+import { setTicketDisplaySettings } from "@/lib/ticket-display";
 import { verifyS3 } from "@/lib/services/s3";
 import { getS3Settings, setS3Settings } from "@/lib/services/storage";
 import { LocationError, getLocation, replaceLocations } from "@/lib/locations";
@@ -104,6 +105,8 @@ import {
   REFRESH_LABELS,
   SmtpSettingsSchema,
   SystemSettingsSchema,
+  TICKET_FORM_DISPLAY_META,
+  TicketDisplaySettingsSchema,
   clockHealth,
   isSafeResourceHref,
   isSmtpConfigured,
@@ -742,6 +745,43 @@ export async function saveAnalyticsSettingsAction(
       on === 0
         ? "Gespeichert. Es ist keine Kachel eingeschaltet — das Panel zeigt nur die Kennzahlen."
         : `Gespeichert. ${on} von ${ANALYTICS_WIDGETS.length} Kacheln aktiv.`,
+  };
+}
+
+/* ── Ticket display ─────────────────────────────────────────────────────── */
+
+/**
+ * Where a filled-in form appears on a ticket.
+ *
+ * One value, and it still goes through `TicketDisplaySettingsSchema` rather than
+ * being written straight from the request: the setting decides a layout on two
+ * pages, and an unrecognised mode would leave both of them with answers in
+ * neither place.
+ */
+export async function saveTicketDisplaySettingsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const saved = setTicketDisplaySettings(
+    TicketDisplaySettingsSchema.parse({
+      formDisplay: formData.get("formDisplay"),
+    }),
+  );
+
+  // Both detail views and the pop-out read this on the server, so all three have
+  // to be re-rendered. The queue does not show payloads and stays out of it.
+  revalidatePath("/admin/settings/tickets");
+  revalidatePath("/mits/tickets/[id]", "page");
+  revalidatePath("/mits/tickets/[id]/popout", "page");
+  revalidatePath("/customer/tickets/[id]", "page");
+
+  return {
+    ok: true,
+    message: `Gespeichert. Angaben erscheinen: ${
+      TICKET_FORM_DISPLAY_META[saved.formDisplay].label
+    }.`,
   };
 }
 

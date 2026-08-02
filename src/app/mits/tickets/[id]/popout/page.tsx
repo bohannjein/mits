@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { ComposerHandleProvider } from "@/components/tickets/composer-handle";
+import { PayloadFields } from "@/components/tickets/payload-fields";
 import { PopoutAnnouncer } from "@/components/tickets/popout-announcer";
 import { TicketComposer } from "@/components/tickets/ticket-composer";
 import { TicketFrame } from "@/components/tickets/ticket-frame";
@@ -18,7 +19,13 @@ import {
   listCommentsFor,
   ticketActivityFingerprint,
 } from "@/lib/ticket-comments";
-import { openingMessageFor } from "@/lib/ticket-opening";
+import { resolveFields } from "@/lib/forms/schema-to-zod";
+import { getTicketFormDisplay } from "@/lib/ticket-display";
+import {
+  openingFieldName,
+  openingMessageFor,
+  payloadFields,
+} from "@/lib/ticket-opening";
 import {
   getTicketFor,
   getTicketSeenAt,
@@ -82,6 +89,25 @@ export default async function TicketPopoutPage({
   const comments = listCommentsFor(id, user);
   const templateValues = templateValuesFor(ticket, user.name);
 
+  /*
+   * The form answers, when the admin has them in the thread.
+   *
+   * This window has no sidebar and no accordion, so the `panel` mode simply shows
+   * nothing here — the answers are one click away in the full view. `both` behaves
+   * like `chat`: there is no second place to put them.
+   */
+  const labels = new Map(
+    schema ? resolveFields(schema).map((field) => [field.name, field.label]) : [],
+  );
+  const openingFields =
+    getTicketFormDisplay() !== "panel" && opening !== null
+      ? payloadFields(
+          ticket.payload,
+          labels,
+          openingFieldName(ticket.payload, schema),
+        )
+      : [];
+
   return (
     /*
      * `h-full` and `overflow-hidden` on the wrapper, because this page *is* the
@@ -128,6 +154,11 @@ export default async function TicketPopoutPage({
               canRetract={flags.feature_message_retract}
               seenAt={seenAt}
               emptyText="Noch keine Beiträge."
+              openingDetails={
+                openingFields.length > 0 ? (
+                  <PayloadFields fields={openingFields} variant="bubble" />
+                ) : undefined
+              }
             />
           }
           composer={

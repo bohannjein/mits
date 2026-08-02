@@ -286,6 +286,7 @@ ohnehin die Rohwerte an.
 /admin/…                Administration
 /admin/macros           Makros
 /admin/settings/storage Dateispeicher (Platte oder S3)
+/admin/settings/tickets  Wo die Antworten eines Formulars stehen (Verlauf, daneben, beides)
 /admin/settings/analytics Widget-Schalter und Default-Intervall
 /admin/settings/notifications Kanäle, Darstellung, Sammelmeldung
 /admin/mail             Postfach-Abruf + Defender-Regel

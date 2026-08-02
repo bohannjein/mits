@@ -7,6 +7,7 @@ import { BackLink } from "@/components/layout/back-link";
 import { TicketComposer } from "@/components/tickets/ticket-composer";
 import { TicketFrame } from "@/components/tickets/ticket-frame";
 import { TicketLive } from "@/components/tickets/ticket-live";
+import { PayloadFields } from "@/components/tickets/payload-fields";
 import { TicketMessages } from "@/components/tickets/ticket-messages";
 import {
   Accordion,
@@ -34,10 +35,11 @@ import {
   listCommentsFor,
   ticketActivityFingerprint,
 } from "@/lib/ticket-comments";
+import { getTicketFormDisplay } from "@/lib/ticket-display";
 import {
-  fieldsBesidesOpening,
   openingFieldName,
   openingMessageFor,
+  payloadFields,
 } from "@/lib/ticket-opening";
 import {
   getTicketFor,
@@ -107,14 +109,20 @@ export default async function CustomerTicketPage({
   const labels = new Map(
     schema ? resolveFields(schema).map((field) => [field.name, field.label]) : [],
   );
-  const fields = fieldsBesidesOpening(
-    Object.entries(ticket.payload).map(([name, value]) => ({
-      name,
-      label: labels.get(name) ?? name,
-      text: formatValue(value),
-    })),
+  const fields = payloadFields(
+    ticket.payload,
+    labels,
     opening ? openingFieldName(ticket.payload, schema) : null,
-  ).filter((row) => row.text !== "");
+  );
+
+  /*
+   * Same rule as the agent view, from the same setting: the answers belong to the
+   * submission, so they ride in the opening bubble unless an admin decided
+   * otherwise — or unless there is no bubble to ride in, which is the mail case.
+   */
+  const formDisplay = getTicketFormDisplay();
+  const fieldsInBubble = formDisplay !== "panel" && opening !== null;
+  const fieldsInPanel = !fieldsInBubble || formDisplay === "both";
 
   /*
    * Files and links, gathered once. After `opening`, which is part of the thread
@@ -224,7 +232,7 @@ export default async function CustomerTicketPage({
                   </div>
                 )}
 
-                {fields.length > 0 && (
+                {fieldsInPanel && fields.length > 0 && (
                   <Accordion type="single" collapsible className="mt-3">
                     <AccordionItem
                       value="fields"
@@ -234,18 +242,7 @@ export default async function CustomerTicketPage({
                         Meine Angaben
                       </AccordionTrigger>
                       <AccordionContent className="pb-4">
-                        <dl className="grid gap-3">
-                          {fields.map((field) => (
-                            <div key={field.name} className="grid gap-0.5">
-                              <dt className="text-xs text-muted-foreground">
-                                {field.label}
-                              </dt>
-                              <dd className="text-sm break-words whitespace-pre-wrap">
-                                {field.text}
-                              </dd>
-                            </div>
-                          ))}
-                        </dl>
+                        <PayloadFields fields={fields} />
                       </AccordionContent>
                     </AccordionItem>
                   </Accordion>
@@ -261,6 +258,11 @@ export default async function CustomerTicketPage({
                 canRetract={flags.feature_message_retract}
                 seenAt={seenAt}
                 emptyText="Noch keine Antwort. Wir melden uns hier."
+                openingDetails={
+                  fieldsInBubble ? (
+                    <PayloadFields fields={fields} variant="bubble" />
+                  ) : undefined
+                }
               />
             }
             composer={
@@ -279,20 +281,3 @@ export default async function CustomerTicketPage({
   );
 }
 
-/** Same rendering the agent view uses, so one answer reads identically in both. */
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "boolean") return value ? "Ja" : "Nein";
-  if (Array.isArray(value)) {
-    if (value.length === 0) return "";
-    return value
-      .map((entry) =>
-        entry && typeof entry === "object" && "name" in entry
-          ? String((entry as { name: unknown }).name)
-          : String(entry),
-      )
-      .join(", ");
-  }
-  if (typeof value === "object") return "";
-  return String(value).trim();
-}

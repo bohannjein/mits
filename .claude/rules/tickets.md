@@ -36,6 +36,47 @@ als echten ersten Beitrag ab, in bereinigtem HTML, damit die Formatierung
 `fieldsBesidesOpening` — sonst steht dasselbe Anliegen zweimal auf der Seite, einmal
 als Nachricht und einmal als beschriftetes Feld daneben.
 
+## Wo ein ausgefülltes Formular landet: `ticket_display`
+
+Ein Ticket trägt eine Payload — die Antworten auf ein Schema. Die standen früher
+in einer Liste **neben** dem Verlauf (Agent: Sidebar-Abschnitt „Angaben", Melder:
+zugeklapptes „Meine Angaben"), während nur das Freitextfeld eine Nachricht wurde.
+Damit war eine Einsendung auf zwei Orte verteilt, und die Hälfte, die sich wie ein
+Gespräch liest, ließ den größeren Teil weg.
+
+`getTicketFormDisplay()` (`lib/ticket-display.ts`, Key `ticket_display`, Maske
+`/admin/settings/tickets`) hat drei Werte:
+
+| Wert | Wirkung |
+|---|---|
+| `chat` (Default) | Antworten in der Eröffnungs-Bubble, unter dem Text des Melders |
+| `panel` | die alte Anordnung — Liste in Sidebar bzw. Accordion |
+| `both` | in der Nachricht **und** in der Liste |
+
+- **Eigener Setting-Key, kein Feld in `system`.** Zwei Masken, die einen Blob
+  teilen, überschreiben sich gegenseitig Abschnitte — dieselbe Begründung wie bei
+  den fünf `portal_*`-Keys.
+- **Serverseitig gelesen, nicht pro Konto.** Kein `localStorage`: ein Agent und
+  der Melder, die über dasselbe Ticket sprechen, müssen dieselbe Seite beschreiben.
+- **`chat` braucht eine Bubble, an die es sich hängen kann.** Ein Mail-Ticket hat
+  keine synthetische Eröffnung (`openingMessageFor` gibt dort `null`), also fällt
+  es auf die Liste zurück — Antworten, die niemand sieht, wären das einzige
+  Ergebnis, das schlimmer ist als Antworten an der falschen Stelle. Die Maske sagt
+  das, sonst hält ein Admin die Einstellung für kaputt.
+- **Die Slots heißen `details` (`ChatBubble`) und `openingDetails`
+  (`TicketMessages`).** Angehängt wird an `isSyntheticOpening`, nicht an Position
+  0: die Liste ist in beiden Ansichten dieselbe Reihenfolge, aber „die erste
+  Bubble" ist in einem gewachsenen Verlauf eine andere Nachricht.
+- **Im Pop-out gibt es nur `chat`.** Das Fenster hat keine Sidebar und kein
+  Accordion; bei `panel` stehen die Angaben dort also nicht — sie sind einen Klick
+  entfernt in der vollen Ansicht.
+- **`PayloadFields` ist die einzige Stelle mit dem `<dl>`**, und
+  `formatPayloadValue`/`payloadFields` (`lib/ticket-opening.ts`, in `npm test`) die
+  einzige mit der Formatierung. Vorher lag `formatValue` zweimal identisch in den
+  beiden Seiten — zwei Orte, an denen dieselbe Antwort anfängt, verschieden zu
+  lesen, und zwar auf Schirmen, auf denen ein Melder und ein Agent darüber
+  sprechen.
+
 **Position ist absolut, Farbe ist relativ.** Zwei Achsen, die verschiedene Fragen
 beantworten — und sie stimmen absichtlich nicht überein.
 

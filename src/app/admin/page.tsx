@@ -13,6 +13,7 @@ import {
   UsersIcon,
   BrainIcon,
   MailIcon,
+  LayoutPanelLeftIcon,
   MessageSquareTextIcon,
   MapPinIcon,
   MegaphoneIcon,
@@ -122,6 +123,12 @@ export default async function AdminPage() {
                 <Link href="/admin/settings/notifications">
                   <BellIcon strokeWidth={1.5} />
                   Benachrichtigungen
+                </Link>
+              </Button>
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
+                <Link href="/admin/settings/tickets">
+                  <LayoutPanelLeftIcon strokeWidth={1.5} />
+                  Ticket-Darstellung
                 </Link>
               </Button>
               <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
