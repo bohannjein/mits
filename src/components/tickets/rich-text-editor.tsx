@@ -7,13 +7,13 @@ import StarterKit from "@tiptap/starter-kit";
 import {
   BoldIcon,
   CodeIcon,
-  ImageIcon,
   ItalicIcon,
   Link2Icon,
   Link2OffIcon,
   ListIcon,
   ListOrderedIcon,
   Loader2Icon,
+  PaperclipIcon,
   QuoteIcon,
   StrikethroughIcon,
   type LucideIcon,
@@ -43,14 +43,17 @@ export interface RichTextEditorHandle {
   insert: (html: string) => void;
   clear: () => void;
   /**
-   * Open the image picker.
+   * Open the file picker.
    *
    * Exposed because the paperclip that opens it now lives in the composer's
    * action row rather than in a toolbar that is folded away by default — and
    * attaching a file is not a formatting decision, so it must not be behind the
    * formatting toggle.
+   *
+   * Was `pickImage`, and the name was the bug: it opened a picker limited to
+   * images while the button beside it said "Datei anhängen".
    */
-  pickImage: () => void;
+  pickFile: () => void;
   /**
    * Put the caret in the editor.
    *
@@ -121,16 +124,21 @@ export function RichTextEditor({
   /**
    * Upload, then insert. Returns nothing — the editor is updated as a side effect,
    * because a paste handler cannot wait for a promise and still consume the event.
+   *
+   * **Not images only.** This filtered everything else out silently, which made the
+   * paperclip a control that accepted a PDF and did nothing with it — the file was
+   * gone, no message, and the reply went out without the document it was about. The
+   * allow-list lives in `lib/storage.ts` and answers with a readable reason, so the
+   * honest thing is to send whatever was picked and show what comes back.
    */
   const uploadAndInsert = async (editor: Editor, files: File[]) => {
-    const images = files.filter((file) => file.type.startsWith("image/"));
-    if (images.length === 0) return;
+    if (files.length === 0) return;
 
     setUploading(true);
     setNotice(null);
 
     const body = new FormData();
-    for (const file of images) body.append("files", file);
+    for (const file of files) body.append("files", file);
 
     try {
       const response = await fetch("/api/tickets/upload", {
@@ -138,21 +146,44 @@ export function RichTextEditor({
         body,
       });
       const payload = (await response.json()) as {
-        uploads?: { id: string }[];
+        uploads?: { id: string; name: string; type: string }[];
         error?: string;
       };
       if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`);
 
       for (const upload of payload.uploads ?? []) {
+        if (upload.type.startsWith("image/")) {
+          editor
+            .chain()
+            .focus()
+            .setImage({ src: `/api/uploads/${upload.id}?inline=1` })
+            .run();
+          continue;
+        }
+
+        /*
+         * Everything else becomes a link carrying the file name.
+         *
+         * Its own paragraph plus an empty one after it, and that is not cosmetic:
+         * inserting the anchor inline leaves the caret inside the link mark, so the
+         * next word typed becomes part of the link. The empty block puts the caret
+         * outside it.
+         *
+         * The name is escaped — it comes from a file on somebody's disk, and this
+         * markup goes straight into the document. The sanitiser would clean it on
+         * save, but by then the editor has already rendered it.
+         */
         editor
           .chain()
           .focus()
-          .setImage({ src: `/api/uploads/${upload.id}?inline=1` })
+          .insertContent(
+            `<p><a href="/api/uploads/${upload.id}">${escapeHtml(upload.name)}</a></p><p></p>`,
+          )
           .run();
       }
     } catch (error) {
       setNotice(
-        error instanceof Error ? error.message : "Bild konnte nicht hochgeladen werden.",
+        error instanceof Error ? error.message : "Datei konnte nicht hochgeladen werden.",
       );
     } finally {
       setUploading(false);
@@ -260,7 +291,7 @@ export function RichTextEditor({
     if (!editor || !onReady) return;
     onReady({
       insert: (html) => editor.chain().focus().insertContent(html).run(),
-      pickImage: () => fileInput.current?.click(),
+      pickFile: () => fileInput.current?.click(),
       focus: () => editor.chain().focus("end").run(),
       clear: () => editor.commands.clearContent(true),
     });
@@ -413,8 +444,8 @@ export function RichTextEditor({
           }}
         />
         <Tool
-          icon={uploading ? Loader2Icon : ImageIcon}
-          label="Bild einfügen"
+          icon={uploading ? Loader2Icon : PaperclipIcon}
+          label="Datei anhängen"
           spinning={uploading}
           disabled={disabled || uploading}
           onClick={() => fileInput.current?.click()}
@@ -426,18 +457,23 @@ export function RichTextEditor({
       {/*
         Outside the toolbar on purpose. Folding the formatting away must not take
         the file picker with it — the composer's paperclip opens this through
-        `pickImage`, and attaching a file is not a formatting decision.
+        `pickFile`, and attaching a file is not a formatting decision.
+
+        `accept` mirrors the server allow-list in `lib/storage.ts` rather than
+        narrowing it: a picker that hides the file type the server would have taken
+        is a refusal with no message. It stays a hint either way — the server checks
+        the extension again, and a drag-and-drop never consults this attribute.
       */}
       <input
         ref={fileInput}
         type="file"
-        accept="image/png,image/jpeg,image/gif,image/webp"
+        accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.pdf,.txt,.log,.csv,.zip,.eml,.msg,.docx,.xlsx"
         multiple
         className="hidden"
         onChange={(event) =>
           void uploadAndInsert(editor, Array.from(event.target.files ?? []))
         }
-        aria-label="Bild einfügen"
+        aria-label="Datei anhängen"
       />
 
       <EditorContent editor={editor} />
@@ -455,6 +491,22 @@ export function RichTextEditor({
       )}
     </div>
   );
+}
+
+/**
+ * Escape a file name for the markup an attachment link is inserted as.
+ *
+ * A name comes off somebody's disk and can hold `<`, `>` or `&`. The server-side
+ * sanitiser cleans the body on save, but this string reaches the editor's document
+ * first — and what the author sees before pressing send has to be the file they
+ * picked, not the fragment a stray angle bracket left behind.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 function Tool({

@@ -100,18 +100,28 @@ export function ChatBubble({
   /** Arrived since this reader last opened the ticket. */
   isNew = false,
   /**
-   * Rendered under the body. The bubble does not decide whether they apply —
-   * `TicketMessages` does, because ownership and the module switches are its
-   * props, and a component that draws one message should not be reading feature
-   * flags.
+   * The three-dot menu, in the header's right-hand corner.
+   *
+   * A slot rather than something this component builds: whether editing and
+   * retracting apply depends on ownership and on two feature flags, and a
+   * component that draws one message should not be reading either.
    */
-  actions,
+  menu,
+  /**
+   * The correction form, rendered **instead of** the body.
+   *
+   * Not below it: leaving the stored text above a field holding the same words
+   * showed the message twice, and neither copy said which one was about to be
+   * saved.
+   */
+  editor,
 }: {
   comment: TicketComment;
   tone: BubbleTone;
   side: "left" | "right";
   isNew?: boolean;
-  actions?: ReactNode;
+  menu?: ReactNode;
+  editor?: ReactNode;
 }) {
   const style = TONES[tone];
   const label = roleLabel(comment);
@@ -185,9 +195,15 @@ export function ChatBubble({
           date={comment.created_at}
           className="ml-auto text-[11px] text-muted-foreground"
         />
+        {/*
+          The menu is the last thing in the header, so it lands in the bubble's
+          top-right corner. `ml-auto` on the time keeps it there even when the
+          header wraps — on a narrow screen the two travel to the next line
+          together rather than the menu ending up under the author's name.
+        */}
+        {menu}
       </header>
-      <CommentBody comment={comment} />
-      {actions}
+      {editor ?? <CommentBody comment={comment} />}
     </article>
   );
 }

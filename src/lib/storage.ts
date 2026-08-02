@@ -83,17 +83,30 @@ export class UploadError extends Error {}
  */
 export type UploadScope = "ticket" | "faq";
 
-/** Images we are willing to render inline rather than only offer as a download. */
-const INLINE_IMAGE_TYPES = new Set([
+/**
+ * What we are willing to render in place rather than only offer as a download.
+ *
+ * Raster images plus PDF, and the list is the whole security argument: neither can
+ * carry markup this origin would execute, the allow-list has no SVG and no HTML,
+ * and the served Content-Type comes from the stored extension rather than from the
+ * browser. A PDF opens in the browser's own viewer, which has no access to the
+ * embedding document — what it cannot do is what makes the preview affordable.
+ *
+ * Everything else stays `Content-Disposition: attachment`. A .docx or a .zip has no
+ * in-browser reader anyway, and an inline .eml or .csv would be a document rendered
+ * inside the application's origin for no gain.
+ */
+const INLINE_TYPES = new Set([
   "image/png",
   "image/jpeg",
   "image/gif",
   "image/webp",
   "image/bmp",
+  "application/pdf",
 ]);
 
-export const isInlineImage = (type: string): boolean =>
-  INLINE_IMAGE_TYPES.has(type);
+export const isInlineViewable = (type: string): boolean =>
+  INLINE_TYPES.has(type);
 
 export interface StoredUpload {
   id: string;
@@ -264,8 +277,8 @@ export interface ReadableUpload {
   name: string;
   type: string;
   size: number;
-  /** Safe to render in an <img>. Everything else is download-only. */
-  inlineImage: boolean;
+  /** Safe to render in place — a raster image or a PDF. Everything else is a download. */
+  inlineViewable: boolean;
   stream: () => ReadableStream<Uint8Array> | Promise<ReadableStream<Uint8Array>>;
 }
 
@@ -338,7 +351,7 @@ export async function openUploadFor(
     name: row.original_name,
     type: row.mime_type,
     size: row.size_bytes,
-    inlineImage: isInlineImage(row.mime_type),
+    inlineViewable: isInlineViewable(row.mime_type),
     // Streaming rather than reading into memory keeps a 25 MB download off the
     // heap, on both backends.
     stream: object.stream,

@@ -1493,6 +1493,20 @@ console.log("\nrich-text sanitising");
     uploadIdsInHtml('<img src="/api/uploads/aaa"><img src="/api/uploads/aaa">').length === 1,
   );
   check("no images yields none", uploadIdsInHtml("<p>x</p>").length === 0);
+  /*
+   * A PDF is inserted as a link, not an image. Missing it would leave the row
+   * unbound to the ticket, and the reporter would then get a 404 from a link
+   * sitting in their own ticket.
+   */
+  check(
+    "a linked attachment counts too",
+    uploadIdsInHtml('<p><a href="/api/uploads/ccc">handbuch.pdf</a></p>')
+      .join(",") === "ccc",
+  );
+  check(
+    "an outside link is not an upload",
+    uploadIdsInHtml('<a href="https://example.com/x.pdf">x.pdf</a>').length === 0,
+  );
 }
 
 console.log("\ncustomer profile");

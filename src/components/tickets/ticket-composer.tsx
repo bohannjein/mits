@@ -538,7 +538,7 @@ export function TicketComposer({
               type="button"
               variant="ghost"
               size="icon-sm"
-              onClick={() => editor?.pickImage()}
+              onClick={() => editor?.pickFile()}
               disabled={busy || !editor}
               title="Datei anhängen"
               className="rounded-lg text-muted-foreground"

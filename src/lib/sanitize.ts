@@ -124,20 +124,30 @@ export function hasVisibleContent(html: string): boolean {
 }
 
 /**
- * The upload ids an already-sanitised body embeds.
+ * The upload ids an already-sanitised body references.
  *
  * Read back out of our own markup rather than tracked alongside it: the editor may
  * insert an image and the author may then delete it again, so the document is the
  * only thing that knows what actually survived. Safe to regex because the source has
  * been through `sanitizeRichText` — every `src` that reached this point matched
  * `UPLOAD_SRC`, so the shape is known.
+ *
+ * **Links count as well as images**, because a reply can now carry a file the
+ * browser cannot render inline — a PDF or a log — and those are inserted as an
+ * `<a>` rather than an `<img>`. Missing them would leave the row unbound to the
+ * ticket, and `openUploadFor` would then answer 404 for everybody except the
+ * author and the agents: the reporter would see a link to their own ticket's
+ * attachment that refuses to open.
  */
 export function uploadIdsInHtml(html: string): string[] {
   const ids = new Set<string>();
-  for (const match of html.matchAll(
+  for (const pattern of [
     /<img[^>]*src="[/]api[/]uploads[/]([A-Za-z0-9-]+)([?]inline=1)?"/gi,
-  )) {
-    ids.add(match[1]);
+    /<a[^>]*href="[/]api[/]uploads[/]([A-Za-z0-9-]+)([?]inline=1)?"/gi,
+  ]) {
+    for (const match of html.matchAll(pattern)) {
+      ids.add(match[1]);
+    }
   }
   return [...ids];
 }

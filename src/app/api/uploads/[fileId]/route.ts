@@ -53,17 +53,21 @@ export async function GET(
 
   /*
    * `?inline=1` renders in place instead of downloading — needed for the images in
-   * a FAQ article, which have to appear in an <img> rather than as a link.
+   * a FAQ article, which have to appear in an <img> rather than as a link, and for
+   * the attachment viewer in a ticket thread, which shows a screenshot or a PDF at
+   * full size instead of making somebody download it to read one line.
    *
-   * Honoured only for raster images, and that restriction is what makes it safe:
-   * the storage allow-list contains no SVG and no HTML, so nothing that can carry
-   * script is reachable through this branch. `nosniff` plus the stored
-   * Content-Type — taken from the extension, never from the browser — keeps a
-   * mislabelled file from being reinterpreted. Everything else stays a download,
-   * so the request cannot opt a document into inline rendering.
+   * Honoured only for raster images and PDF, and that restriction is what makes it
+   * safe: the storage allow-list contains no SVG and no HTML, so nothing that can
+   * carry script into this origin is reachable through this branch. A PDF renders
+   * in the browser's own viewer, which cannot reach the embedding document.
+   * `nosniff` plus the stored Content-Type — taken from the extension, never from
+   * the browser — keeps a mislabelled file from being reinterpreted. Everything
+   * else stays a download, so the request cannot opt a document into inline
+   * rendering.
    */
   const inline =
-    upload.inlineImage &&
+    upload.inlineViewable &&
     new URL(request.url).searchParams.get("inline") === "1";
 
   const filename = `filename*=UTF-8''${encodeURIComponent(upload.name)}`;

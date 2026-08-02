@@ -35,7 +35,13 @@ const RICH_TEXT_CLASSES = cn(
   "[&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:bg-muted [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs",
   "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-xs",
   "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4",
-  "[&_img]:my-2 [&_img]:max-h-80 [&_img]:rounded-xl [&_img]:border [&_img]:border-border",
+  /*
+   * `cursor-zoom-in` because the image is one: `AttachmentViewer` wraps the thread
+   * and opens an embedded screenshot at full size. The cap above is what makes that
+   * necessary — an error dialog scaled to 320 pixels is an attachment nobody can
+   * read, and lifting the cap instead would let one image take the whole thread.
+   */
+  "[&_img]:my-2 [&_img]:max-h-80 [&_img]:cursor-zoom-in [&_img]:rounded-xl [&_img]:border [&_img]:border-border",
   // Wide content scrolls inside itself rather than widening the bubble.
   "[&_table]:block [&_table]:overflow-x-auto [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1",
 );

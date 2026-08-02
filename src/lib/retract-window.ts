@@ -2,7 +2,7 @@
    How long a message can be taken back.
 
    No `server-only`: three callers — `lib/ticket-comments.ts`, which enforces it,
-   the countdown in `MessageActions`, which displays it, and the offline suite.
+   the countdown in `MessageMenu`, which displays it, and the offline suite.
    Same arrangement as `lib/csv.ts` and `lib/services/ai/tags.ts`.
 
    One number in one place, because the two sides have to agree. A button that

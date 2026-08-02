@@ -3,8 +3,12 @@
 import { ArrowDownIcon, SparkleIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AttachmentViewer } from "@/components/tickets/attachment-viewer";
 import { ChatBubble, toneFor } from "@/components/tickets/chat-bubble";
-import { MessageActions } from "@/components/tickets/message-actions";
+import {
+  MessageEditor,
+  MessageMenu,
+} from "@/components/tickets/message-actions";
 import { Button } from "@/components/ui/button";
 import { isSyntheticOpening } from "@/lib/ticket-opening";
 import type { TicketComment } from "@/types/mits";
@@ -111,6 +115,18 @@ export function TicketMessages({
   const [missed, setMissed] = useState(0);
   const lastCount = useRef(comments.length);
 
+  /*
+   * Which message is open for correction, if any.
+   *
+   * Here rather than in `message-actions.tsx`, because the menu that starts an edit
+   * and the form that performs it are now two different slots of `ChatBubble` —
+   * the header and the body. One id and not a set: editing two messages at once is
+   * not something anybody does, and offering it would mean two half-saved drafts
+   * surviving a `router.refresh()` from the live poll.
+   */
+  const [editing, setEditing] = useState<string | null>(null);
+  const stopEditing = useCallback(() => setEditing(null), []);
+
   const jump = useCallback((behavior: ScrollBehavior = "smooth") => {
     bottom.current?.scrollIntoView({ block: "end", behavior });
     setAway(false);
@@ -193,67 +209,95 @@ export function TicketMessages({
   const newCount = comments.filter(isNew).length;
 
   return (
-    <div className="grid gap-3">
-      {comments.map((comment, index) => (
-        <div key={comment.id} className="grid gap-3">
-          {index === firstNew && <NewDivider count={newCount} />}
-          <ChatBubble
-            comment={comment}
-            tone={toneFor(comment, viewerId)}
-            // The speaker, not the reader — see the note above. Derived from
-            // `author_is_agent` rather than from the tone, which no longer says
-            // anything about who wrote the message.
-            side={comment.author_is_agent ? "right" : "left"}
-            isNew={isNew(comment)}
-            /*
-             * Only on your own messages, and never on the opening bubble: that one
-             * is derived from the form payload at render time and has no row behind
-             * it to edit or remove. Editing it would mean rewriting a stored form
-             * answer — the same value the ticket is searched and reported on.
-             *
-             * The ownership test here decides what is *drawn*. `editComment` and
-             * `retractComment` decide again against the stored row, which is the
-             * check that counts.
-             */
-            actions={
-              comment.author_id === viewerId && !isSyntheticOpening(comment.id) ? (
-                <MessageActions
-                  comment={comment}
-                  ticketId={ticketId}
-                  canEdit={canEdit}
-                  canRetract={canRetract}
-                />
-              ) : undefined
-            }
-          />
-        </div>
-      ))}
+    /*
+     * The whole list inside the viewer: a click on an embedded screenshot or on a
+     * PDF opens it at full size. One wrapper rather than something per bubble —
+     * the handler works by delegation, and a stored comment body has no element of
+     * ours to hang it on.
+     */
+    <AttachmentViewer>
+      <div className="grid gap-3">
+        {comments.map((comment, index) => {
+          /*
+           * Only on your own messages, and never on the opening bubble: that one
+           * is derived from the form payload at render time and has no row behind
+           * it to edit or remove. Editing it would mean rewriting a stored form
+           * answer — the same value the ticket is searched and reported on.
+           *
+           * The ownership test here decides what is *drawn*. `editComment` and
+           * `retractComment` decide again against the stored row, which is the
+           * check that counts.
+           */
+          const own =
+            comment.author_id === viewerId && !isSyntheticOpening(comment.id);
 
-      <div ref={bottom} />
+          return (
+            <div key={comment.id} className="grid gap-3">
+              {index === firstNew && <NewDivider count={newCount} />}
+              <ChatBubble
+                comment={comment}
+                tone={toneFor(comment, viewerId)}
+                // The speaker, not the reader — see the note above. Derived from
+                // `author_is_agent` rather than from the tone, which no longer
+                // says anything about who wrote the message.
+                side={comment.author_is_agent ? "right" : "left"}
+                isNew={isNew(comment)}
+                menu={
+                  own ? (
+                    <MessageMenu
+                      comment={comment}
+                      ticketId={ticketId}
+                      canEdit={canEdit}
+                      canRetract={canRetract}
+                      onEdit={() => setEditing(comment.id)}
+                    />
+                  ) : undefined
+                }
+                /*
+                 * `canEdit` again on the editor, not only on the menu entry that
+                 * opens it: the flag can go off while a ticket is on screen, and a
+                 * form left standing would post into an action that refuses it.
+                 */
+                editor={
+                  own && canEdit && editing === comment.id ? (
+                    <MessageEditor
+                      comment={comment}
+                      ticketId={ticketId}
+                      onDone={stopEditing}
+                    />
+                  ) : undefined
+                }
+              />
+            </div>
+          );
+        })}
 
-      {/*
-        `sticky bottom-0` inside the scroll container, so it rides along at the
-        lower edge of the visible area rather than sitting at the end of a list
-        the reader has scrolled away from. Zero-height wrapper: a sticky element
-        with its own height would push the last bubble up by that much on every
-        thread, whether or not the button is showing.
-      */}
-      {away && (
-        <div className="pointer-events-none sticky bottom-0 h-0 text-center">
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => jump()}
-            className="pointer-events-auto -translate-y-2 rounded-full bg-inverse-surface px-3 text-xs text-inverse-surface-foreground shadow-elev-3 hover:bg-inverse-surface-hover"
-          >
-            <ArrowDownIcon className="size-3.5" strokeWidth={1.5} />
-            {missed > 0
-              ? `${missed} neue ${missed === 1 ? "Nachricht" : "Nachrichten"}`
-              : "Zum Ende"}
-          </Button>
-        </div>
-      )}
-    </div>
+        <div ref={bottom} />
+
+        {/*
+          `sticky bottom-0` inside the scroll container, so it rides along at the
+          lower edge of the visible area rather than sitting at the end of a list
+          the reader has scrolled away from. Zero-height wrapper: a sticky element
+          with its own height would push the last bubble up by that much on every
+          thread, whether or not the button is showing.
+        */}
+        {away && (
+          <div className="pointer-events-none sticky bottom-0 h-0 text-center">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => jump()}
+              className="pointer-events-auto -translate-y-2 rounded-full bg-inverse-surface px-3 text-xs text-inverse-surface-foreground shadow-elev-3 hover:bg-inverse-surface-hover"
+            >
+              <ArrowDownIcon className="size-3.5" strokeWidth={1.5} />
+              {missed > 0
+                ? `${missed} neue ${missed === 1 ? "Nachricht" : "Nachrichten"}`
+                : "Zum Ende"}
+            </Button>
+          </div>
+        )}
+      </div>
+    </AttachmentViewer>
   );
 }
 
