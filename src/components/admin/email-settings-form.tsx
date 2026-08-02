@@ -133,9 +133,6 @@ export function EmailSettingsForm({
                   disabled={saving}
                   className="h-10 rounded-xl font-mono"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Leer lassen für einen Server ohne Anmeldung.
-                </p>
               </div>
 
               <div className="grid gap-2">
@@ -182,9 +179,7 @@ export function EmailSettingsForm({
                 className="h-10 rounded-xl font-mono"
               />
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Basis für den Button „Ticket im Browser öffnen“. Eine Mail entsteht
-                außerhalb einer Anfrage, der Host ist dort nicht ableitbar — ohne
-                diesen Wert gehen Benachrichtigungen ohne Link hinaus.
+                Ohne diesen Wert geht die Mail ohne Ticket-Link raus.
               </p>
             </div>
           </CardContent>

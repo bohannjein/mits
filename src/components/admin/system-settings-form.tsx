@@ -170,10 +170,6 @@ export function SystemSettingsForm({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
-              Jede Aktualisierung ist eine Anfrage pro offenem Tab. Ein kurzes
-              Intervall auf vielen Arbeitsplätzen erzeugt entsprechend Last.
-            </p>
           </div>
         </CardContent>
       </Card>

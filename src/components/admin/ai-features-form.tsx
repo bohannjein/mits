@@ -105,7 +105,7 @@ export function AIFeaturesForm({
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="grid gap-5">
+          <CardContent className="grid gap-4">
             <div className="flex items-start gap-3 rounded-2xl border border-border p-4">
               <Switch
                 id="enabled"
@@ -246,10 +246,6 @@ export function AIFeaturesForm({
                   {/* Said here because it is genuinely surprising: the OCR stage
                       runs in the Python backend against Ollama, whichever provider
                       is chosen above. */}
-                  <p className="text-xs text-muted-foreground">
-                    Liest Text aus Screenshots. Immer über Ollama, unabhängig vom
-                    gewählten Anbieter.
-                  </p>
                 </div>
               </div>
             </div>
@@ -319,7 +315,6 @@ export function AIFeaturesForm({
                   disabled={saving}
                   className="h-10 rounded-xl"
                 />
-                <p className="text-xs text-muted-foreground">Minuten.</p>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="clusterMinTickets">Ab wie vielen Tickets</Label>
@@ -333,10 +328,6 @@ export function AIFeaturesForm({
                   disabled={saving}
                   className="h-10 rounded-xl"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Drei ähnliche Meldungen sind in einer kleinen Firma eine Störung
-                  und in einer großen ein Dienstag.
-                </p>
               </div>
             </div>
 

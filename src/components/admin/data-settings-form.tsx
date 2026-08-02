@@ -70,7 +70,7 @@ export function DataSettingsForm({
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="grid gap-5">
+          <CardContent className="grid gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="maxUploadMb">Maximale Anhanggröße</Label>
@@ -90,9 +90,6 @@ export function DataSettingsForm({
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
-                  Pro Datei. Greift ab dem nächsten Upload, ohne Neustart.
-                </p>
               </div>
 
               <div className="grid gap-2">
@@ -113,9 +110,6 @@ export function DataSettingsForm({
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
-                  Danach darf ein geschlossenes Ticket anonymisiert werden.
-                </p>
               </div>
             </div>
 

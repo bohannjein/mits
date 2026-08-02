@@ -78,8 +78,8 @@ export function NotificationSettingsForm({
           </CardDescription>
         </CardHeader>
 
-        <CardContent className="grid gap-5">
-          <div className="grid gap-5 sm:grid-cols-2">
+        <CardContent className="grid gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
               <Label htmlFor="position">Ecke</Label>
               <Select
@@ -101,7 +101,7 @@ export function NotificationSettingsForm({
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="seconds">Anzeigedauer</Label>
+              <Label htmlFor="seconds">Anzeigedauer (Sekunden)</Label>
               <Input
                 id="seconds"
                 name="seconds"
@@ -112,10 +112,6 @@ export function NotificationSettingsForm({
                 disabled={saving}
                 className="h-10 rounded-xl"
               />
-              <p className="text-xs text-muted-foreground">
-                Sekunden. Zeigt der Mauszeiger auf die Einblendung, läuft die Zeit
-                nicht weiter.
-              </p>
             </div>
 
             <div className="grid gap-2">
@@ -130,13 +126,10 @@ export function NotificationSettingsForm({
                 disabled={saving}
                 className="h-10 rounded-xl"
               />
-              <p className="text-xs text-muted-foreground">
-                Ältere rutschen heraus, sobald eine neue dazukommt.
-              </p>
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="pollSeconds">Abfrageintervall</Label>
+              <Label htmlFor="pollSeconds">Abfrageintervall (Sekunden)</Label>
               <Input
                 id="pollSeconds"
                 name="pollSeconds"
@@ -147,10 +140,6 @@ export function NotificationSettingsForm({
                 disabled={saving}
                 className="h-10 rounded-xl"
               />
-              <p className="text-xs text-muted-foreground">
-                Sekunden zwischen zwei Abfragen. Ein Tab im Hintergrund fragt
-                nicht.
-              </p>
             </div>
           </div>
         </CardContent>
@@ -263,11 +252,12 @@ export function NotificationSettingsForm({
           </CardDescription>
         </CardHeader>
 
-        <CardContent className="grid gap-5">
+        <CardContent className="grid gap-4">
           <div className="grid gap-2">
             <Label htmlFor="digestThreshold">Ab wie vielen auf einmal</Label>
             <Input
               id="digestThreshold"
+              placeholder="0 = aus"
               name="digestThreshold"
               type="number"
               min={0}
@@ -276,10 +266,6 @@ export function NotificationSettingsForm({
               disabled={saving}
               className="h-10 w-full rounded-xl sm:w-40"
             />
-            <p className="text-xs text-muted-foreground">
-              0 schaltet die Sammelmeldung ab. Sie bleibt stehen, bis sie
-              weggeklickt wird.
-            </p>
           </div>
 
           {/*

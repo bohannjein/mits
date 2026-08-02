@@ -111,7 +111,7 @@ export function MailSettingsForm({
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="grid gap-5">
+          <CardContent className="grid gap-4">
             {!inboundEnabled && (
               <Alert className="rounded-2xl border-border px-4 py-3">
                 <TriangleAlertIcon strokeWidth={1.5} />
@@ -255,11 +255,6 @@ export function MailSettingsForm({
                   </Label>
                 </div>
 
-                <p className="text-xs text-muted-foreground">
-                  Geholt werden ungelesene Nachrichten. MITS markiert eine Mail erst
-                  als gelesen, wenn daraus ein Ticket oder ein Beitrag entstanden
-                  ist.
-                </p>
               </div>
             )}
 
@@ -369,7 +364,7 @@ export function MailSettingsForm({
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="grid gap-5">
+          <CardContent className="grid gap-4">
 
             <div className="flex items-start gap-3 rounded-2xl border border-border p-4">
               <Switch

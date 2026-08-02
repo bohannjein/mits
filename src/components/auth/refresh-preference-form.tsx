@@ -65,10 +65,6 @@ export function RefreshPreferenceForm({
             ))}
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
-          Gilt für Ihr Konto auf jedem Gerät. Pausiert, während der Tab im
-          Hintergrund liegt.
-        </p>
       </div>
 
       {result && (

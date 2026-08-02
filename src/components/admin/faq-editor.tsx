@@ -174,10 +174,6 @@ export function FaqEditor({
                   disabled={saving}
                   className="h-10 rounded-xl"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Leer lassen für „ohne Gruppe“. Gleiche Kategorien werden im
-                  Portal zusammengefasst.
-                </p>
               </div>
 
               <div className="grid gap-2">
@@ -189,8 +185,7 @@ export function FaqEditor({
                   onChange={(attachments) => patch(entry.id, { attachments })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Bilder erscheinen im Beitrag, andere Dateien darunter als
-                  Download. Für alle angemeldeten Personen lesbar.
+                  Für alle angemeldeten Personen lesbar.
                 </p>
               </div>
             </div>

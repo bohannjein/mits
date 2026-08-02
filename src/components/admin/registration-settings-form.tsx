@@ -46,7 +46,7 @@ export function RegistrationSettingsForm({
           </CardDescription>
         </CardHeader>
 
-        <CardContent className="grid gap-5">
+        <CardContent className="grid gap-4">
           <div className="flex items-start gap-3 rounded-2xl border border-border p-4">
             <Switch
               id="registrationEnabled"
@@ -56,10 +56,6 @@ export function RegistrationSettingsForm({
             />
             <div className="grid gap-1">
               <Label htmlFor="registrationEnabled">Selbstregistrierung erlauben</Label>
-              <p className="text-xs text-muted-foreground">
-                Aus: /register zeigt einen Hinweis und legt keine Konten mehr an.
-                Das allererste Konto einer Instanz kommt immer durch.
-              </p>
             </div>
           </div>
 
@@ -74,11 +70,6 @@ export function RegistrationSettingsForm({
               placeholder={"firma.de\ntochtergesellschaft.de"}
               className="rounded-xl font-mono"
             />
-            <p className="text-xs text-muted-foreground">
-              Eine Domain pro Zeile, ohne „@“. Leer lassen für beliebige Domains.
-              Der Vergleich ist exakt — <code>firma.de</code> lässt{" "}
-              <code>nichtfirma.de</code> nicht zu.
-            </p>
           </div>
 
           {result && (

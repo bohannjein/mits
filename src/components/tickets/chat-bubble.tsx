@@ -119,7 +119,10 @@ export function ChatBubble({
   return (
     <article
       className={cn(
-        "max-w-[85%] rounded-2xl border px-4 py-3 shadow-elev-1",
+        // `min-w-0` as well as the cap: without it a grid item refuses to
+        // shrink below its content, so one long token would widen the bubble
+        // past 85% and push the column sideways.
+        "max-w-[85%] min-w-0 rounded-2xl border px-4 py-3 shadow-elev-1",
         side === "right"
           ? "justify-self-end rounded-br-md"
           : "justify-self-start rounded-bl-md",

@@ -117,9 +117,6 @@ export function PortalLayoutForm({ config }: { config: PortalConfig }) {
               disabled={saving}
               className="h-10 rounded-xl"
             />
-            <p className="text-xs text-muted-foreground">
-              Steht über den beiden Einstiegskacheln.
-            </p>
           </div>
         </CardContent>
       </Card>

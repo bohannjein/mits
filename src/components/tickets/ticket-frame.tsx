@@ -155,7 +155,7 @@ export function TicketFrame({
           </div>
         ) : (
           <>
-            <div className="scrollbar-thin py-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-2">
+            <div className="scrollbar-thin overflow-x-hidden py-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-2">
               {messages}
             </div>
 

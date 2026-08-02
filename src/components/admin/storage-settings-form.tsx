@@ -82,9 +82,6 @@ export function StorageSettingsForm({
                 disabled={saving}
                 className="h-10 rounded-xl"
               />
-              <p className="text-xs text-muted-foreground">
-                Nur der Host, bei Bedarf mit Port. Ohne https:// und ohne Pfad.
-              </p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -155,9 +152,6 @@ export function StorageSettingsForm({
                 disabled={saving}
                 className="h-10 rounded-xl"
               />
-              <p className="text-xs text-muted-foreground">
-                Ordner im Bucket. Leer legt die Dateien direkt in die Wurzel.
-              </p>
             </div>
 
             <div className="flex items-center gap-2.5">

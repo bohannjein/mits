@@ -151,31 +151,44 @@ export function TicketTable({
         <TableHeader>
           <TableRow>
             {/*
-              No widths. Every column but the title sizes itself to its content —
-              a sixteen-digit number and a status badge are each as wide as they
-              are — and the title takes whatever is left.
+              `w-px` on every column except the title, and it is not a width.
+
+              In automatic layout `width: 1px` reads as "as narrow as you can make
+              this", so the column shrinks to its content and refuses to grow. The
+              title then gets every remaining pixel.
+
+              Without it the title truncated early **while free space sat beside
+              it**: a `max-width: 0` column cannot absorb leftover space, so the
+              browser handed the slack to the neighbours instead and padded them
+              out around a clipped title. The `max-w-0` is what makes the title
+              truncate rather than widen the table; `w-px` on the others is what
+              makes the leftover reach it at all.
+
+              Not `table-fixed` with declared widths — that was the first attempt
+              and it broke the page; see the note above the table.
 
               `hidden … table-cell` drops the context columns on narrow screens
               rather than shrinking them into unreadability. What survives at every
               width is number, title, status and age: enough to find a ticket and
-              know whether it needs attention. Those breakpoints are also what keep
-              the content-sized columns from eating the title on a laptop.
+              know whether it needs attention.
             */}
-            {header("number")}
+            {header("number", "w-px whitespace-nowrap")}
             {header("title", "w-full")}
             {showLocation && (
-              <TableHead className="hidden lg:table-cell">Standort</TableHead>
+              <TableHead className="hidden w-px whitespace-nowrap lg:table-cell">
+                Standort
+              </TableHead>
             )}
-            {showOwner && header("reporter", "hidden xl:table-cell")}
-            {showOwner && header("owner", "hidden lg:table-cell")}
-            {header("priority", "hidden sm:table-cell")}
-            {header("status")}
+            {showOwner && header("reporter", "hidden w-px whitespace-nowrap xl:table-cell")}
+            {showOwner && header("owner", "hidden w-px whitespace-nowrap lg:table-cell")}
+            {header("priority", "hidden w-px whitespace-nowrap sm:table-cell")}
+            {header("status", "w-px whitespace-nowrap")}
             {showTime && (
-              <TableHead className="hidden text-right xl:table-cell">
+              <TableHead className="hidden w-px text-right whitespace-nowrap xl:table-cell">
                 Zeit
               </TableHead>
             )}
-            {header("age")}
+            {header("age", "w-px whitespace-nowrap")}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -200,7 +213,7 @@ export function TicketTable({
               >
                 <TableCell
                   className={cn(
-                    "font-mono text-xs whitespace-nowrap text-muted-foreground",
+                    "w-px font-mono text-xs whitespace-nowrap text-muted-foreground",
                     // The unread dot rides on the number cell so it sits in a fixed
                     // column instead of shifting with the title's length.
                     ticket.unread && "text-foreground",
@@ -245,7 +258,7 @@ export function TicketTable({
                   )}
                 </TableCell>
                 {showLocation && (
-                  <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
+                  <TableCell className="hidden w-px text-xs whitespace-nowrap text-muted-foreground lg:table-cell">
                     {/* A ticket can outlive its branch — see lib/locations.ts. */}
                     <span className="block max-w-24 truncate">
                       {location?.code || location?.name || "—"}
@@ -253,7 +266,7 @@ export function TicketTable({
                   </TableCell>
                 )}
                 {showOwner && (
-                  <TableCell className="hidden text-xs xl:table-cell">
+                  <TableCell className="hidden w-px text-xs xl:table-cell">
                     {/*
                       Capped on an inner span, not on the cell: in automatic layout
                       a `max-width` on a `<td>` is advisory, and a long address
@@ -261,7 +274,7 @@ export function TicketTable({
                       the title.
                     */}
                     <span
-                      className="block max-w-44 truncate"
+                      className="block max-w-[200px] truncate"
                       title={ticket.created_by_email}
                     >
                       {ticket.created_by_email}
@@ -269,7 +282,7 @@ export function TicketTable({
                   </TableCell>
                 )}
                 {showOwner && (
-                  <TableCell className="hidden text-xs lg:table-cell">
+                  <TableCell className="hidden w-px text-xs lg:table-cell">
                     <span className="block max-w-32 truncate">
                       {ticket.assigned_to_name ?? (
                         <span className="text-muted-foreground">
@@ -279,7 +292,7 @@ export function TicketTable({
                     </span>
                   </TableCell>
                 )}
-                <TableCell className="hidden sm:table-cell">
+                <TableCell className="hidden w-px whitespace-nowrap sm:table-cell">
                   <Badge
                     variant={
                       isElevatedPriority(ticket.priority) ? "default" : "outline"
@@ -289,13 +302,13 @@ export function TicketTable({
                     {TICKET_PRIORITY_LABELS[ticket.priority]}
                   </Badge>
                 </TableCell>
-                <TableCell>
+                <TableCell className="w-px whitespace-nowrap">
                   <Badge variant="secondary" className="rounded-full">
                     {TICKET_STATUS_LABELS[ticket.status]}
                   </Badge>
                 </TableCell>
                 {showTime && (
-                  <TableCell className="hidden text-right text-xs whitespace-nowrap tabular-nums xl:table-cell">
+                  <TableCell className="hidden w-px text-right text-xs whitespace-nowrap tabular-nums xl:table-cell">
                     {ticket.logged_minutes > 0 ? (
                       <span className="inline-flex items-center gap-1.5">
                         <ClockIcon
@@ -317,7 +330,7 @@ export function TicketTable({
                   between renders, which is what `AutoRefresh` in the header is for.
                 */}
                 <TableCell
-                  className="text-xs whitespace-nowrap text-muted-foreground"
+                  className="w-px text-xs whitespace-nowrap text-muted-foreground"
                   title={formatDateTime(ticket.created_at, timezone)}
                 >
                   {formatRelativeTime(ticket.created_at, now)}

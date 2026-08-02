@@ -68,13 +68,10 @@ export function ContactDetailsForm({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">
-            Hilft dem Agenten, ein Ticket vor Ort einzuordnen.
-          </p>
         </div>
       )}
 
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         {CUSTOMER_PROFILE_FIELDS.map((field) => {
           const id = `profile-${field.key}`;
           const value = profile[field.key];

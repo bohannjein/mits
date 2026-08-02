@@ -54,9 +54,6 @@ export function PasswordChangeForm({ forced }: { forced: boolean }) {
           disabled={pending}
           className="h-10 rounded-xl"
         />
-        <p className="text-xs text-muted-foreground">
-          Mindestens 10 Zeichen.
-        </p>
       </div>
 
       <div className="grid gap-2">

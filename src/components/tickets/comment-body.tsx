@@ -17,7 +17,18 @@ import type { TicketComment } from "@/types/mits";
    ────────────────────────────────────────────────────────────────────────── */
 
 /** Shared with the editor, so a reply looks the same while written and after. */
+/*
+ * Nothing in here may decide how wide the bubble is.
+ *
+ * A mailed-in reply routinely contains a hundred-character tracking URL or an
+ * address with no spaces in it, and a single unbreakable token is enough to
+ * widen the bubble, widen the column and give the whole conversation a
+ * horizontal scrollbar. `break-words` lets the browser break inside such a token
+ * as a last resort; `pre` and `table` keep their own scrollbars below, because
+ * breaking a code block mid-token changes what it says.
+ */
 const RICH_TEXT_CLASSES = cn(
+  "break-words",
   "[&_p]:my-1 [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5",
   "[&_h1]:mt-2 [&_h1]:text-base [&_h1]:font-medium [&_h2]:mt-2 [&_h2]:text-sm [&_h2]:font-medium [&_h3]:mt-2 [&_h3]:text-sm [&_h3]:font-medium",
   "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground",
@@ -40,7 +51,7 @@ export function CommentBody({ comment }: { comment: TicketComment }) {
   }
 
   return (
-    <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap">
+    <p className="mt-2 text-sm leading-relaxed break-words whitespace-pre-wrap">
       {comment.body}
     </p>
   );

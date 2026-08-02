@@ -296,6 +296,36 @@ Beide Fälle sind in `scripts/verify-forms.mts` abgedeckt (`npm test`). Sie habe
 sichtbares Fehlerbild: ein Portal, das still auf Default-Widgets zurückfällt, sieht aus wie
 ein Portal, das nie konfiguriert wurde.
 
+## Regel 4, verschärft: keine Erklärsätze unter Feldern
+
+Ein Feld mit der Beschriftung „Name“ braucht keinen Satz darunter, der erklärt,
+dass dort der Name hingehört. Der ganze Bestand solcher Zeilen ist raus — und
+was nicht offensichtlich war, ist an eine Stelle gewandert, an der es weniger
+kostet:
+
+- **Formatregeln in den `placeholder`.** „Eine Domain pro Zeile, ohne @“ wird
+  `placeholder="firma.de"`. Im Feld gelesen, nicht darunter.
+- **Einheiten ins Label.** „Anzeigedauer“ plus die Zeile „Sekunden.“ wird
+  „Anzeigedauer (Sekunden)“.
+- **Vertikale Abstände nachgezogen.** Das `gap-5` zwischen zwei Feldern gab es,
+  damit ein zweizeiliger Hilfetext nicht in die nächste Beschriftung läuft. Ohne
+  ihn ist es Luft um nichts.
+
+**Was bleibt, und warum.** Der Maßstab ist nicht „kurz“, sondern: kann jemand die
+Folge aus dem Feld selbst ableiten, und was kostet es, wenn nicht.
+
+| Bleibt | Weil |
+|---|---|
+| „Für alle angemeldeten Personen lesbar.“ | wer eine Datei lesen kann, steht nirgends sonst |
+| „…verlieren aber die Zuordnung.“ | was das Entfernen eines Standorts mit Tickets tut |
+| „…behalten den alten Namen.“ | ein umbenanntes Feld ist eine Datenentscheidung |
+| „Erst Host und Absenderadresse speichern.“ | der einzige Hinweis, warum der Knopf tot ist |
+| „max. N MB je Datei“ | eine Grenze, kein Hinweis |
+| Token wird einmal angezeigt | nicht wiederholbar |
+
+Ein entfernter Erklärsatz ist eine gewonnene Zeile. Eine entfernte Warnung ist
+ein Supportfall.
+
 ## Design-System
 
 **Google Web Design Language** (Material 3 / Gemini), **beide Themes

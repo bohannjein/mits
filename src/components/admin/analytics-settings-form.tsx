@@ -75,7 +75,7 @@ export function AnalyticsSettingsForm({
           </CardDescription>
         </CardHeader>
 
-        <CardContent className="grid gap-5">
+        <CardContent className="grid gap-4">
           <div className="grid gap-2">
             <Label htmlFor="defaultRefreshSeconds">
               Voreingestellte Aktualisierung
@@ -99,10 +99,6 @@ export function AnalyticsSettingsForm({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
-              Womit das Panel startet. Im Panel selbst lässt sich der Wert für die
-              laufende Sitzung ändern.
-            </p>
           </div>
 
           <Separator className="bg-border" />

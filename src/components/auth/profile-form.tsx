@@ -42,9 +42,6 @@ export function ProfileForm({
           disabled={saving}
           className="h-10 rounded-xl"
         />
-        <p className="text-xs text-muted-foreground">
-          Erscheint an Ihren Tickets und in Antworten der Agenten.
-        </p>
       </div>
 
       <div className="grid gap-2">
@@ -56,10 +53,6 @@ export function ProfileForm({
           disabled
           className="h-10 rounded-xl font-mono"
         />
-        <p className="text-xs text-muted-foreground">
-          Ihre Anmeldeadresse. Eine Änderung nimmt die IT vor — bitte per Ticket
-          anfragen.
-        </p>
       </div>
 
       {result && (

@@ -651,12 +651,6 @@ export function SchemaBuilder({
             {saving ? <Loader2Icon className="animate-spin" /> : <SaveIcon />}
             {saving ? "Speichern …" : "Formular speichern"}
           </Button>
-          {!canSave && !jsonError && (
-            <p className="text-xs text-muted-foreground">
-              Zum Speichern braucht das Formular eine gültige ID, einen Titel und
-              mindestens ein Feld.
-            </p>
-          )}
         </form>
       </div>
 
