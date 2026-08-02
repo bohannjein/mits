@@ -737,39 +737,41 @@ Inhalt, kein Navigationsdefekt.
 ## Chat-First: der Verlauf bekommt den Platz
 
 Die Ticketseite ist eine Konversation mit Beiwerk, nicht ein Formular mit einem
-Chat darin. Was das konkret heisst:
+Chat darin. Was das konkret heißt:
 
-**Die Antwortzeile ist eine Zeile.** Sie startet einzeilig und waechst mit dem
+**Die Antwortzeile ist eine Zeile.** Sie startet einzeilig und wächst mit dem
 Text; die drei Dinge, die man mit ihr tut, sitzen **innerhalb** ihres Rahmens
-rechts —  fuer die Formatierung,  fuer eine Datei, der
-Senden-Knopf. Ausserhalb waeren es Bedienelemente unter einem Feld, also ein
+rechts — `Type` für die Formatierung, `Paperclip` für eine Datei, der
+Senden-Knopf. Außerhalb wären es Bedienelemente unter einem Feld, also ein
 Formular; innerhalb ist es eine Chat-Eingabe.
 
-**Die Formatierungsleiste ist eingeklappt.** Sechzehn Knoepfe ueber einem
-einzeiligen Feld sind mehr Rahmen als Inhalt, und die ueberwiegende Mehrheit der
-Antworten ist Prosa. Ein Klick auf  oder  klappt sie auf
-und sie bleibt offen — wer viel formatiert, zahlt einmal pro Antwort dafuer.
+**Die Formatierungsleiste ist eingeklappt.** Sechzehn Knöpfe über einem
+einzeiligen Feld sind mehr Rahmen als Inhalt, und die überwiegende Mehrheit der
+Antworten ist Prosa. Ein Klick auf `Type` oder `Strg+Umschalt+X` klappt sie auf,
+und sie bleibt offen — wer viel formatiert, zahlt einmal pro Antwort dafür.
 
-- **Der Datei-Input liegt ausserhalb der Leiste.** Ihn mit einzuklappen hiesse,
-  dass die Bueroklammer ins Leere greift, sobald die Formatierung zu ist — und
-  Anhaengen ist keine Formatierungsentscheidung.
-- **Bedingt gerendert, nicht .** Das Element traegt , und eine
-  klassenbasierte -Regel schlaegt die User-Agent-Regel hinter :
-  die Leiste waere sichtbar geblieben.
-- **Der Senden-Knopf gehoert dem Formular, nicht einem der beiden Felder.** Beim
+- **Der Datei-Input liegt außerhalb der Leiste.** Ihn miteinzuklappen hieße, dass
+  die Büroklammer ins Leere greift, sobald die Formatierung zu ist — und
+  Anhängen ist keine Formatierungsentscheidung.
+- **Bedingt gerendert, nicht `hidden`.** Das Element trägt `flex`, und eine
+  klassenbasierte `display`-Regel schlägt die User-Agent-Regel hinter `[hidden]`:
+  die Leiste wäre sichtbar geblieben.
+- **Der Senden-Knopf gehört dem Formular, nicht einem der beiden Felder.** Beim
   Umbau war er in den Rich-Zweig gerutscht, womit die Melderansicht keinen mehr
-  hatte und der Strg+Enter-Ref ins Leere zeigte. Jetzt eine geteilte Komponente,
-  die beide Varianten rendern.
+  hatte und der Ref, den das Strg+Enter-Kürzel klickt, ins Leere zeigte. Jetzt
+  eine geteilte Komponente, die beide Varianten rendern.
 
-**Der Kopf ist drei Zeilen statt fuenf.** Zurueck-Link, Nummer und Titel teilen
-sich eine Reihe; Melder, Zeitpunkt, Status, Prioritaet, Zuweisung und Tags sind
+**Der Kopf ist drei Zeilen statt fünf.** Zurück-Link, Nummer und Titel teilen
+sich eine Reihe; Melder, Zeitpunkt, Status, Priorität, Zuweisung und Tags sind
 ein umbrechender Streifen darunter. Nichts ist verschwunden — es ist nur nicht
-mehr gestapelt, und jede eingesparte Zeile geht direkt an den Verlauf.
+mehr gestapelt, und jede eingesparte Zeile geht direkt an den Verlauf. Die
+Zuweisung ist neu dabei: das am häufigsten geprüfte und am seltensten geänderte
+Attribut gehört dorthin, wo man es lesen kann, ohne etwas aufzuklappen.
 
-**Die Sidebar klappt weg** (der Schalter sass schon im Kopf) und traegt jetzt
-engere Abstaende: sechs bis sieben Abschnitte mal drei Pixel sind eine halbe
-Sektionshoehe auf einem Laptop. Eingeklappt dehnt sich die Chat-Spalte auf die
-volle Breite, weil das  dann gar nicht erst gerendert wird.
+**Die Sidebar klappt weg** (der Schalter saß schon im Kopf) und trägt jetzt
+engere Abstände: sechs bis sieben Abschnitte mal drei Pixel sind eine halbe
+Sektionshöhe auf einem Laptop. Eingeklappt dehnt sich die Chat-Spalte auf die
+volle Breite, weil das `aside` dann gar nicht erst gerendert wird.
 
 ## Die Ticket-Seite ist eine App, kein Dokument
 
