@@ -622,3 +622,35 @@ Tickets" und „Abteilungs-Tickets" — und darf die Tickets seiner Firma auch
 - **`onSlash` hing an den Bausteinen allein.** Auf einer Instanz mit Makros und
   ohne Bausteine tat die Taste nichts — das Menü, das sie geöffnet hätte, stand
   direkt über dem Feld.
+
+## Freitextsuche: breit und langsam, mit Absicht
+
+`q` in `ticketWhere` prüft Titel, Melderadresse, **Payload**, Tags, die
+Ticketnummer als Text, Name und Adresse von Melder und Bearbeiter sowie die
+**Nachrichten**. Vorher waren es Titel und Melderadresse — die Begründung dafür
+(„ein Melder könnte Payload fremder Tickets durchsuchen") hielt der Klausel
+darüber nicht stand: Scope ist das Erste im WHERE, alles Weitere wird mit AND
+angehängt, ein Melder erreicht also kein fremdes Ticket. Was die enge Fassung
+tatsächlich erzeugt hat, war eine Suche, die einen Namen aus dem Formular nicht
+findet.
+
+- **Langsam ist der Preis, nicht der Defekt.** Jedes `LIKE '%…%'` ist ein
+  Tabellenscan, plus ein Scan der Kommentare je Zeile. Eine Antwort, die einen
+  Moment braucht, schlägt ein schnelles „nichts gefunden" über ein Ticket, das
+  es gibt.
+- **Jedes Wort muss irgendwo treffen**, nicht alle in derselben Spalte:
+  „felix drucker" findet das Ticket, das Felix über einen Drucker geschrieben
+  hat. Ein einzelnes Zeichen ist eine gültige Anfrage und trifft entsprechend
+  viel.
+- **Namen über korrelierte Subqueries, nicht über den `owner`-Join.**
+  `countSearchTickets` baut `FROM mits_ticket <where>` ganz ohne Joins; eine
+  Klausel mit Alias hätte die Gesamtzahl zu einem SQL-Fehler gemacht, während
+  die Liste selbst funktioniert.
+- **Die Nachrichten werden sichtbarkeitsgefiltert** (`deleted_at IS NULL`, für
+  Melder zusätzlich `visibility = 'public'`). Ohne das erführe ein Melder, dass
+  eine interne Notiz ein Wort enthält — derselbe Seitenkanal, den der
+  Aktivitäts-Fingerabdruck bewusst geschlossen hält. Eine zurückgezogene
+  Nachricht ist ebenfalls nicht auffindbar.
+- **`body` ist bei Rich-Text gespeichertes HTML**, eine Suche nach „div" trifft
+  also Markup. Bleibt so: Tags in SQL zu entfernen geht nicht, und nach einem
+  HTML-Tagnamen sucht niemand zweimal.

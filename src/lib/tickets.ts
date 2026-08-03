@@ -557,31 +557,106 @@ function ticketWhere(
   const q = filter.q?.trim();
   if (q) {
     /*
-     * LIKE with escaped wildcards: a query containing % or _ should match those
-     * characters rather than turning into a pattern.
+     * Free text, over everything the reader is allowed to see.
      *
-     * Both halves of this were wrong, and both in the same way — a backslash that
-     * JavaScript ate before SQLite ever saw it:
+     * It used to be title and reporter address only, and the note here said the
+     * payload was left out because substring-searching it would leak across
+     * foreign tickets. That reasoning does not survive the clause above: scope
+     * is the *first* thing in this WHERE and everything here is ANDed onto it,
+     * so a reporter searching their own three tickets cannot reach a fourth.
+     * What the narrow version actually produced was a search box that fails to
+     * find a name the customer typed into the form — which is most of what
+     * anybody searches for.
      *
-     *   - The replacement was a template literal `` `\${c}` ``, where `\$`
-     *     escapes the dollar. That is not an interpolation at all; every `%` was
-     *     replaced by the four literal characters `${c}`.
-     *   - `ESCAPE '\'` inside a double-quoted string is `ESCAPE ''` by the time
-     *     it reaches SQLite, which answers "ESCAPE expression must be a single
-     *     character" and throws.
+     * Slow by construction, and deliberately so. Every one of these is a
+     * `LIKE '%…%'`, which no index can serve; on a large instance this is a
+     * table scan plus a scan of the comments per row. That is the trade the
+     * search box is here to make — an answer that takes a moment beats a fast
+     * "nichts gefunden" about a ticket that exists.
      *
-     * So **every free-text search was a 500**, from the header dialog on any page
-     * and from the reporter's own list. Nothing caught it: the query is a string,
-     * and neither typecheck nor build executes one.
-     *
-     * The backslash itself is escaped first, or a query containing one would
-     * produce a dangling escape at the end of the pattern.
+     * Every whitespace-separated word has to match *somewhere*, not all in the
+     * same column: "felix drucker" finds the ticket Felix filed about a
+     * printer. A single character is a legitimate query and is not filtered
+     * out — it just matches a lot.
      */
-    const pattern = `%${q.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
-    clauses.push(
-      "(mits_ticket.title LIKE ? ESCAPE '\\' OR mits_ticket.created_by_email LIKE ? ESCAPE '\\')",
-    );
-    whereParams.push(pattern, pattern);
+    const columns = [
+      "mits_ticket.title",
+      "mits_ticket.created_by_email",
+      // The answers to the form, as stored. JSON with its keys, so a field name
+      // matches too; that is noise a human reads past, and the alternative is
+      // not finding the answer at all.
+      "mits_ticket.payload",
+      "mits_ticket.tags",
+      // The counter, so a pasted "1042" finds ticket 1042 even when the
+      // number-jump did not fire — that one only triggers on a bare number.
+      "CAST(mits_ticket.ticket_number AS TEXT)",
+    ];
+
+    /*
+     * Names, through correlated subqueries rather than the `owner` join.
+     * `countSearchTickets` builds its statement as `FROM mits_ticket <where>`
+     * with no joins at all, and a clause that referenced an alias would make
+     * the total a SQL error while the list itself worked.
+     */
+    const exists = [
+      `EXISTS (SELECT 1 FROM user u
+                WHERE u.id = mits_ticket.created_by
+                  AND (u.name LIKE ? ESCAPE '\\' OR u.email LIKE ? ESCAPE '\\'))`,
+      `EXISTS (SELECT 1 FROM user a
+                WHERE a.id = mits_ticket.assigned_to
+                  AND (a.name LIKE ? ESCAPE '\\' OR a.email LIKE ? ESCAPE '\\'))`,
+      /*
+       * The conversation. Restricted to what this reader may see, and that is
+       * not cosmetic: without the visibility clause a reporter would learn that
+       * some internal note mentions a word, which is the same side channel the
+       * activity fingerprint is careful not to open.
+       *
+       * `body` is stored HTML for rich replies, so a query like "div" matches
+       * markup. Left as is — stripping tags in SQL is not possible, and a
+       * search for an HTML tag name is not a search anybody performs twice.
+       */
+      `EXISTS (SELECT 1 FROM mits_ticket_comment c
+                WHERE c.ticket_id = mits_ticket.id
+                  AND c.deleted_at IS NULL
+                  ${staff ? "" : "AND c.visibility = 'public'"}
+                  AND (c.body LIKE ? ESCAPE '\\' OR c.author_name LIKE ? ESCAPE '\\'))`,
+    ];
+
+    for (const word of q.split(/\s+/).filter(Boolean)) {
+      /*
+       * LIKE with escaped wildcards: a query containing % or _ should match
+       * those characters rather than turning into a pattern.
+       *
+       * Both halves of this were wrong once, and both in the same way — a
+       * backslash that JavaScript ate before SQLite ever saw it:
+       *
+       *   - The replacement was a template literal `` `\${c}` ``, where `\$`
+       *     escapes the dollar. That is not an interpolation at all; every `%`
+       *     was replaced by the four literal characters `${c}`.
+       *   - `ESCAPE '\'` inside a double-quoted string is `ESCAPE ''` by the
+       *     time it reaches SQLite, which answers "ESCAPE expression must be a
+       *     single character" and throws.
+       *
+       * So **every free-text search was a 500**, from the header dialog on any
+       * page and from the reporter's own list. Nothing caught it: the query is
+       * a string, and neither typecheck nor build executes one.
+       *
+       * The backslash itself is escaped first, or a query containing one would
+       * produce a dangling escape at the end of the pattern.
+       */
+      const pattern = `%${word.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
+      const tests = [
+        ...columns.map((column) => `${column} LIKE ? ESCAPE '\\'`),
+        ...exists,
+      ];
+
+      clauses.push(`(${tests.join(" OR ")})`);
+      // One per placeholder, in the order the tests were assembled: the columns
+      // take one each, every EXISTS takes two.
+      for (let index = 0; index < columns.length + exists.length * 2; index += 1) {
+        whereParams.push(pattern);
+      }
+    }
   }
 
   if (filter.locationId) {

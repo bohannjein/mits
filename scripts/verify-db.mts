@@ -478,6 +478,43 @@ try {
   check("search with a percent", () => tickets.searchTickets({ q: "50%" }, agent));
   check("search with an underscore", () => tickets.searchTickets({ q: "a_b" }, agent));
   check("search with a backslash", () => tickets.searchTickets({ q: "C:\temp" }, agent));
+  // The whole point of the wide search: a word that appears in the form answers
+  // and nowhere in the title still finds the ticket.
+  check("search reaches the payload", () => {
+    const rows = tickets.searchTickets({ q: "Papierstau" }, agent);
+    if (rows.length !== 1) throw new Error(`expected 1 hit, got ${rows.length}`);
+  });
+  check("search reaches the conversation", () => {
+    const rows = tickets.searchTickets({ q: "Problem" }, agent);
+    if (rows.length !== 1) throw new Error(`expected 1 hit, got ${rows.length}`);
+  });
+  check("a retracted message is not searchable", () => {
+    // "kaputt" only ever existed in the comment the suite retracted above.
+    const rows = tickets.searchTickets({ q: "kaputt" }, agent);
+    if (rows.length !== 0) throw new Error("zurückgezogener Text gefunden");
+  });
+  // The reporter's name lives in the `user` table, which `countSearchTickets`
+  // does not join — so this is also the check that the count still runs.
+  check("search by reporter name", () => {
+    const rows = tickets.searchTickets({ q: "Anna" }, agent);
+    if (rows.length !== 1) throw new Error(`expected 1 hit, got ${rows.length}`);
+    const total = tickets.countSearchTickets({ q: "Anna" }, agent);
+    if (total !== 1) throw new Error(`count says ${total}`);
+  });
+  check("every word has to match somewhere", () => {
+    // Title and payload, one word from each.
+    const both = tickets.searchTickets({ q: "Drucker Papierstau" }, agent);
+    if (both.length !== 1) throw new Error(`expected 1 hit, got ${both.length}`);
+    const miss = tickets.searchTickets({ q: "Drucker Nordpol" }, agent);
+    if (miss.length !== 0) throw new Error("ein Wort ohne Treffer zählte nicht");
+  });
+  check("a reporter does not search internal notes", () => {
+    // "Toner" appears only in the internal note this suite wrote.
+    const asAgent = tickets.searchTickets({ q: "Toner" }, agent);
+    if (asAgent.length !== 1) throw new Error("Agent findet die Notiz nicht");
+    const asReporter = tickets.searchTickets({ q: "Toner" }, reporter);
+    if (asReporter.length !== 0) throw new Error("Melder findet die Notiz");
+  });
   check("a wildcard is literal", () => {
     // "%" must not match everything — if it did, the escaping is not happening.
     const rows = tickets.searchTickets({ q: "%" }, agent);

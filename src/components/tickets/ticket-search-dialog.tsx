@@ -63,8 +63,16 @@ import {
 
 const ANY = "__any";
 
-/** Long enough that typing a word does not fire a query per keystroke. */
-const DEBOUNCE_MS = 250;
+/**
+ * Long enough that typing a word does not fire a query per keystroke.
+ *
+ * Raised from 250 ms when the free-text search grew to cover payloads and the
+ * whole conversation. Those are `LIKE '%…%'` scans, and better-sqlite3 is
+ * synchronous — a slow one blocks the Node event loop, so a query per keystroke
+ * is not merely wasted work, it stalls every other request on the instance
+ * while somebody types.
+ */
+const DEBOUNCE_MS = 450;
 
 export function TicketSearchDialog({
   locations,
