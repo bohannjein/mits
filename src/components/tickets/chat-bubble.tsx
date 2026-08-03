@@ -11,30 +11,37 @@ import type { TicketComment } from "@/types/mits";
 /* ──────────────────────────────────────────────────────────────────────────
    One message in a ticket conversation.
 
-   **One column. Every message starts at the same left edge.**
+   **Both axes are relative to the reader, and they agree.**
 
-   There used to be a second axis, `side`: reporter left, team right, the way a
-   phone messenger lays out a chat. It is gone, on request, and the reason is
-   what a ticket thread actually is. A messenger has two participants and short
-   turns, so the alternating edge is the cheapest possible "who said this". A
-   ticket has quoted mail, forwarded logs, internal notes and often three
-   people — and there the alternation stops being information and starts being
-   a zig-zag the eye has to re-anchor on for every message. Reading a
-   fifteen-message thread meant crossing the column fifteen times.
+   - **side** — your own messages sit right, everybody else's left.
+   - **tone** — your own are colourless (grey), the other side is blue, an
+     internal note is amber.
 
-   Chronology is the structure now, and everything else is carried inside the
-   card where it is being read anyway: the avatar, the name, the role chip, and
-   the surface.
+   One question, answered twice: *was that me*. Position carries it across the
+   whole column at a glance, colour carries it inside each card, and because
+   both are keyed to the same fact they can never contradict each other.
 
-   **tone** stays, and stays relative to the reader — grey for your own
-   messages, blue for the other side, amber for an internal note. It is the
-   answer to "was that me", which is the first thing anybody scanning a thread
-   looks for. On the agent's screen their replies are grey and the reporter's
-   blue; on the reporter's screen it is the other way round.
+   The consequence is that the same thread looks different to different people,
+   and that is the point. On the agent's screen their replies are grey and on
+   the right; on the reporter's screen those same replies are blue and on the
+   left, and the reporter's own are grey on the right. Anybody reading their own
+   conversation sees their half where their eye already goes.
 
-   Tone stays a prop. Deriving it from `author_is_agent` inside this file would
-   bake one perspective into the one component that must not hold an opinion
-   about perspective.
+   Two earlier versions are worth knowing about, because both are defensible and
+   both were tried here. Keying **position** to the speaker (reporter left, team
+   right, the same for everybody) makes a screenshot from one side line up with
+   one from the other; it was dropped because "the bubble on the right" then
+   means the team even when the team is you. Putting **everything** in one
+   left-aligned column reads well for long mailed-in threads and lost the
+   at-a-glance separation that makes a conversation scannable at all.
+
+   Both axes stay props. Deriving either from `author_is_agent` inside this file
+   would bake one perspective into the one component that must not hold an
+   opinion about perspective — and `author_is_agent` is the wrong fact anyway:
+   two agents on one ticket are not each other.
+
+   Internal notes keep their own colour but follow the same side rule. An amber
+   card on the right is a note *you* wrote; on the left, one a colleague did.
 
    Internal notes are additionally inset and dashed. That is a courtesy to the
    agent, not the access control: `listCommentsFor` filters them out of a
@@ -93,6 +100,7 @@ function initials(name: string): string {
 export function ChatBubble({
   comment,
   tone,
+  side,
   /** Arrived since this reader last opened the ticket. */
   isNew = false,
   /**
@@ -124,6 +132,8 @@ export function ChatBubble({
 }: {
   comment: TicketComment;
   tone: BubbleTone;
+  /** Where it sits — `right` for the reader's own messages. See `sideFor`. */
+  side: "left" | "right";
   isNew?: boolean;
   menu?: ReactNode;
   editor?: ReactNode;
@@ -140,16 +150,23 @@ export function ChatBubble({
           below its content, so one long token would widen the card past its
           maximum and push the column sideways.
 
-          The cap is wider than it was (95% rather than 85%). With both speakers
-          on the same edge there is no opposing column to leave room for, and the
-          fifteen percent that used to be that gap is what a mailed-in table or a
-          log excerpt needs.
+          The gap on the far side is what makes the alternation readable: a card
+          that ran the full width would sit against both edges and the eye would
+          have nothing to tell the two apart by.
         */
-        "max-w-[95%] min-w-0 justify-self-start rounded-2xl rounded-bl-md border px-4 py-3 shadow-elev-1",
+        "max-w-[85%] min-w-0 rounded-2xl border px-4 py-3 shadow-elev-1",
+        // The corner nearest the speaker is squared off, the way a tail would
+        // point — the one piece of messenger vocabulary worth keeping, because
+        // it survives being read at a glance.
+        side === "right"
+          ? "justify-self-end rounded-br-md"
+          : "justify-self-start rounded-bl-md",
         // Inset rather than a different width: an internal note sits inside the
         // same conversation and should read as an aside to it, not as a third
-        // participant with its own column.
-        tone === "internal" && "max-w-[90%] sm:ml-10",
+        // participant with its own column. Inset from its *own* edge, so the
+        // side rule still reads.
+        tone === "internal" &&
+          (side === "right" ? "max-w-[80%] sm:mr-10" : "max-w-[80%] sm:ml-10"),
         style.bubble,
         /*
          * A ring rather than a different surface for an unread message.
@@ -256,4 +273,24 @@ function roleLabel(comment: TicketComment): string {
 export function toneFor(comment: TicketComment, viewerId: string): BubbleTone {
   if (comment.visibility === "internal") return "internal";
   return comment.author_id === viewerId ? "own" : "other";
+}
+
+/**
+ * Which edge a stored comment sits on, **for this reader**.
+ *
+ * The plain form of the same question the tone asks, and deliberately without
+ * the internal-note exception: `toneFor` lets `visibility` win because amber is
+ * carrying a second piece of information, but there is no third side to put a
+ * note on. Your own note is yours and belongs on your edge; a colleague's is
+ * theirs.
+ *
+ * Not derived from the tone for exactly that reason — `internal` maps to no
+ * side, and a `tone === "own" ? right : left` would quietly file every one of
+ * your own notes on the wrong edge.
+ */
+export function sideFor(
+  comment: TicketComment,
+  viewerId: string,
+): "left" | "right" {
+  return comment.author_id === viewerId ? "right" : "left";
 }

@@ -10,7 +10,7 @@ import {
 } from "react";
 
 import { AttachmentViewer } from "@/components/tickets/attachment-viewer";
-import { ChatBubble, toneFor } from "@/components/tickets/chat-bubble";
+import { ChatBubble, sideFor, toneFor } from "@/components/tickets/chat-bubble";
 import {
   MessageEditor,
   MessageMenu,
@@ -29,11 +29,11 @@ import type { TicketComment } from "@/types/mits";
    the box then scrolls away with the thread. As siblings in a flex column, only
    this list scrolls and the composer cannot move.
 
-   **Position and colour answer different questions.** Reporter left, team right,
-   in both views — that is the speaker, and it is the same for everybody. Grey for
-   your own messages, blue for the other side — that is the reader, so it flips
-   between the two screens. `side` is decided here rather than inside the bubble;
-   see chat-bubble.tsx.
+   **Position and colour answer the same question: was that me.** Your own
+   messages sit right and are grey, everybody else's sit left and are blue. Both
+   flip between the two screens, and they flip together — the agent's reply is
+   grey on the right for the agent and blue on the left for the reporter. Both
+   are decided here rather than inside the bubble; see chat-bubble.tsx.
 
    **One reading order for everybody: oldest first, newest at the bottom.** The
    reporter's view briefly had it reversed so a status check would not need
@@ -255,6 +255,9 @@ export function TicketMessages({
               <ChatBubble
                 comment={comment}
                 tone={toneFor(comment, viewerId)}
+                // Both from the reader, never from `author_is_agent`: on a
+                // ticket with two agents they are not each other.
+                side={sideFor(comment, viewerId)}
                 isNew={isNew(comment)}
                 menu={
                   own ? (

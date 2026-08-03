@@ -670,13 +670,24 @@ den Umschalter, die Leiste sagt, was gerade zu sehen ist.
   Druckroute wäre eine zweite Darstellung desselben Verlaufs, die man richtig
   halten muss.
 
-**Der Chat ist eine Spalte.** Alle Nachrichten beginnen an derselben linken
-Kante; `side` gibt es nicht mehr. Die alternierende Ausrichtung ist im
-Messenger die billigste Antwort auf „wer hat das gesagt", in einem Ticket mit
-zitierter Mail, weitergeleitetem Log und internen Notizen wird sie zu einem
-Zickzack, auf das das Auge fünfzehnmal neu aufsetzt. `tone` bleibt und bleibt
-relativ zum Leser — grau für eigene Nachrichten, blau für die Gegenseite,
-amber für die interne Notiz.
+**Position und Farbe beantworten dieselbe Frage: war ich das.** Eigene
+Nachrichten stehen rechts und sind grau, alle anderen stehen links und sind
+blau. Beides ist relativ zum Leser und kippt gemeinsam — die Antwort eines
+Agenten ist auf seinem Schirm grau und rechts, auf dem des Melders blau und
+links. Auf **beiden** Seiten so, Melderansicht wie Agentenansicht wie Pop-out;
+alle drei rendern dieselbe `TicketMessages` mit ihrer eigenen `viewerId`.
+
+`sideFor` ist bewusst nicht aus `toneFor` abgeleitet: dort gewinnt
+`visibility`, weil Amber eine zweite Information trägt, aber es gibt keine
+dritte Seite für eine interne Notiz. Die eigene steht rechts, die einer
+Kollegin links — beide amber.
+
+Zwei ältere Fassungen, beide vertretbar und beide hier ausprobiert: **Position
+am Sprecher** (Melder links, Team rechts, für alle gleich) macht Screenshots
+der beiden Seiten deckungsgleich, heißt aber, dass „die Bubble rechts" das Team
+meint, auch wenn das Team man selbst ist. **Alles linksbündig** liest sich bei
+langen Mail-Verläufen gut und verliert die Trennung, die einen Verlauf
+überhaupt überfliegbar macht.
 
 **Dispatch ist Zuweisung plus Notiz, nicht mehr.** Kein Team-Feld: MITS kennt
 Rollen und Agenten, kein Gruppenmodell. Beide Schritte laufen über
