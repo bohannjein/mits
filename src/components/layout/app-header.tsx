@@ -2,11 +2,9 @@ import Link from "next/link";
 
 import { UserMenu } from "@/components/auth/user-menu";
 import { MITSLogo } from "@/components/branding/mits-logo";
-import { ThemeToggle } from "@/components/branding/theme-toggle";
 import { PresenceHeartbeat } from "@/components/dashboard/presence-heartbeat";
 import { NotificationWatcher } from "@/components/feedback/notification-watcher";
 import { AutoRefresh } from "@/components/layout/auto-refresh";
-import { ConnectionDot } from "@/components/layout/connection-dot";
 import { ShortcutHelp } from "@/components/layout/shortcut-help";
 import { TicketSearch } from "@/components/tickets/ticket-search";
 import { TicketSearchDialog } from "@/components/tickets/ticket-search-dialog";
@@ -137,18 +135,33 @@ export async function AppHeader() {
             {!user.mustChangePassword && (
               <AutoRefresh minutes={resolveRefreshMinutes(user)} />
             )}
-            {/* Live status. Only for a session that has a stream — the password
-                gate leaves nothing to be live about. */}
-            {!user.mustChangePassword && <ConnectionDot />}
+            {/*
+              The live-connection dot used to sit here, and the theme switch
+              beside it. Both are gone from the bar:
+
+              - The dot announced a working stream on every page, all day, to
+                every role. It answers a question that is only asked when
+                something feels wrong, and most of the people looking at it
+                could do nothing either way. It now sits on /admin/status,
+                beside every other subsystem, which is where somebody actually
+                goes with that question.
+              - The theme is a property of this browser, set once. It lives
+                under Erscheinungsbild in /settings/profile, which is where the
+                rest of the personal settings already are.
+            */}
             {/* Renders nothing until `?` is pressed. Here so every page has it
                 without knowing about it — same as the watcher above. */}
             {!user.mustChangePassword && <ShortcutHelp />}
-            <ThemeToggle />
             <UserMenu user={user} />
           </>
         ) : (
           <div className="flex items-center gap-2">
-            <ThemeToggle />
+            {/*
+              No theme switch here either. Signed out there is no profile to
+              keep the choice in, and `next-themes` runs with
+              `defaultTheme="system"` — a visitor at the login form already gets
+              what their device asked for.
+            */}
             <Button
               asChild
               variant="ghost"

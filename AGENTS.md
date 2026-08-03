@@ -142,9 +142,20 @@ vor dem ersten Paint auf, dafür ist `suppressHydrationWarning` da. `color-schem
 light dark` steht daneben, damit Scrollbalken und Formularelemente des Browsers
 passen, bevor irgendein CSS von uns greift.
 
-Umgeschaltet wird über `ThemeToggle` im Header und unter „Erscheinungsbild“ in
-`/settings/profile`; gespeichert wird in `localStorage`, nicht in `mits_setting`
-— das ist eine Eigenschaft dieses Browsers, nicht der Person.
+Umgeschaltet wird **nur** unter „Erscheinungsbild“ in `/settings/profile`;
+gespeichert wird in `localStorage`, nicht in `mits_setting` — das ist eine
+Eigenschaft dieses Browsers, nicht der Person.
+
+**Im Header steht der Schalter nicht mehr**, auch nicht abgemeldet. Er wird
+einmal betätigt und stand danach auf jeder Seite herum; ohne Anmeldung gibt es
+ohnehin kein Profil, das die Wahl trägt, und `defaultTheme="system"` liefert
+dort bereits das, was das Gerät sagt.
+
+**Und die Live-Verbindung ebenso wenig.** Der Punkt mit dem WLAN-Symbol meldete
+auf jeder Seite und für jede Rolle einen funktionierenden Stream — eine Auskunft,
+die nur interessiert, wenn etwas klemmt, vor Leuten, die daran nichts ändern
+können. `ConnectionDot` lebt weiter, jetzt in einer Zeile auf `/admin/status`
+neben den übrigen Teilsystemen.
 
 **Die Hover-Regel.** Jede interaktive Fläche ändert beim Hover ihren *Hintergrund*
 und lässt den Vordergrund auf vollem Kontrast. Kein `hover:text-muted-foreground`
@@ -321,6 +332,7 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /admin/macros           Makros
 /admin/settings/storage Dateispeicher (Platte oder S3)
 /admin/settings/api-keys API-Keys je System, Token nur einmal sichtbar
+/admin/status           Systemzustand: was eingerichtet ist, plus Live-Verbindung
 /admin/settings/tickets  Wo die Antworten eines Formulars stehen (Verlauf, daneben, beides)
 /admin/settings/analytics Widget-Schalter und Default-Intervall
 /admin/settings/notifications Kanäle, Darstellung, Sammelmeldung

@@ -233,3 +233,24 @@ Zeile säße am Ende eines langen Verlaufs — dort und nur dort ist `sticky
 bottom-0` das richtige Werkzeug: es hängt am Viewport, nicht an einem
 Scrollcontainer, es gibt also keinen Sticky-Kontext, über den etwas uneinig sein
 könnte. Deckend (`bg-background`) und `z-10`, weil Bubbles darunter durchlaufen.
+
+## Systemzustand statt Dauerampel
+
+`/admin/status`, gespeist aus `lib/system-status.ts`. Eine Zeile je Teilsystem:
+Datenbank, Mailversand, Postfach-Abruf, Dateispeicher, KI, Zeit, Schnittstellen
+— dazu die Live-Verbindung, die nur der Browser kennt.
+
+- **Konfigurationszustand, keine Erreichbarkeit.** Die Seite öffnet keinen
+  Socket. Eine, die beim Laden SMTP, S3, Ollama und einen Zeitserver anwählt,
+  dauert so lange wie der langsamste davon und läuft genau dann in einen
+  Timeout, wenn die Instanz ohnehin Ärger hat. Die echten Tests sitzen
+  weiterhin je Teilsystem hinter einem Knopf; jede Zeile verlinkt dorthin.
+- **Ein abgeschaltetes Modul ist kein Fehler.** Aus ist grau. Gelb ist genau der
+  Fall, der etwas kaputt macht: eingeschaltet und nicht konfiguriert. Diese
+  Unterscheidung ist der ganze Wert der Liste.
+- **Der Punkt wiederholt, was das Zustandswort sagt.** Farbe allein ist das
+  Einzige, was ein rot-grün-blinder Leser nicht verwerten kann, und diese Liste
+  wird genau dann gelesen, wenn Raten teuer ist.
+- **Nur Admins.** Die Zeilen nennen Hosts, Buckets und Postfächer — die
+  Konfiguration der Instanz, nichts, was ein Agent auf dem Weg zum Ticket
+  braucht.

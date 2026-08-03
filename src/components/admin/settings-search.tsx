@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ActivityIcon,
   BarChart3Icon,
   BellIcon,
   BookOpenIcon,
@@ -180,6 +181,13 @@ const ENTRIES: SettingsEntry[] = [
     label: "Anwender",
     icon: UsersIcon,
     keywords: "kunden melder benutzer konten endanwender",
+  },
+  {
+    href: "/admin/status",
+    label: "Systemzustand",
+    icon: ActivityIcon,
+    keywords:
+      "status diagnose probleme fehler live verbindung datenbank erreichbar übersicht systeme health",
   },
   {
     href: "/admin/settings/api-keys",
