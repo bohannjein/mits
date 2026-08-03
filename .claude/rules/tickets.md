@@ -654,3 +654,60 @@ findet.
 - **`body` ist bei Rich-Text gespeichertes HTML**, eine Suche nach „div" trifft
   also Markup. Bleibt so: Tags in SQL zu entfernen geht nicht, und nach einem
   HTML-Tagnamen sucht niemand zweimal.
+
+## Action-Bar, Dispatch und Beteiligte
+
+**Die Checkliste ersetzt den Verlauf, sie steht nicht darüber.** Beide sind
+Alternativen: niemand liest einen Verlauf und hakt im selben Blick Schritte ab,
+und übereinander gestapelt schiebt die längste Liste die neueste Nachricht aus
+dem Bild — auf genau den Tickets, die beides brauchen. `TicketWorkspace` hält
+den Umschalter, die Leiste sagt, was gerade zu sehen ist.
+
+- **Zeiterfassung und Verknüpfungen sind Dialoge**, keine Bereiche mehr in der
+  Sidebar. Sie werden nachgeschlagen, nicht bearbeitet — und aus der Sidebar
+  entfernt, damit es nicht zwei Orte gibt.
+- **Drucken ist `window.print()`** auf der Seite, wie sie dasteht. Eine eigene
+  Druckroute wäre eine zweite Darstellung desselben Verlaufs, die man richtig
+  halten muss.
+
+**Der Chat ist eine Spalte.** Alle Nachrichten beginnen an derselben linken
+Kante; `side` gibt es nicht mehr. Die alternierende Ausrichtung ist im
+Messenger die billigste Antwort auf „wer hat das gesagt", in einem Ticket mit
+zitierter Mail, weitergeleitetem Log und internen Notizen wird sie zu einem
+Zickzack, auf das das Auge fünfzehnmal neu aufsetzt. `tone` bleibt und bleibt
+relativ zum Leser — grau für eigene Nachrichten, blau für die Gegenseite,
+amber für die interne Notiz.
+
+**Dispatch ist Zuweisung plus Notiz, nicht mehr.** Kein Team-Feld: MITS kennt
+Rollen und Agenten, kein Gruppenmodell. Beide Schritte laufen über
+`assignTicket` und `addComment` — dieselben Prüfungen, dieselben Audit-Zeilen.
+Die Zuweisung entscheidet das Ergebnis; scheitert die Notiz danach, steht die
+Zuweisung trotzdem und der Fehler wird gemeldet.
+
+**`cc_emails` sind Empfänger, keine Beteiligten.** Eine CC-Adresse bekommt eine
+Kopie und sonst nichts: kein Konto, kein Zugriff auf das Ticket im Portal, kein
+Eintrag in irgendeiner Liste von Personen, die es lesen dürfen. Ein Helpdesk
+meint mit „Beteiligte" meist beides, und das zusammenzulegen hieße, dass eine
+getippte Adresse in einem Popover jemandem stillschweigend Lesezugriff auf ein
+Kundengespräch gibt.
+
+- **`MITSTicketDraftSchema` lässt das Feld weg**, wie `created_by`. Wer das
+  Formular abschickt, darf keine Adresse in ein Ticket schreiben, das noch
+  niemand am Desk gesehen hat.
+- **Nur Agenten**, geprüft in `setTicketCc` und nicht bloß in der Action.
+- **Ein JSON-Array in einer Spalte**, keine Tabelle: eine kurze Liste, die ganz
+  gelesen und ganz geschrieben wird und keine eigenen Attribute hat.
+- **Gesetzt wird `Cc`, nicht ein zweites `To`.** Der Header sagt den Empfängern,
+  wer sonst noch mitliest, und er ist das, was ihr „allen antworten" benutzt.
+
+**Der Pop-out-Editor ist ein zweiter Editor über demselben String.** Eine
+tiptap-Instanz lässt sich nicht umhängen, ohne sie neu zu mounten, und das
+verwirft Undo-Historie und Cursor. Beim Schließen synchronisiert der Composer
+den kleinen Editor aus dem State nach — ohne das wäre der oben geschriebene
+Entwurf unten unsichtbar. Folge, die man kennen muss: Undo überschreitet die
+Grenze nicht.
+
+**Die Dropzone umschließt die ganze Antwortbox.** tiptap hat einen eigenen
+`handleDrop`, der aber nur über dem Contenteditable greift — auf einem
+einzeiligen Composer ein dreißig Pixel hoher Streifen. Wer daneben trifft,
+dessen Browser navigiert zur Datei und ersetzt die Seite.

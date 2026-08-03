@@ -652,6 +652,18 @@ function addColumns(database: Database.Database): void {
       definition: "INTEGER NOT NULL DEFAULT 0",
     },
     /*
+     * Addresses that get a copy of every outgoing mail on this ticket.
+     *
+     * A JSON array in one column, not a table. It is a short list read and
+     * written whole, exactly once per ticket — a join table would be three
+     * statements and a migration for something that has no attributes of its
+     * own. The same call the canned responses make.
+     *
+     * Nullable rather than `NOT NULL DEFAULT '[]'`: NULL is honestly "nobody
+     * ever set this", and the reader treats it as the empty list anyway.
+     */
+    { table: "mits_ticket", column: "cc_emails", definition: "TEXT" },
+    /*
      * The number MITS gives an inventory object — `INV-10000001` on the way out.
      *
      * Nullable rather than `NOT NULL DEFAULT 0`, and that is what makes the

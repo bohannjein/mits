@@ -55,6 +55,16 @@ export interface RichTextEditorHandle {
    */
   pickFile: () => void;
   /**
+   * Upload files somebody dropped and insert them.
+   *
+   * The same path the picker and the paste handler take, so a dropped PDF and a
+   * pasted screenshot end up as the same markup with the same allow-list
+   * refusals. Exposed because the drop target is the whole composer — a
+   * dashed-overlay wrapper around it, which has no way into tiptap's own
+   * `handleDrop`.
+   */
+  addFiles: (files: File[]) => void;
+  /**
    * Put the caret in the editor.
    *
    * Needed because a contenteditable is not focusable through a ref to an input
@@ -292,6 +302,7 @@ export function RichTextEditor({
     onReady({
       insert: (html) => editor.chain().focus().insertContent(html).run(),
       pickFile: () => fileInput.current?.click(),
+      addFiles: (files) => void uploadAndInsert(editor, files),
       focus: () => editor.chain().focus("end").run(),
       clear: () => editor.commands.clearContent(true),
     });

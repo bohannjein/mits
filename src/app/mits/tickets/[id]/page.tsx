@@ -13,6 +13,7 @@ import { TicketShortcuts } from "@/components/tickets/ticket-shortcuts";
 import { PayloadFields } from "@/components/tickets/payload-fields";
 import { TicketMessages } from "@/components/tickets/ticket-messages";
 import { TicketSidebar } from "@/components/tickets/ticket-sidebar";
+import { TicketWorkspace } from "@/components/tickets/ticket-workspace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { canAdminister, canViewBoard } from "@/lib/auth/roles";
@@ -233,6 +234,42 @@ export default async function AgentTicketPage({
     .filter((candidate) => canViewBoard(candidate.role))
     .map((candidate) => ({ id: candidate.id, name: candidate.name }));
 
+  /*
+   * The three that moved out of the sidebar and into the action bar.
+   *
+   * Hoisted rather than built inline, because each is now read by exactly one
+   * place and building them in the JSX would put three multi-line expressions
+   * between the frame's slots.
+   */
+  const worklog = flags.feature_time_tracking
+    ? {
+        entries: listWorklogs(id).map((entry) => ({
+          id: entry.id,
+          userName: entry.user_name,
+          minutes: entry.minutes,
+          note: entry.note,
+          performedAt: entry.performed_at,
+          // Decided here, not in the browser: the component only draws the
+          // button, `deleteWorklog` decides again.
+          removable: entry.user_id === user.id || canAdminister(user.role),
+        })),
+        // The instance's today, so the date field and the server's future-date
+        // clamp agree on which day it is.
+        today: new Date().toISOString().slice(0, 10),
+      }
+    : null;
+
+  const links = flags.feature_ticket_linking
+    ? listLinksFor(id, user).map((link) => ({
+        id: link.id,
+        label: link.label,
+        otherId: link.other.id,
+        otherNumber: link.otherNumber,
+        otherTitle: link.other.title,
+        otherStatus: link.other.status,
+      }))
+    : null;
+
   return (
     <>
       <AppHeader />
@@ -351,6 +388,21 @@ export default async function AgentTicketPage({
               </>
             }
             messages={
+              /*
+                The action bar and the checklist wrap the conversation rather
+                than sitting beside it: the bar is about this ticket, and the
+                checklist is an alternative view of the same region. Both are
+                client state, the thread stays a server render inside them.
+              */
+              <TicketWorkspace
+                ticketId={ticket.id}
+                agents={agents}
+                currentAssignee={ticket.assigned_to}
+                ccEmails={ticket.cc_emails}
+                checklist={checklist.length > 0 ? checklist : null}
+                worklog={worklog}
+                links={links}
+              >
               <TicketMessages
                 // Prepended, not merged by timestamp: the opening message *is* the
                 // earliest thing by definition, and sorting a synthetic entry into
@@ -370,6 +422,7 @@ export default async function AgentTicketPage({
                   ) : undefined
                 }
               />
+              </TicketWorkspace>
             }
             composer={
               <TicketComposer
@@ -423,9 +476,6 @@ export default async function AgentTicketPage({
                   canAdminister(user.role) ? listAuditFor(id) : null
                 }
                 timezone={getSystemTimezone()}
-                // The steps this ticket type declares, with what has been answered.
-                // Empty list means the type has none, and the section is skipped.
-                checklist={checklist.length > 0 ? checklist : null}
                 assets={assets}
                 // Only past the point where reading the thread is slower than
                 // reading a summary of it — and only when an admin turned it on.
@@ -444,38 +494,6 @@ export default async function AgentTicketPage({
                           ticket.status === "resolved" ||
                           ticket.status === "closed",
                       }
-                    : null
-                }
-                worklog={
-                  flags.feature_time_tracking
-                    ? {
-                        entries: listWorklogs(id).map((entry) => ({
-                          id: entry.id,
-                          userName: entry.user_name,
-                          minutes: entry.minutes,
-                          note: entry.note,
-                          performedAt: entry.performed_at,
-                          // Decided here, not in the browser: the component only
-                          // draws the button, `deleteWorklog` decides again.
-                          removable:
-                            entry.user_id === user.id || canAdminister(user.role),
-                        })),
-                        // The instance's today, so the date field and the
-                        // server's future-date clamp agree on which day it is.
-                        today: new Date().toISOString().slice(0, 10),
-                      }
-                    : null
-                }
-                links={
-                  flags.feature_ticket_linking
-                    ? listLinksFor(id, user).map((link) => ({
-                        id: link.id,
-                        label: link.label,
-                        otherId: link.other.id,
-                        otherNumber: link.otherNumber,
-                        otherTitle: link.other.title,
-                        otherStatus: link.other.status,
-                      }))
                     : null
                 }
               />

@@ -372,6 +372,16 @@ export const MITSTicketSchema = z.object({
    */
   tags: z.array(z.string()).default([]),
   /**
+   * Addresses that get a copy of every mail this ticket sends.
+   *
+   * Not participants: they receive, they do not gain access. A CC address is a
+   * mailbox, not an account — putting somebody in CC must not hand them a MITS
+   * login or the right to read a ticket in the portal, and it does not.
+   *
+   * Defaulted, because every row written before the column existed has none.
+   */
+  cc_emails: z.array(z.string()).default([]),
+  /**
    * This ticket *is* the outage, not one of its reports.
    *
    * A column rather than "has children", because the two are different claims: a
@@ -414,6 +424,14 @@ export const MITSTicketDraftSchema = MITSTicketSchema.omit({
   // agent respectively. Neither is a client's to state.
   tags: true,
   major_incident: true,
+  /*
+   * Nor is this one. A CC address means every future answer on this ticket
+   * lands in that mailbox; accepting it from whoever posts the form would let a
+   * reporter — or a handcrafted request — subscribe an arbitrary address to a
+   * conversation before anybody at the desk has seen it. Set afterwards, by an
+   * agent, through `setTicketCc`.
+   */
+  cc_emails: true,
 }).extend({
   priority: TicketPriority.default(DEFAULT_TICKET_PRIORITY),
   /** The reporter may state their site; everything else about them comes from the session. */
@@ -1086,6 +1104,7 @@ export const AuditAction = z.enum([
   "link_added",
   "link_removed",
   "checklist_set",
+  "cc_changed",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
@@ -1106,7 +1125,35 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   link_added: "Verknüpfung gesetzt",
   link_removed: "Verknüpfung entfernt",
   checklist_set: "Checkliste beantwortet",
+  cc_changed: "Beteiligte geändert",
 };
+
+/**
+ * Clean a CC list: trimmed, lower case, plausible addresses, no duplicates.
+ *
+ * Pure, so the browser and the server can apply the same rule and the mask
+ * cannot show a list the server would then store differently. The check is
+ * deliberately shallow — one `@`, something either side, no whitespace. A full
+ * RFC 5322 validator rejects addresses that real mail servers accept, and the
+ * consequence of letting a bad one through is a bounce, not a security hole.
+ */
+export const CC_LIMIT = 20;
+
+export function normalizeCcEmails(values: string[]): string[] {
+  const seen = new Set<string>();
+
+  for (const raw of values) {
+    const value = raw.trim().toLowerCase();
+    if (!value || /\s/.test(value)) continue;
+    const at = value.lastIndexOf("@");
+    if (at <= 0 || at === value.length - 1) continue;
+    if (value.length > 320) continue;
+    seen.add(value);
+    if (seen.size >= CC_LIMIT) break;
+  }
+
+  return [...seen];
+}
 
 export const AuditEntrySchema = z.object({
   id: z.string(),

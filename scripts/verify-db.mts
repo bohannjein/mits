@@ -366,6 +366,31 @@ try {
     }
   });
 
+  check("cc list", () => {
+    const saved = tickets.setTicketCc(
+      ticketId,
+      ["Chef@Firma.de", " chef@firma.de ", "kaputt", "kollege@firma.de"],
+      agent,
+    );
+    // Lower-cased, deduped, and the entry without an @ dropped — the pure
+    // `normalizeCcEmails` decides, this checks that the column round-trips it.
+    if (saved.cc_emails.join(",") !== "chef@firma.de,kollege@firma.de") {
+      throw new Error(saved.cc_emails.join(","));
+    }
+  });
+  check("a reporter cannot change the cc list", () => {
+    try {
+      tickets.setTicketCc(ticketId, ["fremd@firma.de"], reporter);
+    } catch {
+      return;
+    }
+    throw new Error("Melder durfte Beteiligte setzen");
+  });
+  check("cc list cleared", () => {
+    const saved = tickets.setTicketCc(ticketId, [], agent);
+    if (saved.cc_emails.length !== 0) throw new Error("nicht geleert");
+  });
+
   check("worklog", () =>
     worklogs.addWorklog(ticketId, agent, 30, "Vor Ort", new Date().toISOString().slice(0, 10)),
   );

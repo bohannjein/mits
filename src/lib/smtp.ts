@@ -141,6 +141,15 @@ export interface OutboundMail {
   subject: string;
   html: string;
   text: string;
+  /**
+   * Everybody else who gets a copy — the ticket's `cc_emails`.
+   *
+   * Real `Cc`, not a second `To`: the header is what tells the recipients who
+   * else is on the thread, and it is what their reply-all uses. Passed by the
+   * caller rather than read from the ticket here, because this module knows
+   * nothing about tickets and two of its callers are not sending about one.
+   */
+  cc?: string[];
 }
 
 /**
@@ -184,6 +193,9 @@ export async function sendMail(
     await transporterFor(settings).sendMail({
       from: settings.from,
       to: mail.to,
+      // Undefined rather than an empty array: nodemailer renders an empty `Cc`
+      // header, which some clients show as a stray recipient line.
+      cc: mail.cc && mail.cc.length > 0 ? mail.cc : undefined,
       replyTo,
       subject: mail.subject,
       text: mail.text,

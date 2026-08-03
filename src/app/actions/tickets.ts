@@ -29,6 +29,7 @@ import {
   TicketUpdateError,
   assignTicket,
   getTicketFor,
+  setTicketCc,
   setTicketPriority,
   setTicketStatus,
 } from "@/lib/tickets";
@@ -137,6 +138,115 @@ export async function assignTicketAction(
   return {
     ok: true,
     message: assigneeId ? "Ticket zugewiesen." : "Zuweisung aufgehoben.",
+  };
+}
+
+/**
+ * Reassign and hand over in one step.
+ *
+ * The assignment goes through `assignTicket` and the note through `addComment`,
+ * exactly as the two separate controls do — same checks, same audit rows, same
+ * refusal to assign somebody who cannot open the ticket. A dispatch that wrote
+ * the columns itself would be a second door into those rules.
+ *
+ * **The assignment decides the outcome, the note is beiwerk.** If the handover
+ * note fails after the ticket has moved, the move stands and the failure is
+ * reported — the alternative is an agent pressing the button again and a ticket
+ * that bounces twice.
+ */
+export async function dispatchTicketAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, true);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  const raw = String(formData.get("assigneeId") ?? "");
+  const assigneeId = raw === "" || raw === "__none" ? null : raw;
+  const note = String(formData.get("note") ?? "").trim();
+
+  try {
+    assignTicket(ticketId, assigneeId, auth.user);
+  } catch (error) {
+    if (error instanceof TicketUpdateError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+
+  let noteFailed: string | null = null;
+  if (note) {
+    try {
+      // Internal, always. A handover note is machine-room talk about the
+      // customer's ticket, not an answer to them — and "visible to the reporter"
+      // is not something a dispatch dialog should be able to decide by accident.
+      addComment(ticketId, auth.user, note, "internal", "text");
+    } catch (error) {
+      if (error instanceof CommentError) {
+        noteFailed = error.message;
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  revalidateTicket(ticketId);
+
+  if (noteFailed) {
+    return { ok: false, error: `Ticket zugewiesen, die Notiz nicht: ${noteFailed}` };
+  }
+
+  return {
+    ok: true,
+    message: assigneeId
+      ? note
+        ? "Ticket zugewiesen, Notiz hinterlegt."
+        : "Ticket zugewiesen."
+      : "Zuweisung aufgehoben.",
+  };
+}
+
+/**
+ * Replace the ticket's CC list.
+ *
+ * The whole list per submit, because that is what the chips in the mask are.
+ * `setTicketCc` normalises and re-checks the role — the dialog is agent-only,
+ * and so is this, twice.
+ */
+export async function setTicketCcAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, true);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  // One address per line, so the field can be a textarea and a paste of a mail
+  // header's recipient block works without anybody reformatting it.
+  const emails = String(formData.get("emails") ?? "")
+    .split(/[\n,;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  let saved: MITSTicket;
+  try {
+    saved = setTicketCc(ticketId, emails, auth.user);
+  } catch (error) {
+    if (error instanceof TicketUpdateError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+
+  revalidateTicket(ticketId);
+
+  return {
+    ok: true,
+    message:
+      saved.cc_emails.length === 0
+        ? "Keine Beteiligten mehr eingetragen."
+        : `${saved.cc_emails.length} Beteiligte gespeichert.`,
   };
 }
 
@@ -262,6 +372,7 @@ export async function replyAndCloseAction(
     try {
       await sendNotification({
         to: auth.ticket.created_by_email,
+        cc: auth.ticket.cc_emails,
         ...ticketReplyMail(
           auth.ticket,
           { author: comment.author_name, body: comment.body },
@@ -413,6 +524,7 @@ export async function addCommentAction(
     try {
       await sendNotification({
         to: auth.ticket.created_by_email,
+        cc: auth.ticket.cc_emails,
         ...ticketReplyMail(
           auth.ticket,
           { author: comment.author_name, body: comment.body },
@@ -586,6 +698,7 @@ export async function runMacroAction(
   if (outcome.sent && outcome.body && auth.ticket.created_by_email !== auth.user.email) {
     await sendNotification({
       to: auth.ticket.created_by_email,
+      cc: auth.ticket.cc_emails,
       ...ticketReplyMail(
         auth.ticket,
         { author: auth.user.name, body: outcome.body },

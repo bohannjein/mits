@@ -11,33 +11,30 @@ import type { TicketComment } from "@/types/mits";
 /* ──────────────────────────────────────────────────────────────────────────
    One message in a ticket conversation.
 
-   Two independent axes, deliberately not collapsed into one:
+   **One column. Every message starts at the same left edge.**
 
-   - **tone** is *whose message it is, from where you are standing* — grey for
-     your own, blue for the other side, amber for an internal note. It picks the
-     surface and the role label.
-   - **side** is *where the bubble sits*: reporter left, team right, in both
-     views.
+   There used to be a second axis, `side`: reporter left, team right, the way a
+   phone messenger lays out a chat. It is gone, on request, and the reason is
+   what a ticket thread actually is. A messenger has two participants and short
+   turns, so the alternating edge is the cheapest possible "who said this". A
+   ticket has quoted mail, forwarded logs, internal notes and often three
+   people — and there the alternation stops being information and starts being
+   a zig-zag the eye has to re-anchor on for every message. Reading a
+   fifteen-message thread meant crossing the column fifteen times.
 
-   The two axes answer different questions on purpose, and it is worth being
-   clear about why they do not agree.
+   Chronology is the structure now, and everything else is carried inside the
+   card where it is being read anyway: the avatar, the name, the role chip, and
+   the surface.
 
-   **Position is absolute, colour is relative.** The same thread has the same
-   shape for everybody — a screenshot from the reporter lines up with one from
-   the agent, and "die Bubble links" stays a location rather than something that
-   depends on who is reading. What flips between the two screens is only the
-   colour: on the agent's screen their own replies are grey and the reporter's
-   are blue, on the reporter's screen it is the other way round. Position tells
-   you *who*, colour tells you *whether it was you*.
+   **tone** stays, and stays relative to the reader — grey for your own
+   messages, blue for the other side, amber for an internal note. It is the
+   answer to "was that me", which is the first thing anybody scanning a thread
+   looks for. On the agent's screen their replies are grey and the reporter's
+   blue; on the reporter's screen it is the other way round.
 
-   An earlier version keyed the colour to the speaker as well, so a reporter's
-   message was grey to everybody. That is defensible and it is what was here
-   before; it was changed on request, because the thing a person scanning a
-   conversation looks for first is which half of it they wrote.
-
-   Both axes stay props. Deriving either from `author_is_agent` inside this file
-   would bake one perspective into the one component that must not hold an
-   opinion about perspective.
+   Tone stays a prop. Deriving it from `author_is_agent` inside this file would
+   bake one perspective into the one component that must not hold an opinion
+   about perspective.
 
    Internal notes are additionally inset and dashed. That is a courtesy to the
    agent, not the access control: `listCommentsFor` filters them out of a
@@ -96,7 +93,6 @@ function initials(name: string): string {
 export function ChatBubble({
   comment,
   tone,
-  side,
   /** Arrived since this reader last opened the ticket. */
   isNew = false,
   /**
@@ -128,7 +124,6 @@ export function ChatBubble({
 }: {
   comment: TicketComment;
   tone: BubbleTone;
-  side: "left" | "right";
   isNew?: boolean;
   menu?: ReactNode;
   editor?: ReactNode;
@@ -140,17 +135,21 @@ export function ChatBubble({
   return (
     <article
       className={cn(
-        // `min-w-0` as well as the cap: without it a grid item refuses to
-        // shrink below its content, so one long token would widen the bubble
-        // past 85% and push the column sideways.
-        "max-w-[85%] min-w-0 rounded-2xl border px-4 py-3 shadow-elev-1",
-        side === "right"
-          ? "justify-self-end rounded-br-md"
-          : "justify-self-start rounded-bl-md",
+        /*
+          `min-w-0` as well as the cap: without it a grid item refuses to shrink
+          below its content, so one long token would widen the card past its
+          maximum and push the column sideways.
+
+          The cap is wider than it was (95% rather than 85%). With both speakers
+          on the same edge there is no opposing column to leave room for, and the
+          fifteen percent that used to be that gap is what a mailed-in table or a
+          log excerpt needs.
+        */
+        "max-w-[95%] min-w-0 justify-self-start rounded-2xl rounded-bl-md border px-4 py-3 shadow-elev-1",
         // Inset rather than a different width: an internal note sits inside the
         // same conversation and should read as an aside to it, not as a third
         // participant with its own column.
-        tone === "internal" && "max-w-[80%] sm:ml-10",
+        tone === "internal" && "max-w-[90%] sm:ml-10",
         style.bubble,
         /*
          * A ring rather than a different surface for an unread message.

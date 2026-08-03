@@ -7,6 +7,7 @@ import {
   FileTextIcon,
   Loader2Icon,
   LockIcon,
+  Maximize2Icon,
   PaperclipIcon,
   SendIcon,
   TriangleAlertIcon,
@@ -44,7 +45,14 @@ import {
   RichTextEditor,
   type RichTextEditorHandle,
 } from "@/components/tickets/rich-text-editor";
+import { ReplyPopout } from "@/components/tickets/reply-popout";
+import { FileDropzone } from "@/components/ui/file-dropzone";
 import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -343,6 +351,120 @@ export function TicketComposer({
   const replyButton = useRef<HTMLButtonElement>(null);
 
   /**
+   * "Antworten & Schließen", now beside the send button behind a confirmation.
+   *
+   * It used to be a full-width ghost button on its own line, deliberately far
+   * from the primary action, because two adjacent equally weighted pills invite
+   * the wrong one at speed — and the wrong one here ends the conversation.
+   *
+   * The confirmation is what makes the proximity affordable: the button is back
+   * where the hand already is, and the irreversible half now costs a second
+   * click that names what it does. Removing the distance without adding the
+   * question would be the version that closes tickets by accident.
+   *
+   * The submit cannot be a `formAction` any more. The confirming button lives
+   * inside a Radix popover, which is portalled out of the `<form>` — so the
+   * FormData is built by hand, exactly like the macro dispatch above. The three
+   * fields are the ones the form's own hidden inputs carry.
+   */
+  const [confirmClose, setConfirmClose] = useState(false);
+
+  /*
+   * The full-size editor, and the resync it needs.
+   *
+   * Both editors write the same `body` string, but the inline tiptap instance
+   * only reacts to `value` becoming empty — it does not track arbitrary changes,
+   * deliberately, because a document that re-parses on every keystroke loses the
+   * caret. So when the dialog closes, the inline one is reset from the state the
+   * dialog left behind. Without this the draft written upstairs is invisible
+   * downstairs and reappears only after sending.
+   */
+  const [popout, setPopout] = useState(false);
+
+  const closePopout = (open: boolean) => {
+    setPopout(open);
+    if (!open && rich && editor) {
+      editor.clear();
+      if (body) editor.insert(body);
+    }
+  };
+
+  const submitReply = () => {
+    const data = new FormData();
+    data.set("ticketId", ticketId);
+    data.set("body", body);
+    data.set("bodyFormat", rich ? "html" : "text");
+    data.set("visibility", internal ? "internal" : "public");
+    startTransition(() => replyAction(data));
+    setPopout(false);
+  };
+
+  const submitClose = () => {
+    const data = new FormData();
+    data.set("ticketId", ticketId);
+    data.set("body", body);
+    data.set("bodyFormat", rich ? "html" : "text");
+    // Not read by the action — it closes publicly by definition — but sent so
+    // the payload matches the form's, and a future reader is not left wondering
+    // which of the two paths omits it.
+    data.set("visibility", "public");
+    startTransition(() => closeAction(data));
+    setConfirmClose(false);
+  };
+
+  /**
+   * The second submit, shared by both variants like `SendButton`.
+   *
+   * Public replies only: an "answer and close" that filed an internal note would
+   * close a ticket the reporter never heard about.
+   */
+  const CloseButton = () =>
+    isAgent && !internal ? (
+      <Popover open={confirmClose} onOpenChange={setConfirmClose}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            disabled={!canSend}
+            title="Antworten & Schließen"
+            className="rounded-lg text-muted-foreground"
+          >
+            {closing ? (
+              <Loader2Icon className="animate-spin" />
+            ) : (
+              <CheckCheckIcon strokeWidth={1.5} />
+            )}
+            <span className="sr-only">Antworten und Ticket schließen</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-64 p-3">
+          <p className="text-sm">Antwort senden und Ticket schließen?</p>
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 rounded-full px-3 text-xs"
+              onClick={() => setConfirmClose(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={submitClose}
+              className="h-8 rounded-full bg-inverse-surface px-3 text-xs text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+            >
+              <CheckCircle2Icon strokeWidth={1.5} />
+              Schließen
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+    ) : null;
+
+  /**
    * The send button, shared by both variants.
    *
    * Declared here rather than duplicated into each branch: it carries the ref the
@@ -379,6 +501,24 @@ export function TicketComposer({
   );
 
   return (
+    /*
+      The whole reply box is the drop target, not just the editor.
+
+      tiptap has its own `handleDrop`, and it works — but only over the
+      contenteditable itself, which on a one-line composer is a strip about
+      thirty pixels tall. Somebody dragging a screenshot aims at the box, and
+      hitting the padding meant the browser navigated to the file and replaced
+      the page. The wrapper catches the whole area and hands the files to the
+      same upload path.
+
+      Only the rich variant: the reporter's plain textarea posts through the
+      form's own file field and has nowhere to put an inline image.
+    */
+    <FileDropzone
+      disabled={!rich || busy || !editor}
+      onFiles={(files) => editor?.addFiles(files)}
+      className="rounded-2xl"
+    >
     <form
       onKeyDown={onKeyDown}
       className={cn(
@@ -636,6 +776,20 @@ export function TicketComposer({
           </div>
 
           <div className="flex shrink-0 items-center gap-0.5 p-1.5">
+            {/* The escape hatch for a long answer — see `ReplyPopout`. */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setPopout(true)}
+              disabled={busy}
+              title="Großes Fenster"
+              className="rounded-lg text-muted-foreground"
+            >
+              <Maximize2Icon strokeWidth={1.5} />
+              <span className="sr-only">Im großen Fenster schreiben</span>
+            </Button>
+
             <Button
               type="button"
               variant="ghost"
@@ -669,6 +823,7 @@ export function TicketComposer({
               <span className="sr-only">Datei anhängen</span>
             </Button>
 
+            <CloseButton />
             <SendButton />
           </div>
         </div>
@@ -704,6 +859,7 @@ export function TicketComposer({
           />
 
           <div className="flex shrink-0 items-center gap-0.5 p-1.5">
+            <CloseButton />
             <SendButton />
           </div>
         </div>
@@ -752,39 +908,6 @@ export function TicketComposer({
         </span>
       </div>
 
-      {/*
-        "Antworten & Schließen" on its own line, away from the send button.
-        
-        It sat beside it as an equally weighted filled pill, and the two are not
-        equally weighted: one adds a message, the other adds a message **and ends
-        the conversation**. Two adjacent buttons of the same size invite the wrong
-        one at speed, and the wrong one here is the irreversible-feeling half —
-        the reporter gets a closed ticket they may not consider closed.
-
-        Below the field, quieter, and full width so it cannot be hit while aiming
-        for the primary action.
-
-        Public only: an "answer and close" that filed an internal note would close
-        a ticket the reporter never heard about.
-      */}
-      {isAgent && !internal && (
-        <Button
-          type="submit"
-          formAction={closeAction}
-          variant="ghost"
-          size="sm"
-          className="h-8 w-full rounded-full text-xs text-muted-foreground"
-          disabled={!canSend}
-        >
-          {closing ? (
-            <Loader2Icon className="animate-spin" />
-          ) : (
-            <CheckCheckIcon strokeWidth={1.5} />
-          )}
-          Antworten und Ticket schließen
-        </Button>
-      )}
-
       {result && (
         <Alert
           variant={result.ok ? "default" : "destructive"}
@@ -801,6 +924,20 @@ export function TicketComposer({
         </Alert>
       )}
     </form>
+
+    <ReplyPopout
+      open={popout}
+      onOpenChange={closePopout}
+      value={body}
+      onChange={setBody}
+      onSend={submitReply}
+      onSendAndClose={isAgent && !internal ? submitClose : null}
+      sending={replying}
+      closing={closing}
+      canSend={canSend}
+      internal={internal}
+    />
+    </FileDropzone>
   );
 }
 

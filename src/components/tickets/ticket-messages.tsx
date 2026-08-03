@@ -255,10 +255,6 @@ export function TicketMessages({
               <ChatBubble
                 comment={comment}
                 tone={toneFor(comment, viewerId)}
-                // The speaker, not the reader — see the note above. Derived from
-                // `author_is_agent` rather than from the tone, which no longer
-                // says anything about who wrote the message.
-                side={comment.author_is_agent ? "right" : "left"}
                 isNew={isNew(comment)}
                 menu={
                   own ? (

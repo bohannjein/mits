@@ -23,6 +23,7 @@ import {
   AttachmentMetaSchema,
   DEFAULT_TICKET_PRIORITY,
   MITSTicketSchema,
+  normalizeCcEmails,
   OPEN_TICKET_STATUSES,
   type MITSTicket,
   type MITSTicketDraft,
@@ -58,6 +59,7 @@ interface TicketRow {
   assigned_to: string | null;
   created_at: string;
   tags?: string | null;
+  cc_emails?: string | null;
   major_incident?: number | null;
   /** From the LEFT JOIN on `user`. Null when unassigned or the account is gone. */
   assigned_to_name?: string | null;
@@ -93,6 +95,10 @@ function rowToTicket(row: TicketRow): MITSTicket {
     // Defaulted rather than trusted: a row written before the column existed has
     // no JSON in it, and a hand-edited one may have something that is not an array.
     tags: safeTags(row.tags),
+    // Same defensive read as the tags beside it, and for the same two reasons:
+    // a row older than the column has no JSON, and a hand-edited one may hold
+    // something that is not an array of strings.
+    cc_emails: safeTags(row.cc_emails),
     major_incident: row.major_incident === 1,
     // The empty string is the SQL "no activity for this reader" sentinel — see the
     // MAX(...) expression in `searchTickets`. Passing it to `z.coerce.date()` would
@@ -330,6 +336,7 @@ const TICKET_COLUMNS = `
   mits_ticket.form_schema_id, mits_ticket.title, mits_ticket.payload,
   mits_ticket.status, mits_ticket.priority, mits_ticket.assigned_to,
   mits_ticket.created_at, mits_ticket.tags, mits_ticket.major_incident,
+  mits_ticket.cc_emails,
   COALESCE(NULLIF(owner.name, ''), owner.email) AS assigned_to_name
 `;
 
@@ -973,6 +980,53 @@ export function assignTicket(
     // The one state change that does produce a notification — "dir zugewiesen"
     // — so the recipient's watcher is woken rather than left on its interval.
     publish({ type: "notify", audience: "staff", actorId: actor.id });
+  }
+
+  return requireTicket(ticketId);
+}
+
+/**
+ * Replace the list of addresses that get a copy of this ticket's mail.
+ *
+ * Whole list, not add/remove: the mask posts every chip it is showing, so a
+ * partial update would need a second decision about what an absent address
+ * means. Normalised here as well as in the browser — the pure function is
+ * shared, but "the form already did it" is not a rule.
+ *
+ * Agents only, checked here rather than only in the action. A CC address does
+ * not grant access, but it does mean every future answer to this ticket lands
+ * in that mailbox, and that is not a reporter's decision to make about their
+ * own ticket.
+ */
+export function setTicketCc(
+  ticketId: string,
+  emails: string[],
+  actor: SessionUser,
+): MITSTicket {
+  if (!canViewBoard(actor.role)) {
+    throw new TicketValidationError(
+      "Nur Agenten und Administration können Beteiligte ändern.",
+    );
+  }
+
+  const before = requireTicket(ticketId);
+  const next = normalizeCcEmails(emails);
+
+  db.prepare("UPDATE mits_ticket SET cc_emails = ? WHERE id = ?").run(
+    JSON.stringify(next),
+    ticketId,
+  );
+
+  // Compared as joined strings so a reorder is not recorded as a change: the
+  // list has no order anybody chose, and an audit row per drag would bury the
+  // ones that mean something.
+  if (before.cc_emails.join(",") !== next.join(",")) {
+    recordAudit(ticketId, actor, "cc_changed", {
+      field: "cc_emails",
+      from: before.cc_emails.join(", "),
+      to: next.join(", "),
+    });
+    announce(ticketId, actor.id);
   }
 
   return requireTicket(ticketId);
