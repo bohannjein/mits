@@ -9,6 +9,7 @@ import { TicketFrame } from "@/components/tickets/ticket-frame";
 import { TicketLive } from "@/components/tickets/ticket-live";
 import { PayloadFields } from "@/components/tickets/payload-fields";
 import { TicketMessages } from "@/components/tickets/ticket-messages";
+import { TicketParticipants } from "@/components/tickets/ticket-participants";
 import {
   Accordion,
   AccordionContent,
@@ -220,6 +221,22 @@ export default async function CustomerTicketPage({
                     </ResourceAccordionItem>
                   </ResourceAccordion>
                 )}
+
+                {/*
+                  Who else is on this conversation, and the control to change it.
+
+                  The reporter may edit their own ticket's list — the case this
+                  exists for is "ich melde das für eine Kollegin", and who
+                  belongs on that thread is something the reporter knows and the
+                  desk does not. `setTicketCc` decides again server-side.
+                */}
+                <div className="mt-3">
+                  <TicketParticipants
+                    ticketId={ticket.id}
+                    emails={ticket.cc_emails}
+                    canEdit={ticket.created_by === user.id}
+                  />
+                </div>
 
                 {/*
                   Only while nobody has picked it up. `withdrawTicket` checks the

@@ -7,12 +7,11 @@ import {
   LinkIcon,
   MessageSquareIcon,
   PrinterIcon,
-  UserPlusIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { DispatchDialog } from "@/components/tickets/dispatch-dialog";
-import { TicketCc } from "@/components/tickets/ticket-cc";
+import { TicketParticipants } from "@/components/tickets/ticket-participants";
 import {
   TicketChecklist,
   type ChecklistRowProps,
@@ -87,22 +86,28 @@ export function TicketWorkspace({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {/*
+        Beteiligte above the bar, not as a button in it.
+
+        It was a count on a pill, which answers "how many" and never "who" —
+        and who is on the thread is the thing that changes what somebody writes.
+        The same line renders on the reporter's page, so both sides read the
+        same list.
+      */}
+      <div className="pb-2">
+        <TicketParticipants
+          ticketId={ticketId}
+          emails={ccEmails}
+          canEdit
+        />
+      </div>
+
       <div className="flex flex-wrap items-center gap-2 pb-3">
         <BarButton
           icon={<ArrowRightLeftIcon strokeWidth={1.5} />}
           label="Dispatch"
           onClick={() => setDispatching(true)}
         />
-
-        <TicketCc ticketId={ticketId} emails={ccEmails}>
-          <span>
-            <BarButton
-              icon={<UserPlusIcon strokeWidth={1.5} />}
-              label="Beteiligte"
-              count={ccEmails.length > 0 ? String(ccEmails.length) : undefined}
-            />
-          </span>
-        </TicketCc>
 
         {checklist && (
           <BarButton

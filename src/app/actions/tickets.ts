@@ -208,18 +208,22 @@ export async function dispatchTicketAction(
 }
 
 /**
- * Replace the ticket's CC list.
+ * Replace the ticket's participant list.
  *
  * The whole list per submit, because that is what the chips in the mask are.
- * `setTicketCc` normalises and re-checks the role — the dialog is agent-only,
- * and so is this, twice.
+ *
+ * `authorize` is called **without** the agent requirement, and that is not a
+ * relaxation: `setTicketCc` decides, and it allows an agent or the reporter of
+ * this ticket. Doing it there rather than here is what keeps the rule in one
+ * place — `authorize(…, true)` would answer "Agenten vorbehalten" to a reporter
+ * on their own ticket, which is the case this exists for.
  */
 export async function setTicketCcAction(
   _previous: TicketActionResult | null,
   formData: FormData,
 ): Promise<TicketActionResult> {
   const ticketId = String(formData.get("ticketId") ?? "");
-  const auth = await authorize(ticketId, true);
+  const auth = await authorize(ticketId, false);
   if (!auth.ok) return { ok: false, error: auth.error };
 
   // One address per line, so the field can be a textarea and a paste of a mail

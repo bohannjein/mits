@@ -179,29 +179,45 @@ async function applyReply(
   if (!ticket) return false;
 
   /*
-   * A sender without an account has to be the reporter of the ticket they answer.
+   * A sender without an account has to be on this ticket: its reporter, or one
+   * of the addresses somebody deliberately added as a participant.
    *
    * `getTicketByNumberFor` asks "may this *account* see the ticket", and for a
    * foreign sender the account is the fallback — which is staff, so the answer is
    * yes for every ticket in the instance. The question that matters here is a
-   * different one: did this *mailbox* write this ticket. Two questions, and the
-   * second only exists in the ingest, which is why it is answered here rather than
-   * pushed into the query.
+   * different one: does this *mailbox* belong to this conversation. Two
+   * questions, and the second only exists in the ingest, which is why it is
+   * answered here rather than pushed into the query.
    *
    * Without it the bracketed number is the whole authentication, and it is not a
    * secret: numbers count up from 1, `[42]` is accepted, and `From` is trivially
    * forged. A mail could append a public comment to a stranger's ticket under any
    * name it liked.
    *
+   * `cc_emails` is the second branch and does not weaken that. A guessed number
+   * is not a permission; an address a reporter or an agent typed into the
+   * participants list is exactly one — the same grant that has been mailing this
+   * person every answer already. Without this branch CC is a one-way street: the
+   * colleague reads the whole thread and their reply becomes a *new* ticket,
+   * which is the failure this whole feature exists to avoid.
+   *
+   * `sameMailbox` per entry rather than a set lookup: it is the one place that
+   * knows how two addresses are compared, and `cc_emails` is stored lower-cased
+   * while a `From` header is not.
+   *
    * A mismatch is not dropped — the caller files it as a new ticket. Somebody wrote
    * to support and is owed an answer; what they are not owed is write access to a
    * conversation that is not theirs.
    */
-  if (foreign && !sameMailbox(mail.from, ticket.created_by_email)) {
+  const onTicket =
+    sameMailbox(mail.from, ticket.created_by_email) ||
+    ticket.cc_emails.some((address) => sameMailbox(mail.from, address));
+
+  if (foreign && !onTicket) {
     report.notes.push(
       `${formatTicketNumber(ticket.ticket_number)}: Antwort kam von ${
         mail.from || "einer leeren Adresse"
-      } und nicht von der Melderadresse — nicht angehängt.`,
+      } und weder von der Melderadresse noch von einer beteiligten — nicht angehängt.`,
     );
     return false;
   }

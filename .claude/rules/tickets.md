@@ -705,7 +705,24 @@ Kundengespräch gibt.
 - **`MITSTicketDraftSchema` lässt das Feld weg**, wie `created_by`. Wer das
   Formular abschickt, darf keine Adresse in ein Ticket schreiben, das noch
   niemand am Desk gesehen hat.
-- **Nur Agenten**, geprüft in `setTicketCc` und nicht bloß in der Action.
+- **Ein Agent, oder der Melder auf dem eigenen Ticket.** Geprüft in
+  `setTicketCc`, nicht bloß in der Action — `authorize` wird dort bewusst ohne
+  Agentenpflicht gerufen, sonst bekäme der Melder auf seinem eigenen Ticket
+  „Agenten vorbehalten". Der Fall, für den es das gibt: jemand meldet etwas für
+  eine Kollegin und will sie ab der ersten Antwort dabeihaben. Wer in dieses
+  Gespräch gehört, weiß der Melder und nicht der Desk.
+- **Beteiligte dürfen per Mail antworten.** `applyReply` akzeptiert einen
+  Absender ohne Konto, wenn er die Melderadresse **oder** eine der
+  `cc_emails` ist. Das schwächt die Regel nicht: eine geratene Ticketnummer ist
+  keine Berechtigung, eine eingetragene Adresse ist genau eine — dieselbe, die
+  dieser Person ohnehin schon jede Antwort zustellt. Ohne diesen Zweig ist CC
+  eine Einbahnstraße: der Kollege liest den ganzen Verlauf, und seine Antwort
+  wird ein **neues** Ticket. Verglichen wird mit `sameMailbox` je Eintrag, weil
+  `cc_emails` kleingeschrieben gespeichert ist und ein `From` nicht.
+- **Die Beteiligten stehen sichtbar am Ticket**, für Agent und Melder,
+  `TicketParticipants` auf beiden Seiten. Wie das Cc-Feld einer Mail: wer
+  mitliest, gehört zum Gespräch — wer nicht weiß, dass seine Nachricht an drei
+  Leute geht, schreibt eine andere Nachricht.
 - **Ein JSON-Array in einer Spalte**, keine Tabelle: eine kurze Liste, die ganz
   gelesen und ganz geschrieben wird und keine eigenen Attribute hat.
 - **Gesetzt wird `Cc`, nicht ein zweites `To`.** Der Header sagt den Empfängern,

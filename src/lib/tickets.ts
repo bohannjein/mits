@@ -986,30 +986,41 @@ export function assignTicket(
 }
 
 /**
- * Replace the list of addresses that get a copy of this ticket's mail.
+ * Replace the list of addresses that take part in this ticket by mail.
  *
  * Whole list, not add/remove: the mask posts every chip it is showing, so a
  * partial update would need a second decision about what an absent address
  * means. Normalised here as well as in the browser — the pure function is
  * shared, but "the form already did it" is not a rule.
  *
- * Agents only, checked here rather than only in the action. A CC address does
- * not grant access, but it does mean every future answer to this ticket lands
- * in that mailbox, and that is not a reporter's decision to make about their
- * own ticket.
+ * **An agent, or the reporter on their own ticket.** The rule started as
+ * agents-only, and the case it got wrong is the common one: somebody files a
+ * ticket on a colleague's behalf and wants that colleague on the thread from
+ * the first answer. Who else belongs in that conversation is knowledge the
+ * reporter has and the desk does not.
+ *
+ * What that grants is bounded, and the bound is the reason it is safe: a listed
+ * address receives copies and may answer *this* ticket by mail. It gets no
+ * account, no portal access, and no way to reach any other ticket — the same
+ * thing the reporter could achieve by forwarding the mail, minus the part where
+ * the answer is then lost outside MITS.
+ *
+ * A foreign reporter — a mailed-in ticket filed under the fallback account —
+ * cannot reach this path at all: they have no session.
  */
 export function setTicketCc(
   ticketId: string,
   emails: string[],
   actor: SessionUser,
 ): MITSTicket {
-  if (!canViewBoard(actor.role)) {
+  const before = requireTicket(ticketId);
+
+  if (!canViewBoard(actor.role) && before.created_by !== actor.id) {
     throw new TicketValidationError(
-      "Nur Agenten und Administration können Beteiligte ändern.",
+      "Beteiligte kann nur ändern, wer das Ticket gemeldet hat, oder ein Agent.",
     );
   }
 
-  const before = requireTicket(ticketId);
   const next = normalizeCcEmails(emails);
 
   db.prepare("UPDATE mits_ticket SET cc_emails = ? WHERE id = ?").run(

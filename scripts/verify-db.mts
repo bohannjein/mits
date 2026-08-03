@@ -378,13 +378,35 @@ try {
       throw new Error(saved.cc_emails.join(","));
     }
   });
-  check("a reporter cannot change the cc list", () => {
+  // The case the feature exists for: somebody files a ticket for a colleague and
+  // puts them on the thread themselves.
+  check("the reporter may add a participant to their own ticket", () => {
+    const saved = tickets.setTicketCc(
+      ticketId,
+      ["chef@firma.de", "kollege@firma.de"],
+      reporter,
+    );
+    if (saved.cc_emails.length !== 2) throw new Error(saved.cc_emails.join(","));
+  });
+  check("but not to somebody else's", () => {
+    const foreign = tickets.createTicket(
+      mits.MITSTicketDraftSchema.parse({
+        source: "legacy",
+        form_schema_id: "quick-ticket",
+        payload: {
+          title: "Fremdes Ticket",
+          description: "Gehört jemand anderem, lang genug für das Schema.",
+        },
+        location_id: null,
+      }),
+      agent,
+    );
     try {
-      tickets.setTicketCc(ticketId, ["fremd@firma.de"], reporter);
+      tickets.setTicketCc(foreign.id, ["fremd@firma.de"], reporter);
     } catch {
       return;
     }
-    throw new Error("Melder durfte Beteiligte setzen");
+    throw new Error("Melder durfte fremde Beteiligte setzen");
   });
   check("cc list cleared", () => {
     const saved = tickets.setTicketCc(ticketId, [], agent);
