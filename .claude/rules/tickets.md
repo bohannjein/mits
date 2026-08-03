@@ -564,3 +564,61 @@ handgebaute Objekte zwei verschiedene Arten, dieselbe Person anzusprechen.
   markiert: ein Baustein fügt Text ein, ein Makro ändert zusätzlich Felder und
   sendet unter Umständen. Zwei Menüs für eine Geste hieße raten, in welchem der
   gesuchte Eintrag liegt. Pfeiltasten und Type-ahead kommen vom Radix-Primitive.
+
+## Teamleiter-Sicht: Abteilungs-Tickets
+
+`mits_user_profile.is_org_admin` plus die Firma am selben Profil. Ein Melder mit
+beidem bekommt auf `/customer/tickets` einen zweiten Reiterstreifen — „Meine
+Tickets" und „Abteilungs-Tickets" — und darf die Tickets seiner Firma auch
+öffnen.
+
+- **Keine Rolle.** `is_org_admin` ist kein Rang: das Konto bleibt `user`, sieht
+  `/mits` weiterhin nicht und kann nichts zuweisen. Es weitet genau eine Liste,
+  und nur innerhalb der eigenen Firma.
+- **`?scope=abteilung` ist der einzige Parameter dieser Seite, der weitet.**
+  Deshalb liest `parseTicketQuery` ihn **nicht**: Flag und Firma kommen aus dem
+  Profil, der Parameter wählt nur zwischen zwei Möglichkeiten, die der Server
+  schon zugelassen hat. Ohne Flag oder ohne Firma gibt es die eigenen Tickets,
+  was auch immer in der URL steht.
+- **`filter.organizationId` ersetzt die Eigen-Klausel, es kombiniert nicht.**
+  Beides zusammen wäre „meine Tickets, die auch meine sind". Alles danach kann
+  nur weiter verengen.
+- **Ein Subselect, kein JOIN.** Die Mitgliedschaft steht am Profil; ein JOIN
+  ließe jedes Ticket fallen, dessen Melder noch kein Profil hat — und genau
+  diese Klausel darf keine Zeilen stillschweigend verlieren.
+- **`mayReadTicket` ist die eine Tür.** Detailseite und Sprung-per-Nummer fragen
+  dieselbe Funktion; die zwei Profil-Abfragen laufen erst, wenn Rolle und
+  Eigentümerschaft nicht gereicht haben. Ein Betrachter ohne Firma trifft nichts
+  — `null` heißt „nicht zugeordnet", und zwei nicht zugeordnete Personen sind
+  keine Kollegen.
+- **Zwei Reiterstreifen, nicht einer.** Wessen Tickets und welche davon sind zwei
+  Fragen; zusammengelegt wären es vier Reiter mit Beschriftungen wie
+  „Abteilung, Verlauf". Beide Streifen schreiben **beide** Parameter, sonst
+  fällt der jeweils andere beim Klick auf seinen Standardwert zurück.
+- **`TicketSearch` und `TicketFilters` haben `carry` bekommen.** Ein GET-Formular
+  sendet seine Felder und sonst nichts — der Query-String in `action` wird vom
+  Browser verworfen. Ohne die versteckten Felder verschwindet der Reiter, sobald
+  jemand filtert.
+
+## Slash-Kürzel im Antwortfeld
+
+`shortcut` an `CannedResponseSchema` und `MacroSchema`, normalisiert über
+`normalizeShortcut` (klein, ohne Schrägstrich, `a-z0-9-`).
+
+- **Getippt wird in das Menü, nicht in ein Feld darin.** Ein Eingabefeld in einem
+  Radix-Menü nimmt der Liste die Pfeiltasten weg. Die Zeichen werden am
+  `DropdownMenuContent` abgegriffen: Radix reiht den eigenen Handler **hinter**
+  den übergebenen und überspringt ihn bei `preventDefault`, also lässt sich eine
+  druckbare Taste übernehmen, ohne Pfeile, Enter und Escape zu verlieren.
+  Leertaste bleibt unangetastet — sie aktiviert den fokussierten Eintrag.
+- **Kürzel trifft von vorn, Titel überall.** Ein Kürzel ist ein gemerktes Wort,
+  das man vom ersten Buchstaben an tippt; ein Titel ist ein Satz, aus dem man
+  ein Wort erinnert.
+- **Enter nimmt den ersten Treffer**, aber nur solange der Fokus noch auf dem
+  Menü selbst liegt. Wer bereits auf einen Eintrag gepfeilt hat, meint diesen.
+- **`saveMacrosAction` und `saveCannedResponsesAction` lehnen ein doppeltes
+  Kürzel ab, über beide Listen hinweg.** Es ist ein Menü; ein Baustein und ein
+  Makro mit `/reset` sind genauso mehrdeutig wie zwei Bausteine damit.
+- **`onSlash` hing an den Bausteinen allein.** Auf einer Instanz mit Makros und
+  ohne Bausteine tat die Taste nichts — das Menü, das sie geöffnet hätte, stand
+  direkt über dem Feld.

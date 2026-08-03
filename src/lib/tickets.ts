@@ -18,6 +18,7 @@ import {
   type TicketSort,
 } from "@/lib/ticket-sort";
 import { TICKETS_PER_PAGE } from "@/lib/ticket-paging";
+import { getUserOrganizationId, isOrgAdmin } from "@/lib/user-profile";
 import {
   AttachmentMetaSchema,
   DEFAULT_TICKET_PRIORITY,
@@ -371,6 +372,37 @@ export function listTicketsFor(user: SessionUser): MITSTicket[] {
 }
 
 /**
+ * Whether this user may read this row.
+ *
+ * One function, because the answer has to be the same at every door: the detail
+ * page, the jump-by-number, the activity fingerprint and the links panel all
+ * ask it, and a rule that lives at four call sites is a rule that will differ at
+ * one of them.
+ *
+ * Three cases, in cost order:
+ *
+ *   1. Staff see everything.
+ *   2. The reporter sees their own.
+ *   3. A flagged org admin sees what their company reported.
+ *
+ * The third does the profile reads only when the first two have failed — it is
+ * the rare case, and putting it first would mean two extra queries on every
+ * ticket anyone opens. A viewer without a company matches nothing: `null` is
+ * "not assigned", and treating two unassigned people as colleagues would hand a
+ * fresh account somebody else's tickets.
+ */
+function mayReadTicket(row: TicketRow, user: SessionUser): boolean {
+  if (canViewBoard(user.role)) return true;
+  if (row.created_by === user.id) return true;
+  if (!isOrgAdmin(user.id)) return false;
+
+  const viewerOrg = getUserOrganizationId(user.id);
+  if (!viewerOrg) return false;
+
+  return getUserOrganizationId(row.created_by) === viewerOrg;
+}
+
+/**
  * A single ticket, or null when it does not exist **or** the user may not see it.
  * Returning the same answer for both cases keeps ticket ids from leaking through
  * a 403-versus-404 difference.
@@ -380,7 +412,7 @@ export function getTicketFor(id: string, user: SessionUser): MITSTicket | null {
     .prepare(`${SELECT_TICKET} WHERE ${ALIVE} AND mits_ticket.id = ?`)
     .get(id) as TicketRow | undefined;
   if (!row) return null;
-  if (!canViewBoard(user.role) && row.created_by !== user.id) return null;
+  if (!mayReadTicket(row, user)) return null;
   return rowToTicket(row);
 }
 
@@ -416,6 +448,20 @@ export interface TicketFilter {
   to?: string;
   /** Narrow a agent's or admin's result set to their own tickets. */
   ownOnly?: boolean;
+
+  /**
+   * Everything reported by members of one company.
+   *
+   * The one filter that *widens* a plain reporter's scope, which is why it is
+   * never parsed from the query string. `parseTicketQuery` does not know about
+   * it; the customer page sets it only after checking `is_org_admin` and only
+   * to that user's own company. Setting it from a URL parameter would be a
+   * reporter reading a competitor's tickets by editing an id.
+   *
+   * Wins over the own-tickets clause rather than combining with it — the two
+   * together would be "my tickets that are also mine".
+   */
+  organizationId?: string;
 
   /*
    * Set by the queue-view presets (`lib/agent-views.ts`) rather than by the
@@ -486,7 +532,24 @@ function ticketWhere(
   const clauses: string[] = [ALIVE];
   const whereParams: unknown[] = [];
 
-  if (!staff || filter.ownOnly) {
+  /*
+   * Scope, and the order matters. The company clause replaces the own-tickets
+   * clause instead of joining it, because it is the caller saying "this reader
+   * has been granted their department" — a decision `setOrgAdmin` records and
+   * the page re-checks. Everything after this point can only narrow further.
+   *
+   * A subselect rather than a JOIN: membership lives on the profile row, a JOIN
+   * would drop every ticket whose reporter has no profile yet, and this clause
+   * is the one that must not quietly lose rows.
+   */
+  if (filter.organizationId) {
+    clauses.push(
+      `mits_ticket.created_by IN (
+         SELECT user_id FROM mits_user_profile WHERE organization_id = ?
+       )`,
+    );
+    whereParams.push(filter.organizationId);
+  } else if (!staff || filter.ownOnly) {
     clauses.push("mits_ticket.created_by = ?");
     whereParams.push(user.id);
   }
@@ -753,7 +816,7 @@ export function getTicketByNumberFor(
   if (!row) return null;
   // Same rule as getTicketFor: a foreign ticket answers null, not 403, so the
   // number space cannot be probed for which tickets exist.
-  if (!canViewBoard(user.role) && row.created_by !== user.id) return null;
+  if (!mayReadTicket(row, user)) return null;
   return rowToTicket(row);
 }
 

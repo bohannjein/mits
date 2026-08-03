@@ -1,6 +1,7 @@
 import "server-only";
 
 import { toRole, type MITSRole } from "@/lib/auth/roles";
+import type { SessionUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/sqlite";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -16,6 +17,29 @@ export interface ManagedUser {
   email: string;
   role: MITSRole;
   createdAt: string;
+}
+
+/**
+ * A stored account in the shape the write paths take, for code that acts on
+ * somebody's behalf without a browser session: the mail ingest and the inbound
+ * ticket webhook.
+ *
+ * Not a way around authentication. The role comes from the stored row, so an
+ * account that is a plain `user` stays one — an ingest running under it cannot
+ * write an internal note, and the write paths enforce that themselves rather
+ * than trusting this object.
+ */
+export function asSessionUser(account: ManagedUser): SessionUser {
+  return {
+    id: account.id,
+    name: account.name?.trim() || account.email,
+    email: account.email,
+    role: account.role,
+    emailVerified: true,
+    // Irrelevant here — no background path consults the password gate — but
+    // false is the honest value for an account being used by a service.
+    mustChangePassword: false,
+  };
 }
 
 /** One account, or null. Called before an admin action writes to it. */

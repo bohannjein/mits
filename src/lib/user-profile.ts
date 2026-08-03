@@ -56,7 +56,7 @@ export function setUserProfile(
    * caller that tries to pass it does not compile, which is a better guarantee than a
    * comment saying it will be dropped.
    */
-  input: Omit<MITSUserProfile, "organization_id">,
+  input: Omit<MITSUserProfile, "organization_id" | "is_org_admin">,
   locationExists: (id: string) => boolean,
 ): MITSUserProfile {
   const parsed = MITSUserProfileSchema.safeParse(input);
@@ -83,20 +83,24 @@ export function setUserProfile(
   }
 
   /*
-   * The organization is read from the row and written back unchanged, never taken from
-   * `input`. The customer form does not offer the field, but "the form does not post it"
-   * is not a rule — this is. Only `setUserOrganization` moves somebody between
-   * companies, and that path checks for admin.
+   * The two privileged fields are read from the row and written back unchanged,
+   * never taken from `input`. The customer form does not offer them, but "the
+   * form does not post it" is not a rule — this is. Only `setUserOrganization`
+   * and `setOrgAdmin` change them, and both paths check for admin.
+   *
+   * They are also not in the UPDATE list below. Even a bound value that happened
+   * to be wrong could then not overwrite them.
    */
   const organizationId = getUserOrganizationId(userId);
+  const orgAdmin = isOrgAdmin(userId);
 
   db.prepare(
     `INSERT INTO mits_user_profile
-       (user_id, location_id, organization_id, phone, street, postal_code, city,
-        country, website, note, updated_at)
+       (user_id, location_id, organization_id, is_org_admin, phone, street,
+        postal_code, city, country, website, note, updated_at)
      VALUES
-       (@user_id, @location_id, @organization_id, @phone, @street, @postal_code,
-        @city, @country, @website, @note, @updated_at)
+       (@user_id, @location_id, @organization_id, @is_org_admin, @phone, @street,
+        @postal_code, @city, @country, @website, @note, @updated_at)
      ON CONFLICT(user_id) DO UPDATE SET
        location_id = excluded.location_id,
        phone       = excluded.phone,
@@ -110,11 +114,47 @@ export function setUserProfile(
   ).run({
     ...profile,
     organization_id: organizationId,
+    is_org_admin: orgAdmin ? 1 : 0,
     user_id: userId,
     updated_at: new Date().toISOString(),
   });
 
-  return { ...profile, organization_id: organizationId };
+  return { ...profile, organization_id: organizationId, is_org_admin: orgAdmin };
+}
+
+/** Whether this reporter may see their whole company's tickets. */
+export function isOrgAdmin(userId: string): boolean {
+  const row = db
+    .prepare("SELECT is_org_admin FROM mits_user_profile WHERE user_id = ?")
+    .get(userId) as { is_org_admin: number | null } | undefined;
+  return Boolean(row?.is_org_admin);
+}
+
+/**
+ * Grant or withdraw the department view.
+ *
+ * Its own entry point, like `setUserOrganization`: a caller cannot reach it by
+ * posting an extra key, only by calling a function whose name says what it
+ * does.
+ *
+ * **The flag alone shows nothing.** The department list is scoped by the
+ * viewer's company, so somebody flagged without one sees exactly their own
+ * tickets — the same as before. That is deliberate: the grant and the
+ * assignment are two admin decisions, and requiring both here would mean the
+ * order they happen in changes the result.
+ */
+export function setOrgAdmin(userId: string, value: boolean): void {
+  db.prepare(
+    `INSERT INTO mits_user_profile (user_id, is_org_admin, updated_at)
+     VALUES (@user_id, @is_org_admin, @updated_at)
+     ON CONFLICT(user_id) DO UPDATE SET
+       is_org_admin = excluded.is_org_admin,
+       updated_at   = excluded.updated_at`,
+  ).run({
+    user_id: userId,
+    is_org_admin: value ? 1 : 0,
+    updated_at: new Date().toISOString(),
+  });
 }
 
 /** Null when the user has no profile row yet, or none assigned. */

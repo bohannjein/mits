@@ -39,6 +39,7 @@ import {
   TicketPriorityValues,
   TicketStatus,
   macroIsEmpty,
+  normalizeShortcut,
   type CannedResponse,
   type Macro,
 } from "@/types/mits";
@@ -175,20 +176,38 @@ export function MacrosForm({
                 />
               </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor={`macro-description-${entry.id}`}>
-                  Kurzbeschreibung (optional)
-                </Label>
-                <Input
-                  id={`macro-description-${entry.id}`}
-                  value={entry.description}
-                  onChange={(event) =>
-                    patch(entry.id, { description: event.target.value })
-                  }
-                  placeholder="Erscheint als Tooltip"
-                  disabled={saving}
-                  className="h-10 rounded-xl"
-                />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor={`macro-description-${entry.id}`}>
+                    Kurzbeschreibung (optional)
+                  </Label>
+                  <Input
+                    id={`macro-description-${entry.id}`}
+                    value={entry.description}
+                    onChange={(event) =>
+                      patch(entry.id, { description: event.target.value })
+                    }
+                    placeholder="Erscheint als Tooltip"
+                    disabled={saving}
+                    className="h-10 rounded-xl"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor={`macro-shortcut-${entry.id}`}>Kürzel</Label>
+                  <Input
+                    id={`macro-shortcut-${entry.id}`}
+                    value={entry.shortcut}
+                    onChange={(event) =>
+                      patch(entry.id, {
+                        shortcut: normalizeShortcut(event.target.value),
+                      })
+                    }
+                    placeholder="warten"
+                    disabled={saving}
+                    className="h-10 rounded-xl font-mono"
+                  />
+                </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
@@ -368,6 +387,7 @@ export function MacrosForm({
                   title: "",
                   description: "",
                   icon: "Zap",
+                  shortcut: "",
                   set_status: "",
                   set_priority: "",
                   assign: "",

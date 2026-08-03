@@ -14,6 +14,8 @@ import { Separator } from "@/components/ui/separator";
 import { requireUser } from "@/lib/auth/session";
 import { getFeatureFlags } from "@/lib/features";
 import { listLocations } from "@/lib/locations";
+import { getOrganization } from "@/lib/organizations";
+import { getUserOrganizationId, isOrgAdmin } from "@/lib/user-profile";
 import {
   jumpToTicketNumber,
   parseTicketQuery,
@@ -54,11 +56,31 @@ export default async function MyTicketsPage({
   // nothing below runs in that case.
   if (searchEnabled) jumpToTicketNumber(params.q as string | undefined, user);
 
+  /*
+   * The department view, and why the decision is made here rather than in the
+   * filter parser.
+   *
+   * `?scope=abteilung` is the only parameter on this page that *widens* what a
+   * reporter can read, and the rule for everything else is that a parameter may
+   * only narrow. So it is not parsed with the others: the flag and the company
+   * are read from the profile, and the parameter merely picks between two
+   * options the server has already decided this person has. Somebody without
+   * the flag — or with it but in no company — gets their own tickets, whatever
+   * the URL says.
+   */
+  const organizationId = getUserOrganizationId(user.id);
+  const mayViewDepartment = organizationId !== null && isOrgAdmin(user.id);
+  const department = mayViewDepartment && one(params.scope) === "abteilung";
+  const organization = department ? getOrganization(organizationId) : null;
+
   // `ownOnly` regardless of role: this page is "mine" for everyone, including
   // admins. Foreign tickets live on the board.
   const { filter, values, activeCount } = parseTicketQuery(params, {
-    ownOnly: true,
+    ownOnly: !department,
   });
+
+  // Set after the parse, never by it — see above.
+  if (department && organizationId) filter.organizationId = organizationId;
 
   const hasQuery = searchEnabled && (activeCount > 0 || Boolean(values.q));
   const sort = parseTicketSort(params.sort, params.dir);
@@ -122,6 +144,26 @@ export default async function MyTicketsPage({
 
   const locations = listLocations();
 
+  /*
+   * Both strips write both parameters. A tab that only set its own would drop
+   * the other one to its default — clicking "Verlauf" inside the department
+   * would quietly put the reader back on their own tickets, which looks like
+   * the closed ones are missing rather than like a lost parameter.
+   */
+  const viewHref = (next: { scope: string; view: string }): string => {
+    const query = new URLSearchParams();
+    if (next.scope) query.set("scope", next.scope);
+    if (next.view) query.set("view", next.view);
+    const suffix = query.toString();
+    return suffix ? `/customer/tickets?${suffix}` : "/customer/tickets";
+  };
+
+  /** The same two parameters, for the GET forms that would otherwise drop them. */
+  const carried: Record<string, string> = {
+    ...(department ? { scope: "abteilung" } : {}),
+    ...(history ? { view: "verlauf" } : {}),
+  };
+
   return (
     <>
       <AppHeader />
@@ -134,13 +176,15 @@ export default async function MyTicketsPage({
           <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
-                Meine Tickets
+                {department ? "Abteilungs-Tickets" : "Meine Tickets"}
               </h1>
               <p className="mt-2 text-muted-foreground">
                 {/* The total, not the page size — see the note on the queue. */}
                 {hasQuery
                   ? `${total} Treffer für die aktuelle Auswahl.`
-                  : `Alles, was du gemeldet hast — ${total} ${total === 1 ? "Eintrag" : "Einträge"}.`}
+                  : department
+                    ? `Gemeldet von ${organization?.name ?? "deiner Firma"} — ${total} ${total === 1 ? "Eintrag" : "Einträge"}.`
+                    : `Alles, was du gemeldet hast — ${total} ${total === 1 ? "Eintrag" : "Einträge"}.`}
               </p>
             </div>
             <Button
@@ -156,9 +200,44 @@ export default async function MyTicketsPage({
 
           <Separator className="my-8 bg-border" />
 
+          {/*
+            Two rows, because they are two questions: whose tickets, and which
+            of them. Folded into one strip they would multiply into four tabs
+            whose labels no longer say what they do ("Abteilung, Verlauf").
+            Rendered only for somebody who has the department at all — a tab
+            that is always disabled is an advertisement, not a control.
+          */}
+          {mayViewDepartment && (
+            <nav
+              aria-label="Zuständigkeit"
+              className="mb-3 inline-flex w-fit gap-1 rounded-full border border-border bg-card p-1"
+            >
+              {[
+                { key: "", label: "Meine Tickets" },
+                { key: "abteilung", label: "Abteilungs-Tickets" },
+              ].map((tab) => {
+                const active = department === (tab.key === "abteilung");
+                return (
+                  <Link
+                    key={tab.key || "eigene"}
+                    href={viewHref({ scope: tab.key, view: history ? "verlauf" : "" })}
+                    aria-current={active ? "page" : undefined}
+                    className={
+                      active
+                        ? "inline-flex h-9 items-center rounded-full bg-inverse-surface px-3.5 text-sm font-medium text-inverse-surface-foreground"
+                        : "inline-flex h-9 items-center rounded-full px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+                    }
+                  >
+                    {tab.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          )}
+
           <nav
             aria-label="Ansicht"
-            className="mb-6 inline-flex w-fit gap-1 rounded-full border border-border bg-card p-1"
+            className="mb-6 flex w-fit gap-1 rounded-full border border-border bg-card p-1"
           >
             {[
               { key: "", label: "Aktuell", count: openCount },
@@ -168,7 +247,10 @@ export default async function MyTicketsPage({
               return (
                 <Link
                   key={tab.key || "offen"}
-                  href={tab.key ? "/customer/tickets?view=verlauf" : "/customer/tickets"}
+                  href={viewHref({
+                    scope: department ? "abteilung" : "",
+                    view: tab.key,
+                  })}
                   aria-current={active ? "page" : undefined}
                   className={
                     active
@@ -185,12 +267,17 @@ export default async function MyTicketsPage({
 
           {searchEnabled && (
             <div className="mb-6 grid gap-4">
-              <TicketSearch action="/customer/tickets" defaultValue={values.q} />
+              <TicketSearch
+                action="/customer/tickets"
+                defaultValue={values.q}
+                carry={carried}
+              />
               <TicketFilters
                 action="/customer/tickets"
                 values={values}
                 locations={locations}
                 activeCount={activeCount}
+                carry={carried}
               />
             </div>
           )}

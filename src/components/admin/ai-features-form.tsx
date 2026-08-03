@@ -119,8 +119,7 @@ export function AIFeaturesForm({
                   Hauptschalter
                 </Label>
                 <span className="text-xs text-muted-foreground">
-                  Aus bedeutet: MITS stellt keine einzige Anfrage an ein Modell —
-                  auch nicht für den KI-Assistenten im Ticket-Eingang.
+                  Aus: keine einzige Anfrage an ein Modell.
                 </span>
               </div>
             </div>
@@ -172,10 +171,6 @@ export function AIFeaturesForm({
                     disabled={saving}
                     className="h-10 rounded-xl font-mono text-xs"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Leer lassen für den Wert aus der Umgebung (aktuell{" "}
-                    <code>{effective.ollamaBaseUrl}</code>).
-                  </p>
                 </div>
               ) : (
                 <div className="grid gap-2">
@@ -188,10 +183,6 @@ export function AIFeaturesForm({
                     disabled={saving}
                     className="h-10 rounded-xl font-mono text-xs"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Nur nötig für ein eigenes Gateway. Leer nutzt{" "}
-                    <code>{AI_PROVIDER_ENDPOINTS[provider]}</code>.
-                  </p>
                 </div>
               )}
 
@@ -208,10 +199,15 @@ export function AIFeaturesForm({
                   disabled={saving}
                   className="h-10 rounded-xl"
                 />
+                {/*
+                  Bleibt, und zwar nur der Teil, den das Feld nicht zeigt:
+                  Leeren behält den Schlüssel (`resolveSmtpPassword`), löschen
+                  geht nur über ein Leerzeichen.
+                */}
                 <p className="text-xs text-muted-foreground">
                   {hasKey
-                    ? "Hinterlegt. Leer lassen behält den gespeicherten Schlüssel."
-                    : "Noch keiner hinterlegt."}
+                    ? "Löschen: ein Leerzeichen eintragen."
+                    : "Keiner hinterlegt."}
                 </p>
               </div>
 

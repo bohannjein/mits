@@ -1,5 +1,6 @@
 import "server-only";
 
+import { bearerToken, verifyApiKey } from "@/lib/api-keys";
 import { API_TOKEN_HEADER, isValidApiToken } from "@/lib/api-tokens";
 import { requireApiRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
@@ -11,12 +12,15 @@ import {
 /* ──────────────────────────────────────────────────────────────────────────
    Shared guard and shape for the CMDB REST endpoints.
 
-   Two ways in, in this order:
+   Three ways in, in this order:
 
-   1. `X-MITS-API-Token` — for a script or an inventory agent, which has no session.
-   2. A signed-in agent or admin — so the same URL can be opened in a browser.
+   1. `Authorization: Bearer mits_live_…` — a named key from `lib/api-keys.ts`, so an
+      admin can see which system is calling and revoke one without the others.
+   2. `X-MITS-API-Token` — the older shared instance token. Still accepted because it
+      is configured on running instances; dropping it would break them on update.
+   3. A signed-in agent or admin — so the same URL can be opened in a browser.
 
-   Token first, because a machine caller sends no cookies and evaluating the session
+   Tokens first, because a machine caller sends no cookies and evaluating the session
    path first would mean a database read per request for nothing.
 
    Both are checked here rather than per route so a new endpoint cannot ship with half
@@ -32,6 +36,10 @@ export async function guardCMDBRequest(request: Request): Promise<ApiGuard> {
       ok: false,
       response: Response.json({ error: "Die CMDB ist abgeschaltet." }, { status: 404 }),
     };
+  }
+
+  if (verifyApiKey(bearerToken(request.headers.get("authorization")))) {
+    return { ok: true };
   }
 
   if (isValidApiToken(request.headers.get(API_TOKEN_HEADER))) {

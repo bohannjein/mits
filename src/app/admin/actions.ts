@@ -20,7 +20,7 @@ import {
   resolveFields,
 } from "@/lib/forms/schema-to-zod";
 import { listCannedResponses, setCannedResponses } from "@/lib/canned-responses";
-import { setMacros } from "@/lib/macros";
+import { listMacros, setMacros } from "@/lib/macros";
 import { setAnalyticsSettings } from "@/lib/analytics/settings";
 import { invalidateAnalytics } from "@/lib/services/analytics-cache";
 import { setNotificationSettings } from "@/lib/notification-settings";
@@ -65,6 +65,7 @@ import {
 import { unusableFaqAttachments } from "@/lib/storage";
 import {
   UserProfileError,
+  setOrgAdmin,
   setUserOrganization,
   setUserProfile,
 } from "@/lib/user-profile";
@@ -466,6 +467,12 @@ export async function saveCannedResponsesAction(
   );
   if (!payload.ok) return { ok: false, error: payload.error };
 
+  const clash = duplicateShortcut(
+    payload.data,
+    listMacros().map((macro) => ({ title: macro.title, shortcut: macro.shortcut })),
+  );
+  if (clash) return { ok: false, error: clash };
+
   const saved = setCannedResponses(payload.data);
   revalidatePath("/admin/canned-responses");
   // Every agent ticket page renders the list.
@@ -481,6 +488,39 @@ export async function saveCannedResponsesAction(
 }
 
 /* ── Macros ─────────────────────────────────────────────────────────────── */
+
+/**
+ * The first shortcut that is claimed twice, as a message — or null.
+ *
+ * Across both lists, because the slash menu is one menu: a canned response and
+ * a macro sharing `/reset` is exactly as ambiguous as two canned responses
+ * doing it, and "which one runs" would come down to the order the two lists
+ * happen to be concatenated in.
+ *
+ * The empty shortcut is not a claim and never collides — most entries have
+ * none, and treating "no shortcut" as a duplicate would make the second one
+ * unsaveable.
+ */
+function duplicateShortcut(
+  entries: { title: string; shortcut: string }[],
+  others: { title: string; shortcut: string }[] = [],
+): string | null {
+  const seen = new Map<string, string>();
+  for (const entry of others) {
+    if (entry.shortcut) seen.set(entry.shortcut, entry.title);
+  }
+
+  for (const entry of entries) {
+    if (!entry.shortcut) continue;
+    const owner = seen.get(entry.shortcut);
+    if (owner !== undefined) {
+      return `Das Kürzel „/${entry.shortcut}“ ist schon an „${owner}“ vergeben.`;
+    }
+    seen.set(entry.shortcut, entry.title || "Ohne Titel");
+  }
+
+  return null;
+}
 
 export async function saveMacrosAction(
   _previous: ActionResult | null,
@@ -524,6 +564,15 @@ export async function saveMacrosAction(
       error: `„${dangling.title}“ verweist auf einen Textbaustein, den es nicht gibt.`,
     };
   }
+
+  const clash = duplicateShortcut(
+    payload.data,
+    listCannedResponses().map((entry) => ({
+      title: entry.title,
+      shortcut: entry.shortcut,
+    })),
+  );
+  if (clash) return { ok: false, error: clash };
 
   const saved = setMacros(payload.data);
   revalidatePath("/admin/macros");
@@ -1136,10 +1185,22 @@ export async function saveUserRecordAction(
     }
   }
 
+  /*
+   * The department view, through its own setter for the same reason as the
+   * company: `setUserProfile` does not accept the field, so the only way to
+   * grant it is this line, behind this admin check. Same absent-means-unchanged
+   * rule — a checkbox posts nothing when it is off, so the mask sends a hidden
+   * marker beside it and this reads the marker, not the box.
+   */
+  if (formData.has("is_org_admin_present")) {
+    setOrgAdmin(userId, formData.get("is_org_admin") === "on");
+  }
+
   revalidatePath("/admin/customers");
   revalidatePath("/admin/staff");
   // The agent sidebar renders these, and the header prints the name.
   revalidatePath("/mits/tickets/[id]", "page");
+  revalidatePath("/customer/tickets");
   revalidatePath("/", "layout");
 
   return { ok: true, message: `Angaben zu ${name || target.name} gespeichert.` };

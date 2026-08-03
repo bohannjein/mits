@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   CUSTOMER_PROFILE_FIELDS,
@@ -138,6 +139,36 @@ export function UserRecordForm({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+        )}
+
+        {/*
+          The department view. Only offered where it can do something: without a
+          company the flag scopes to nothing, so the switch would be a promise
+          the list cannot keep.
+
+          The hidden marker beside it is what makes "off" reachable. An unchecked
+          checkbox posts no key at all, and the action treats an absent key as
+          "leave alone" — so without this, the switch could be turned on and
+          never off again.
+        */}
+        {organizations.length > 0 && profile.organization_id && (
+          <div className="flex items-start gap-3 rounded-2xl border border-border p-4 sm:col-span-2">
+            <input type="hidden" name="is_org_admin_present" value="1" />
+            <Switch
+              id={`org-admin-${user.id}`}
+              name="is_org_admin"
+              defaultChecked={profile.is_org_admin}
+              disabled={saving}
+            />
+            <div className="grid gap-1">
+              <Label htmlFor={`org-admin-${user.id}`}>
+                Sieht alle Tickets der Firma
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Auch die von Kolleginnen und Kollegen, inklusive Verlauf.
+              </p>
+            </div>
           </div>
         )}
 

@@ -126,3 +126,39 @@ Die Objekte lagen schon da (`mits_configuration_item`, `mits_ticket_ci`,
 `mits_configuration_item`, und dass es *eine* Tabelle für alle Objektarten ist,
 ist eine dokumentierte Entscheidung. Eine zweite hieße zwei Bestände, von denen
 der Lizenzzähler nur einen sieht.
+
+## Benannte API-Keys und der Ticket-Webhook
+
+`mits_api_key` (`lib/api-keys.ts`), Maske unter `/admin/settings/api-keys`. Ein
+Key je aufrufendem System statt eines geteilten Tokens — die Frage, die ein
+Admin tatsächlich hat, ist „welches System ruft hier noch an", und ein Geheimnis,
+das Monitoring, Inventarskript und eine halb vergessene Integration teilen, kann
+sie nicht beantworten und lässt sich nicht einzeln zurückziehen.
+
+- **Format `mits_live_<32 Zeichen base64url>`**, gespeichert wird nur der
+  SHA-256. Angezeigt genau einmal, direkt nach dem Anlegen. `key_prefix` ist der
+  Griff für die Tabelle und für sich genommen nutzlos.
+- **Nachgeschlagen wird über den Hash**, nicht verglichen — es gibt also keinen
+  Geheimnis-gegen-Geheimnis-Vergleich, dessen Dauer ein Präfix verraten könnte.
+- **`last_used_at` bei jedem angenommenen Aufruf.** Ein Schreibvorgang pro
+  Request auf eine Tabelle mit einer Handvoll Zeilen, und das Einzige, was
+  „welchen dieser sechs kann ich löschen" beantwortbar macht.
+- **Der alte `X-MITS-API-Token` bleibt gültig.** Er ist auf laufenden Instanzen
+  konfiguriert; ihn fallen zu lassen hieße, sie beim Update abzuschalten.
+  `guardCMDBRequest` prüft Bearer zuerst, dann den Header, dann die Sitzung.
+
+**`POST /api/v1/tickets`** legt ein Ticket aus einer Maschine an — Titel,
+Beschreibung, Priorität, `reporterEmail`, `assetSerialNumber`.
+
+- **Nur Bearer bzw. der alte Token, keine Sitzung.** Der Endpunkt schreibt nur;
+  es gibt keinen Grund, ihn im Browser zu öffnen.
+- **`reporterEmail` wird nachgeschlagen, nie angelegt.** Unbekannt heißt: unter
+  dem Auffang-Konto des Mail-Ingests, mit der Adresse als Melder — dieselbe
+  Situation wie eine Mail von einem Fremden, deshalb dieselbe Einstellung.
+- **Die Priorität wird nach dem Insert gesetzt.** `createTicket` klemmt den
+  Entwurf einer melderseitigen Anfrage auf `medium`; diese Regel bleibt, und ein
+  Alarm ist kein Melder — also ein zweiter, protokollierter Schritt, wie beim
+  Defender-Vorfall im Ingest.
+- **Eine Seriennummer, die nichts trifft, ist kein Fehler.** Sie wird gemeldet
+  (`asset_matched`), aber das Ticket entsteht trotzdem: einen Alarm wegzuwerfen,
+  um die CMDB sauber zu halten, wäre die falsche Reihenfolge.

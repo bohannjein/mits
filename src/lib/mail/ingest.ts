@@ -1,6 +1,5 @@
 import "server-only";
 
-import { toRole } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/session";
 import { getMailSettings, incidentRuleConfig } from "@/lib/mail-settings";
 import { planIngest, sameMailbox } from "@/lib/mail/inbound-parse";
@@ -16,7 +15,7 @@ import {
   getTicketByNumberFor,
   setTicketPriority,
 } from "@/lib/tickets";
-import { findUser, findUserByEmail } from "@/lib/users";
+import { asSessionUser, findUser, findUserByEmail } from "@/lib/users";
 import { QUICK_TICKET_SCHEMA } from "@/lib/mock-schemas";
 import { formatTicketNumber, type MITSTicket } from "@/types/mits";
 
@@ -58,32 +57,6 @@ export interface IngestReport {
   skipped: number;
   /** One line per message that did not become anything, for the admin mask. */
   notes: string[];
-}
-
-/**
- * The fallback account, as a `SessionUser`.
- *
- * Built rather than looked up as a session because there is no session — this is
- * a background run. The role comes from the stored account, so a fallback that is
- * a plain `user` cannot be used to write an internal note, and the write paths
- * enforce that themselves rather than trusting this object.
- */
-function asSessionUser(account: {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-}): SessionUser {
-  return {
-    id: account.id,
-    name: account.name?.trim() || account.email,
-    email: account.email,
-    role: toRole(account.role),
-    emailVerified: true,
-    // Irrelevant here — nothing in the ingest path consults the password gate —
-    // but false is the honest value for an account being used by a service.
-    mustChangePassword: false,
-  };
 }
 
 /**

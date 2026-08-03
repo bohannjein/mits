@@ -84,14 +84,34 @@ export function TicketComposer({
   ticketId: string;
   isAgent: boolean;
   variant?: "rich" | "plain";
-  cannedResponses?: { id: string; title: string; body: string }[];
-  macros?: { id: string; title: string; description: string }[];
+  cannedResponses?: {
+    id: string;
+    title: string;
+    body: string;
+    shortcut: string;
+  }[];
+  macros?: {
+    id: string;
+    title: string;
+    description: string;
+    shortcut: string;
+  }[];
 }) {
   const { toast } = useToast();
   const [internal, setInternal] = useState(false);
   const [body, setBody] = useState("");
   const [editor, setEditor] = useState<RichTextEditorHandle | null>(null);
   const [snippetsOpen, setSnippetsOpen] = useState(false);
+  /*
+   * What has been typed after the slash.
+   *
+   * Kept here rather than in an input inside the menu: a text field inside a
+   * Radix menu takes the arrow keys away from the list, and the list is the
+   * thing being navigated. The keystrokes are read off the menu itself, which
+   * leaves arrows, Enter and Escape doing exactly what the primitive already
+   * does with them.
+   */
+  const [snippetFilter, setSnippetFilter] = useState("");
 
   /*
    * The formatting bar starts folded.
@@ -156,6 +176,39 @@ export function TicketComposer({
     data.set("ticketId", fields.ticketId);
     data.set("macroId", fields.macroId);
     startTransition(() => macroAction(data));
+  };
+
+  /*
+   * What the typed filter still matches.
+   *
+   * A shortcut matches from the front, a title anywhere. That is the difference
+   * between the two: a shortcut is a word somebody memorised and types from its
+   * first letter, a title is a sentence they remember one word out of.
+   */
+  const needle = snippetFilter.toLowerCase();
+  const matchesFilter = (title: string, shortcut: string): boolean =>
+    needle === "" ||
+    shortcut.startsWith(needle) ||
+    title.toLowerCase().includes(needle);
+
+  const shownCanned = cannedResponses.filter((entry) =>
+    matchesFilter(entry.title, entry.shortcut),
+  );
+  const shownMacros = macros.filter((entry) =>
+    matchesFilter(entry.title, entry.shortcut),
+  );
+  const noMatches = shownCanned.length === 0 && shownMacros.length === 0;
+
+  /** Enter on the filter itself takes the first match, without arrowing to it. */
+  const takeFirstMatch = () => {
+    if (shownCanned[0]) {
+      insertText(shownCanned[0].body);
+    } else if (shownMacros[0]) {
+      dispatchMacro({ ticketId, macroId: shownMacros[0].id });
+    } else {
+      return;
+    }
+    setSnippetsOpen(false);
   };
   const result = replyResult ?? closeResult;
   const busy = replying || closing || runningMacro;
@@ -359,7 +412,15 @@ export function TicketComposer({
         {/* Inserted into the field, never sent on its own — the agent confirms
             what goes out, same rule as the AI triage. */}
         {isAgent && (cannedResponses.length > 0 || macros.length > 0) && (
-          <DropdownMenu open={snippetsOpen} onOpenChange={setSnippetsOpen}>
+          <DropdownMenu
+            open={snippetsOpen}
+            onOpenChange={(open) => {
+              setSnippetsOpen(open);
+              // Every opening starts empty. A filter that survived would mean
+              // pressing "/" and finding a list that silently hides most of it.
+              if (!open) setSnippetFilter("");
+            }}
+          >
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
@@ -376,27 +437,76 @@ export function TicketComposer({
             <DropdownMenuContent
               align="end"
               className="w-72 rounded-2xl border border-border shadow-elev-2"
+              /*
+                Typing filters the list; everything else stays with the
+                primitive. Radix composes this handler *before* its own and
+                skips it once the event is defaulted-prevented, which is how a
+                printable key can be taken over here without also disabling the
+                arrow keys, Enter and Escape that make the menu a listbox.
+                Space is deliberately left alone — it activates the focused item.
+              */
+              onKeyDown={(event) => {
+                if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+                if (event.key === "Backspace") {
+                  event.preventDefault();
+                  setSnippetFilter((value) => value.slice(0, -1));
+                  return;
+                }
+
+                // Only while focus is still on the menu itself. Once somebody
+                // has arrowed onto an entry, Enter belongs to that entry.
+                if (
+                  event.key === "Enter" &&
+                  snippetFilter !== "" &&
+                  event.target === event.currentTarget
+                ) {
+                  event.preventDefault();
+                  takeFirstMatch();
+                  return;
+                }
+
+                if (event.key.length === 1 && event.key !== " ") {
+                  event.preventDefault();
+                  setSnippetFilter((value) => (value + event.key).slice(0, 40));
+                }
+              }}
             >
               {/*
-                Arrow keys and type-ahead come from the primitive — Radix’s menu
-                is already a roving-focus listbox, so `/` opening it is enough to
-                make the whole thing keyboard-driven. Building a bespoke popover
-                here would mean reimplementing focus trapping and arrow handling
-                to arrive at what this already does.
+                The typed text, shown back. Without it the list narrows for a
+                reason nothing on screen explains — and a stray keystroke looks
+                like half the snippets have been deleted.
               */}
-              {cannedResponses.length > 0 && (
+              {snippetFilter !== "" && (
+                <DropdownMenuLabel className="font-mono text-xs font-normal text-muted-foreground">
+                  /{snippetFilter}
+                </DropdownMenuLabel>
+              )}
+
+              {noMatches && (
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                  Kein Baustein und kein Makro passt.
+                </DropdownMenuLabel>
+              )}
+
+              {shownCanned.length > 0 && (
                 <>
                   <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
                     Textbausteine — werden eingefügt, nicht gesendet
                   </DropdownMenuLabel>
-                  {cannedResponses.map((canned) => (
+                  {shownCanned.map((canned) => (
                     <DropdownMenuItem
                       key={canned.id}
                       className="rounded-xl"
                       onSelect={() => insertText(canned.body)}
                     >
                       <FileTextIcon strokeWidth={1.5} />
-                      {canned.title}
+                      <span className="truncate">{canned.title}</span>
+                      {canned.shortcut && (
+                        <span className="ml-auto pl-2 font-mono text-xs text-muted-foreground">
+                          /{canned.shortcut}
+                        </span>
+                      )}
                     </DropdownMenuItem>
                   ))}
                 </>
@@ -408,13 +518,13 @@ export function TicketComposer({
                 send. Two menus for one gesture would mean guessing which one holds
                 the entry you want.
               */}
-              {macros.length > 0 && (
+              {shownMacros.length > 0 && (
                 <>
-                  {cannedResponses.length > 0 && <DropdownMenuSeparator />}
+                  {shownCanned.length > 0 && <DropdownMenuSeparator />}
                   <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
                     Makros — ändern auch Felder
                   </DropdownMenuLabel>
-                  {macros.map((macro) => (
+                  {shownMacros.map((macro) => (
                     <DropdownMenuItem
                       key={macro.id}
                       className="rounded-xl"
@@ -423,7 +533,12 @@ export function TicketComposer({
                       }
                     >
                       <ZapIcon strokeWidth={1.5} />
-                      {macro.title}
+                      <span className="truncate">{macro.title}</span>
+                      {macro.shortcut && (
+                        <span className="ml-auto pl-2 font-mono text-xs text-muted-foreground">
+                          /{macro.shortcut}
+                        </span>
+                      )}
                     </DropdownMenuItem>
                   ))}
                 </>
@@ -497,10 +612,17 @@ export function TicketComposer({
               disabled={busy}
               tone={internal ? "warning" : "default"}
               onReady={setEditor}
-              // Only when there is something to offer: a shortcut that opens an
-              // empty menu is a swallowed keystroke.
+              /*
+                Only when there is something to offer: a shortcut that opens an
+                empty menu is a swallowed keystroke.
+
+                Macros count. The condition used to name only the canned
+                responses, so on an instance that had macros and no snippets the
+                key did nothing at all — and the menu it would have opened was
+                sitting right above the field.
+              */
               onSlash={
-                isAgent && cannedResponses.length > 0
+                isAgent && (cannedResponses.length > 0 || macros.length > 0)
                   ? () => setSnippetsOpen(true)
                   : undefined
               }

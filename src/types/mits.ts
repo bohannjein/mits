@@ -607,9 +607,30 @@ export const CannedResponseSchema = z.object({
   title: z.string().min(1).max(160),
   body: z.string().min(1).max(8000),
   category: z.string().max(120).default(""),
+  /** Typed after the slash to reach this entry. Optional; see `normalizeShortcut`. */
+  shortcut: z.string().max(40).default(""),
   order_index: z.number().int().nonnegative().default(0),
 });
 export type CannedResponse = z.infer<typeof CannedResponseSchema>;
+
+/**
+ * The stored form of a slash shortcut: lower case, no slash, letters, digits
+ * and dashes.
+ *
+ * Normalised on the way in rather than validated: an admin who types "/Reset"
+ * or "Reset " means the same thing as "reset", and rejecting it teaches them a
+ * syntax instead of accepting an obvious intent. The empty string is the honest
+ * result for input that folds away to nothing, and an empty shortcut simply
+ * means the entry is reachable by name only.
+ */
+export function normalizeShortcut(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^\/+/, "")
+    .replace(/[^a-z0-9-]+/g, "")
+    .slice(0, 40);
+}
 
 /**
  * Everything a template may substitute, resolved by the caller.
@@ -736,6 +757,8 @@ export const MacroSchema = z.object({
   description: z.string().max(300).default(""),
   /** Lucide icon name, resolved through the allow-list in lib/icons.ts. */
   icon: z.string().max(60).default("Zap"),
+  /** Typed after the slash to reach this macro. Same rules as a canned response. */
+  shortcut: z.string().max(40).default(""),
   /*
    * Parsed leniently rather than as the status enum: a macro written against a
    * status a later build removed has to still load, so the admin can see and fix
@@ -1259,6 +1282,15 @@ export const MITSUserProfileSchema = z.object({
    * the admin action and the importer assign it.
    */
   organization_id: z.string().nullable().default(null),
+  /**
+   * Whether this reporter may see every ticket of their company.
+   *
+   * Coerced, because SQLite has no boolean and the column is 0/1. Not writable
+   * through `setUserProfile` for the same reason `organization_id` is not: it
+   * widens what somebody can read, and a field that widens access is never
+   * taken from the form of the person it would widen it for.
+   */
+  is_org_admin: z.coerce.boolean().default(false),
   phone: z.string().max(40).default(""),
   street: z.string().max(160).default(""),
   postal_code: z.string().max(16).default(""),

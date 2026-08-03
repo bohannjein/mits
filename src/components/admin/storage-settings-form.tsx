@@ -134,10 +134,14 @@ export function StorageSettingsForm({
                   disabled={saving}
                   className="h-10 rounded-xl"
                 />
+                {/* Das gefüllte Feld sagt schon, dass einer hinterlegt ist. Was
+                    es nicht sagen kann: wie man ihn wieder loswird — leeren
+                    behält ihn (`resolveSmtpPassword`), erst ein Leerzeichen
+                    löscht. */}
                 <p className="text-xs text-muted-foreground">
                   {hasSecret
-                    ? "Hinterlegt. Leer lassen behält den gespeicherten Schlüssel."
-                    : "Noch keiner hinterlegt."}
+                    ? "Löschen: ein Leerzeichen eintragen."
+                    : "Keiner hinterlegt."}
                 </p>
               </div>
             </div>

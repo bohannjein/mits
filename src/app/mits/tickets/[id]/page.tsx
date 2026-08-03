@@ -384,6 +384,7 @@ export default async function AgentTicketPage({
                         id: macro.id,
                         title: macro.title,
                         description: macro.description,
+                        shortcut: macro.shortcut,
                       }))
                     : []
                 }
@@ -392,8 +393,7 @@ export default async function AgentTicketPage({
                     ? listCannedResponses().map((canned) => ({
                         id: canned.id,
                         title: canned.title,
-                        // Filled here, not in the browser: the reporter's name is
-                        // not something the client needs handed to it.
+                        shortcut: canned.shortcut,
                         // Filled here, not in the browser: the reporter's name
                         // is not something the client needs handed to it.
                         body: fillCannedResponse(canned.body, templateValues),

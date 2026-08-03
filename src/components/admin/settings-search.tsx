@@ -10,6 +10,7 @@ import {
   DatabaseIcon,
   HardDriveIcon,
   HeadsetIcon,
+  KeyRoundIcon,
   LayoutPanelLeftIcon,
   MailIcon,
   MapPinIcon,
@@ -179,6 +180,13 @@ const ENTRIES: SettingsEntry[] = [
     label: "Anwender",
     icon: UsersIcon,
     keywords: "kunden melder benutzer konten endanwender",
+  },
+  {
+    href: "/admin/settings/api-keys",
+    label: "API-Keys",
+    icon: KeyRoundIcon,
+    keywords:
+      "rest schnittstelle token bearer webhook monitoring zabbix automatisierung integration inbound",
   },
   {
     href: "/admin/settings/system",

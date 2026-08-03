@@ -10,7 +10,7 @@ import {
   Trash2Icon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 
 import { saveCannedResponsesAction } from "@/app/admin/actions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -26,7 +26,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { CANNED_PLACEHOLDERS, type CannedResponse } from "@/types/mits";
+import {
+  CANNED_PLACEHOLDERS,
+  normalizeShortcut,
+  type CannedResponse,
+} from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Canned responses.
@@ -51,6 +55,40 @@ export function CannedResponsesForm({
       current.map((entry) => (entry.id === id ? { ...entry, ...next } : entry)),
     );
 
+  /*
+   * The textareas, so a placeholder can be dropped where the cursor is.
+   *
+   * A map keyed by id rather than one ref: the rows are a list that reorders and
+   * deletes, and an index-keyed ref would hand the token to whichever row moved
+   * into that position.
+   */
+  const bodyRefs = useRef(new Map<string, HTMLTextAreaElement>());
+
+  /**
+   * Insert a token at the cursor, or append when the field was never focused.
+   *
+   * The caret is moved behind the inserted token afterwards, on the next frame:
+   * the field is controlled, so React writes the new value first and anything
+   * set before that is overwritten — with the caret jumping to the end of the
+   * text, which is the wrong place after inserting into the middle of a
+   * sentence.
+   */
+  const insertToken = (entry: CannedResponse, token: string) => {
+    const field = bodyRefs.current.get(entry.id);
+    const start = field?.selectionStart ?? entry.body.length;
+    const end = field?.selectionEnd ?? entry.body.length;
+
+    patch(entry.id, {
+      body: entry.body.slice(0, start) + token + entry.body.slice(end),
+    });
+
+    requestAnimationFrame(() => {
+      const caret = start + token.length;
+      field?.focus();
+      field?.setSelectionRange(caret, caret);
+    });
+  };
+
   const move = (index: number, delta: number) =>
     setEntries((current) => {
       const target = index + delta;
@@ -74,17 +112,6 @@ export function CannedResponsesForm({
             Baustein wird <em>eingesetzt</em>, nie automatisch versendet — was
             rausgeht, bestätigt der Agent.
           </CardDescription>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {CANNED_PLACEHOLDERS.map((placeholder) => (
-              <Badge
-                key={placeholder}
-                variant="outline"
-                className="h-auto rounded-full px-2 py-0.5 font-mono text-[11px] font-normal"
-              >
-                {placeholder}
-              </Badge>
-            ))}
-          </div>
         </CardHeader>
 
         <CardContent className="grid gap-4">
@@ -166,6 +193,10 @@ export function CannedResponsesForm({
                 <Label htmlFor={`canned-body-${entry.id}`}>Text</Label>
                 <Textarea
                   id={`canned-body-${entry.id}`}
+                  ref={(node) => {
+                    if (node) bodyRefs.current.set(entry.id, node);
+                    else bodyRefs.current.delete(entry.id);
+                  }}
                   value={entry.body}
                   onChange={(event) =>
                     patch(entry.id, { body: event.target.value })
@@ -174,21 +205,63 @@ export function CannedResponsesForm({
                   disabled={saving}
                   className="rounded-xl"
                 />
+                {/*
+                  Beside the field, not in the card header where the list used
+                  to sit. A placeholder is only useful at the position the
+                  cursor is in, and a bar three fields away can only be read and
+                  retyped.
+                */}
+                <div className="flex flex-wrap gap-1.5">
+                  {CANNED_PLACEHOLDERS.map((placeholder) => (
+                    <button
+                      key={placeholder}
+                      type="button"
+                      disabled={saving}
+                      onClick={() => insertToken(entry, placeholder)}
+                      className="rounded-full disabled:opacity-50"
+                    >
+                      <Badge
+                        variant="outline"
+                        className="h-auto cursor-pointer rounded-full px-2 py-0.5 font-mono text-[11px] font-normal transition-colors hover:bg-surface-elevated"
+                      >
+                        {placeholder}
+                      </Badge>
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor={`canned-category-${entry.id}`}>
-                  Kategorie (optional)
-                </Label>
-                <Input
-                  id={`canned-category-${entry.id}`}
-                  value={entry.category}
-                  onChange={(event) =>
-                    patch(entry.id, { category: event.target.value })
-                  }
-                  disabled={saving}
-                  className="h-10 rounded-xl"
-                />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor={`canned-shortcut-${entry.id}`}>Kürzel</Label>
+                  <Input
+                    id={`canned-shortcut-${entry.id}`}
+                    value={entry.shortcut}
+                    onChange={(event) =>
+                      patch(entry.id, {
+                        shortcut: normalizeShortcut(event.target.value),
+                      })
+                    }
+                    placeholder="reset"
+                    disabled={saving}
+                    className="h-10 rounded-xl font-mono"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor={`canned-category-${entry.id}`}>
+                    Kategorie (optional)
+                  </Label>
+                  <Input
+                    id={`canned-category-${entry.id}`}
+                    value={entry.category}
+                    onChange={(event) =>
+                      patch(entry.id, { category: event.target.value })
+                    }
+                    disabled={saving}
+                    className="h-10 rounded-xl"
+                  />
+                </div>
               </div>
             </div>
           ))}
@@ -205,6 +278,7 @@ export function CannedResponsesForm({
                   title: "",
                   body: "",
                   category: "",
+                  shortcut: "",
                   order_index: current.length,
                 },
               ])

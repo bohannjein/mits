@@ -167,10 +167,10 @@ export function MailSettingsForm({
                     ))}
                   </SelectContent>
                 </Select>
+                {/* Was mit den Daten passiert, in einer Zeile: der Rest des
+                    alten Absatzes beschrieb die Implementierung. */}
                 <p className="text-xs text-muted-foreground">
-                  Unter diesem Konto laufen Mails von Adressen, zu denen es kein
-                  MITS-Konto gibt. Die Absenderadresse bleibt als Melder erhalten,
-                  Antworten gehen also weiterhin an die Person.
+                  Für Absender ohne MITS-Konto. Antworten gehen an die Adresse.
                 </p>
               </div>
             )}
@@ -406,8 +406,7 @@ export function MailSettingsForm({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  MITS kennt keine Gruppen. Bis es sie gibt, ist das ein Konto — ohne
-                  Angabe liegt der Vorfall unzugewiesen im Pool-Eingang.
+                  Ohne Angabe landet der Vorfall im Pool.
                 </p>
               </div>
 
@@ -423,7 +422,7 @@ export function MailSettingsForm({
                   className="h-10 rounded-xl font-mono"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Braucht eine SMTP-Konfiguration. Push gibt es in MITS nicht.
+                  Braucht eine SMTP-Konfiguration.
                 </p>
               </div>
             </div>

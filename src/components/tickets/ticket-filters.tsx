@@ -54,12 +54,23 @@ export function TicketFilters({
   /** Empty for a reporter — they have no assignee to filter by. */
   agents = [],
   activeCount,
+  carry,
 }: {
   action: string;
   values: TicketFilterValues;
   locations: MITSLocation[];
   agents?: { id: string; name: string }[];
   activeCount: number;
+  /**
+   * Query parameters that are not filters and have to survive the submit —
+   * which tab is open, whose tickets are being listed.
+   *
+   * A GET form sends its fields and nothing else: the query string in `action`
+   * is discarded by the browser. So anything the page put in the URL that is
+   * not a field here disappears the moment somebody filters, and the view
+   * silently snaps back to its default.
+   */
+  carry?: Record<string, string>;
 }) {
   return (
     <form
@@ -69,6 +80,9 @@ export function TicketFilters({
     >
       {/* Carried along so filtering does not silently drop the search term. */}
       <input type="hidden" name="q" value={values.q ?? ""} />
+      {Object.entries(carry ?? {}).map(([name, value]) => (
+        <input key={name} type="hidden" name={name} value={value} />
+      ))}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="flex items-center gap-2 text-sm font-medium">

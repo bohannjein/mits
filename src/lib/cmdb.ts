@@ -174,6 +174,31 @@ export function getConfigurationItem(id: string): MITSConfigurationItem | null {
   return row ? rowToItem(row) : null;
 }
 
+/**
+ * The item carrying this serial number, for a machine caller that knows the
+ * device but not the MITS id.
+ *
+ * Nothing enforces that a serial appears once — two vendors do reuse each
+ * other's formats, and an import from a dirty export will happily land a
+ * duplicate. The oldest row wins, deterministically, so a webhook that fires
+ * twice attaches the same object both times instead of alternating between two.
+ * An empty serial matches nothing rather than the first row with a blank
+ * column, which is most of the inventory.
+ */
+export function findCIBySerial(serial: string): MITSConfigurationItem | null {
+  const value = serial.trim();
+  if (!value) return null;
+
+  const row = db
+    .prepare(
+      `${SELECT_CI} WHERE ${ALIVE} AND serial_number = ?
+        ORDER BY created_at ASC LIMIT 1`,
+    )
+    .get(value) as CIRow | undefined;
+
+  return row ? rowToItem(row) : null;
+}
+
 /** Resolve several at once, for a relation list or a ticket's attached items. */
 export function getConfigurationItems(ids: string[]): MITSConfigurationItem[] {
   if (ids.length === 0) return [];

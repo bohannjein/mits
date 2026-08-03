@@ -351,6 +351,35 @@ function migrateAppTables(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_mits_checklist_ticket
       ON mits_ticket_checklist (ticket_id);
+
+    -- Named API keys for machine callers.
+    --
+    -- A table rather than the single shared token in mits_setting, because the
+    -- question an admin actually has is "which system is still calling this" —
+    -- and one secret shared by the monitoring, the inventory script and a
+    -- half-forgotten integration cannot answer it, nor be revoked without
+    -- breaking the other two.
+    --
+    -- Only the hash is stored. A key readable out of the database would be a
+    -- second copy of a credential, and the whole point of showing it exactly
+    -- once is that there is no second copy. key_prefix is the handle the UI
+    -- shows instead; it is not secret and identifies nothing on its own.
+    --
+    -- last_used_at is nullable and means "never called". That is the column an
+    -- admin looks at before deleting a key, so an invented default -- the
+    -- creation time, say -- would make an unused key look alive.
+    CREATE TABLE IF NOT EXISTS mits_api_key (
+      id           TEXT PRIMARY KEY,
+      name         TEXT NOT NULL,
+      key_hash     TEXT NOT NULL UNIQUE,
+      key_prefix   TEXT NOT NULL,
+      created_at   TEXT NOT NULL,
+      created_by   TEXT NOT NULL DEFAULT '',
+      last_used_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mits_api_key_hash
+      ON mits_api_key (key_hash);
   `);
 
   addColumns(database);
@@ -555,6 +584,22 @@ function addColumns(database: Database.Database): void {
      * customer's whole asset list the day they change provider.
      */
     { table: "mits_user_profile", column: "organization_id", definition: "TEXT" },
+    /*
+     * Whether this reporter may see their whole company's tickets.
+     *
+     * Beside the organization and not in the role: it is not a rank in MITS —
+     * an org admin has no agent powers and cannot open anything on /mits. It
+     * widens exactly one list, and only within their own company.
+     *
+     * Default 0, so the flag can only ever be granted deliberately. A migration
+     * that guessed it from, say, "first user of the company" would hand
+     * somebody the department's ticket history on the strength of a sort order.
+     */
+    {
+      table: "mits_user_profile",
+      column: "is_org_admin",
+      definition: "INTEGER NOT NULL DEFAULT 0",
+    },
     /*
      * Which backend holds this blob.
      *

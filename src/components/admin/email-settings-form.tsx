@@ -148,11 +148,17 @@ export function EmailSettingsForm({
                   disabled={saving}
                   className="h-10 rounded-xl"
                 />
-                <p className="text-xs text-muted-foreground">
-                  {hasStoredPassword
-                    ? "Ein leeres Feld behält das gespeicherte Passwort. Zum Löschen ein Leerzeichen eintragen."
-                    : "Noch keines gespeichert."}
-                </p>
+                {/*
+                  The placeholder above says what an empty field does. What is
+                  left here is the part it cannot: how to actually remove a
+                  stored password, which is not guessable from anything on
+                  screen.
+                */}
+                {hasStoredPassword && (
+                  <p className="text-xs text-muted-foreground">
+                    Löschen: ein Leerzeichen eintragen.
+                  </p>
+                )}
               </div>
             </div>
 

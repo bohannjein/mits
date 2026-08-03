@@ -19,11 +19,18 @@ export function TicketSearch({
   className,
   /** Compact styling for the header. */
   compact = false,
+  carry,
 }: {
   action: string;
   defaultValue?: string;
   className?: string;
   compact?: boolean;
+  /**
+   * Non-search parameters that have to survive the submit. A GET form discards
+   * the query string in `action`, so without these a search from inside a tab
+   * lands back on the default one.
+   */
+  carry?: Record<string, string>;
 }) {
   return (
     <form
@@ -52,6 +59,9 @@ export function TicketSearch({
           compact ? "h-9 w-full sm:w-64" : "h-10 w-full",
         )}
       />
+      {Object.entries(carry ?? {}).map(([name, value]) => (
+        <input key={name} type="hidden" name={name} value={value} />
+      ))}
       {/* Submit without JavaScript; Enter in the field triggers it too. */}
       <button type="submit" className="sr-only">
         Suchen

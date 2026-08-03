@@ -178,6 +178,7 @@ export default async function TicketPopoutPage({
                       id: macro.id,
                       title: macro.title,
                       description: macro.description,
+                      shortcut: macro.shortcut,
                     }))
                   : []
               }
@@ -186,6 +187,7 @@ export default async function TicketPopoutPage({
                   ? listCannedResponses().map((canned) => ({
                       id: canned.id,
                       title: canned.title,
+                      shortcut: canned.shortcut,
                       body: fillCannedResponse(canned.body, templateValues),
                     }))
                   : []

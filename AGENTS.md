@@ -320,6 +320,7 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /admin/…                Administration
 /admin/macros           Makros
 /admin/settings/storage Dateispeicher (Platte oder S3)
+/admin/settings/api-keys API-Keys je System, Token nur einmal sichtbar
 /admin/settings/tickets  Wo die Antworten eines Formulars stehen (Verlauf, daneben, beides)
 /admin/settings/analytics Widget-Schalter und Default-Intervall
 /admin/settings/notifications Kanäle, Darstellung, Sammelmeldung
@@ -332,6 +333,7 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /api/analytics          Kennzahlen als JSON oder `?format=csv` (Agenten)
 /api/mail/poll          Postfach abrufen, Service-Token **oder** Admin-Sitzung
 /api/v1/cmdb/…          REST-Schnittstelle, Token **oder** Agenten-Sitzung
+/api/v1/tickets         Ticket von einer Maschine, nur `Authorization: Bearer`
 ```
 
 **Eintrittsweg und In-App-Navigation sind zwei verschiedene Ziele.** Wer den bloßen

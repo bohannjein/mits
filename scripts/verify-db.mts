@@ -193,13 +193,15 @@ try {
   const cannedId = randomUUID();
   check("canned responses", () =>
     canned.setCannedResponses([
-      {
+      // Through the schema, not as a literal — the same rule the macro fixture
+      // below already follows. A hand-written object goes stale the moment a
+      // field is added, and reports it as a compile error in the test rather
+      // than as a finding about the product.
+      mits.CannedResponseSchema.parse({
         id: cannedId,
         title: "Begrüßung",
         body: "Hallo {{kunde.vorname}}, dein Ticket {{ticket.id}} läuft.",
-        category: "",
-        order_index: 0,
-      },
+      }),
     ]),
   );
   check("macros", () =>
@@ -491,6 +493,57 @@ try {
   check("publish", () =>
     realtime.publish({ type: "queue", audience: "staff", actorId: agentId }),
   );
+
+  console.log("api keys");
+  const apiKeys = await import("../src/lib/api-keys");
+  let issued = "";
+  let issuedId = "";
+  check("create", () => {
+    const { token, key } = apiKeys.createApiKey("Zabbix", "admin@firma.de");
+    issued = token;
+    issuedId = key.id;
+    return key;
+  });
+  check("list", () => apiKeys.listApiKeys());
+  // Writes `last_used_at`, which is the part with a statement to get wrong.
+  check("verify touches last used", () => {
+    if (!apiKeys.verifyApiKey(issued)) throw new Error("Key nicht erkannt");
+    const row = apiKeys.listApiKeys().find((key) => key.id === issuedId);
+    if (!row?.last_used_at) throw new Error("last_used_at nicht geschrieben");
+    return row;
+  });
+  check("a wrong token is refused", () => {
+    if (apiKeys.verifyApiKey("mits_live_nope")) {
+      throw new Error("fremder Token akzeptiert");
+    }
+  });
+  check("delete", () => apiKeys.deleteApiKey(issuedId));
+
+  console.log("org admin view");
+  const profile = await import("../src/lib/user-profile");
+  // Its own company: the one above is deleted again by that section's own check.
+  const companyId = randomUUID();
+  organizations.saveOrganization(
+    mits.MITSOrganizationSchema.parse({ id: companyId, name: "Nordwind" }),
+  );
+  check("assign company", () =>
+    profile.setUserOrganization(reporterId, companyId, () => true),
+  );
+  check("grant", () => profile.setOrgAdmin(reporterId, true));
+  check("read back", () => {
+    if (!profile.isOrgAdmin(reporterId)) throw new Error("Flag nicht gesetzt");
+  });
+  // The subselect in `ticketWhere` — a join that dropped profile-less reporters
+  // would show up here as an empty list rather than as an error.
+  check("company scope", () =>
+    tickets.searchTickets({ organizationId: companyId }, reporter),
+  );
+  check("count with company scope", () =>
+    tickets.countSearchTickets({ organizationId: companyId }, reporter),
+  );
+  check("withdraw", () => profile.setOrgAdmin(reporterId, false));
+
+  check("find item by serial", () => cmdb.findCIBySerial("SN-1"));
 
   /*
    * Last, because it empties the database this suite has been filling.
