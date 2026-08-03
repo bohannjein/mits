@@ -24,8 +24,22 @@ function Tabs({
   )
 }
 
+/*
+ * The horizontal height is `h-8`, not `group-data-horizontal/tabs:h-8`.
+ *
+ * As generated, that class carried the group modifier — which puts it at a
+ * higher CSS specificity than any plain height a caller passes, and tailwind-
+ * merge cannot dedupe the two because the modifiers differ. So every tab bar
+ * here that asked for `h-auto` was silently pinned to 32 px while its own
+ * triggers were 40, and the moving pill in the ticket intake stood four pixels
+ * proud of the rounded frame it is supposed to sit inside.
+ *
+ * Plain `h-8` keeps the same default (nothing else sets a height in the
+ * horizontal case) and lets `className` win, which is what rule 1 promises.
+ * Vertical is unaffected: `group-data-vertical/tabs:h-fit` still outranks it.
+ */
 const tabsListVariants = cva(
-  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-horizontal/tabs:h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
+  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
   {
     variants: {
       variant: {

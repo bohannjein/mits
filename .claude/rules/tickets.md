@@ -109,7 +109,7 @@ Perspektive einbetoniert haben.
 
 ## Kunden-Eingang: Chat statt Formular
 
-`/customer/new`, Tab „Schnellmeldung“, ist `ChatIntake` und nicht `SchemaForm` —
+`/customer/new`, Tab „Schnellerstellung“, ist `ChatIntake` und nicht `SchemaForm` —
 **dasselbe Schema, dieselbe Payload, derselbe `POST /api/tickets`**, nur eine
 andere Maske. Es gibt keinen zweiten Weg in die Ticket-Tabelle.
 

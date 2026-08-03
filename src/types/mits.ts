@@ -28,7 +28,9 @@ export const TicketSource = z.enum(["legacy", "wizard", "ai_chat", "email"]);
 export type TicketSource = z.infer<typeof TicketSource>;
 
 export const TICKET_SOURCE_LABELS: Record<TicketSource, string> = {
-  legacy: "Schnellmeldung",
+  // Reads the same as the tab that produces it. The stored value stays
+  // `legacy` — renaming that would orphan every existing row.
+  legacy: "Schnellerstellung",
   wizard: "Service-Katalog",
   ai_chat: "KI-Assistent",
   email: "E-Mail",

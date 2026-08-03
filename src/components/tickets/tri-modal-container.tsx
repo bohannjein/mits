@@ -55,7 +55,7 @@ const TABS: {
   /** The AI tab keeps the Gemini gradient identity of the portal tile. */
   gemini?: boolean;
 }[] = [
-  { value: "legacy", label: "Schnellmeldung", icon: PenLineIcon },
+  { value: "legacy", label: "Schnellerstellung", icon: PenLineIcon },
   { value: "wizard", label: "Service-Katalog", icon: ListChecksIcon },
   { value: "ai_chat", label: "KI-Assistent", icon: BotIcon, gemini: true },
 ];
