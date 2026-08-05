@@ -89,6 +89,72 @@ Nummer" unterscheiden sich genau in der Regel, auf die es ankommt.
 **Alle Werte sind Strings**, auch Platzzahlen und Datumsangaben. Damit kann die API keine
 Datumsform annehmen, die der CSV-Weg ablehnt.
 
+### Der Export ist das Eingabeformat
+
+`GET /api/v1/cmdb/items?format=csv` (Knopf „CSV" auf `/mits/cmdb`, trägt den
+aktuellen Filter mit). `lib/cmdb-export.ts`, ohne `server-only`, rein — die
+Offline-Suite besitzt den Rundlauf.
+
+**Jeder Spaltenkopf wird von `guessColumnMapping` auf genau das Feld
+zurückgeraten, aus dem er kommt.** Exportieren, in Excel vierhundert Standorte
+korrigieren, zurückspielen — ohne eine Spalte von Hand zuzuordnen. `EXPORT_COLUMNS`
+führt das Ziel deshalb neben dem Kopf, und der Test rät die Kopfzeile und
+vergleicht. Ein umbenannter Kopf ohne mitgezogene Rateregel verliert beim
+Rückspielen still eine Spalte, und der Import meldet trotzdem Erfolg.
+
+**`inventory_match` ist ein Zuordnungsschlüssel, kein Wert.** Die MITS-Nummer
+findet die Zeile und kann sie nie schreiben — vergeben wird beim Insert. Das ist
+nicht Kosmetik: der Abgleich lief nur über `asset_tag`, und der ist optional. Ein
+Export einer frischen Instanz kam als **vollständiger zweiter Bestand** zurück,
+gemeldet als vierhundert Neuanlagen. Bei Widerspruch gewinnt die Nummer: sie
+bezeichnet die Zeile, der Aufkleber ist eines ihrer Felder.
+
+**Abgeleitete Werte werden nicht exportiert.** Belegte Lizenzplätze zählt
+`seatCounts` aus den Beziehungen; eine Spalte dafür würde beim Rückspielen als
+`seats_total` geraten und die lizenzierte Zahl mit der belegten überschreiben.
+
+- **Referenzen als lesbare Werte**, nicht als Ids — ein Export voller UUIDs ist
+  einer, den niemand bearbeitet. Ein Ziel, das es nicht mehr gibt, wird leer und
+  nicht zur rohen Id.
+- **Attributspalten heißen `attr:<Schlüssel>`**, eine je Schlüssel im gesamten
+  Ausschnitt, alphabetisch — damit zwei Exporte desselben Bestands sich sauber
+  diffen lassen. `mappingForSubmit` präfigiert einen schon präfigierten Kopf nicht
+  doppelt.
+- **Semikolon und CRLF**, wie der Analytics-Export: `sniffDelimiter` prüft
+  Semikolon zuerst, deutsches Excel liest es ohne Importdialog.
+- **Leerer Ausschnitt heißt Kopfzeile ohne Zeilen.** Eine leere Datei liest sich
+  als fehlgeschlagener Download.
+- **Ungepagt, gedeckelt bei 20.000 Zeilen.** Darüber sagt die Antwort das und nennt
+  die Zahl, statt zu kürzen — ein kurzer Export, der sich für vollständig ausgibt,
+  ist das eine Ergebnis, das man ablehnen muss.
+- **`exportLookups` liegt in `lib/cmdb.ts`, nicht in `cmdb-api.ts`.** Letzteres
+  importiert den Request-Guard und damit `next/navigation`, also React' Client-Build;
+  die DB-Suite läuft unter `--conditions=react-server` und kann es nicht laden.
+
+### Zwei Defekte in der Spaltenerkennung
+
+Beide waren still, beide meldeten Erfolg.
+
+**`Seriennummer` wurde als Fremdnummer erkannt.** Die Muster sind Teilstrings und
+standen in der falschen Reihenfolge: `nummer$` traf, bevor das Serien-Muster
+erreicht war. Eine Datei mit `Fremdnummer` **und** `Seriennummer` legte den
+Aufkleber richtig ab und verwarf danach **jede Seriennummer** — die zweite Spalte
+löste ebenfalls auf `asset_tag` auf, fand es belegt und wurde „nicht importieren".
+Jetzt steht jedes Muster, das ein bestimmtes Feld benennt, über den beiden auf
+`nummer`.
+
+**OTRS ITSM hat zwei Statusachsen.** `Verwendungsstatus` / `DeplState` ist die,
+die MITS' `status` meint. `Vorfallstatus` / `InciState` wird zur **Eigenschaft** —
+zusammengelegt wäre „produktiv mit offenem Vorfall" nicht rekonstruierbar, und
+weggeworfen wäre die Information weg. Entschieden wird das vor der Ratetabelle,
+weil `vorfallstatus` den Teilstring `status` enthält: sonst beansprucht die zuerst
+gelesene der beiden Spalten das Feld und die andere fällt weg.
+
+Dazu die OTRS-Werte in `coerceCIStatus`: `Wartung` → `repair`, `Pilot` und
+`Test/QS` → `active` (jemand benutzt das Gerät), `Planung` → `stock`. Die
+ITSM-Klasse `Location` → `other`: ein Standort ist hier eine Zeile in
+`mits_location` und kein Inventarobjekt.
+
 **Zweimal geparst, absichtlich.** Die Maske parst im Browser für Kopfzeilen und Vorschau,
 der Server erneut aus demselben Rohtext. Die Zeilen des Clients werden nie gesendet.
 `lib/csv.ts` trägt deshalb **kein** `server-only` — drei Aufrufer (Maske, Server,

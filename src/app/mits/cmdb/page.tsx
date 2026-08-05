@@ -1,4 +1,4 @@
-import { KeyRoundIcon, PlusIcon } from "lucide-react";
+import { DownloadIcon, KeyRoundIcon, PlusIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -66,6 +66,26 @@ export default async function CMDBPage({
   const items = listConfigurationItems(filter);
   const counts = cmdbCounts();
 
+  /*
+   * The download link, carrying the same filter the list was built from.
+   *
+   * Built from `filter` rather than by forwarding `params`, so the export cannot be
+   * narrowed by a parameter the page itself dropped as invalid — a hand-typed
+   * `?type=laptop` shows the full list here and would otherwise export nothing.
+   *
+   * `organization_id` and not `org`: the REST route names it in full, and the page's
+   * short form is its own. One rename, spelled out here, beats a second alias in the
+   * route that exists only for this link.
+   */
+  const exportParams = new URLSearchParams({ format: "csv" });
+  if (filter.q) exportParams.set("q", filter.q);
+  if (filter.type) exportParams.set("type", filter.type);
+  if (filter.status) exportParams.set("status", filter.status);
+  if (filter.organizationId) {
+    exportParams.set("organization_id", filter.organizationId);
+  }
+  const exportHref = `/api/v1/cmdb/items?${exportParams.toString()}`;
+
   const organizationNames = Object.fromEntries(
     listOrganizations().map((organization) => [organization.id, organization.name]),
   );
@@ -124,6 +144,27 @@ export default async function CMDBPage({
                     <KeyRoundIcon strokeWidth={1.5} />
                     Lizenzen
                   </Link>
+                </Button>
+
+                {/*
+                  Exports what is on screen, not the whole inventory.
+
+                  A button that ignored the filter would be the more surprising of
+                  the two: somebody who has just narrowed the list to one company's
+                  laptops is exporting those. The link carries the same parameters
+                  the page was rendered with — an `<a>` and not a fetch, so the
+                  browser's own download handling applies and a large sheet does not
+                  sit in a JavaScript string first.
+                */}
+                <Button
+                  asChild
+                  size="sm"
+                  className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
+                >
+                  <a href={exportHref} download>
+                    <DownloadIcon strokeWidth={1.5} />
+                    CSV
+                  </a>
                 </Button>
 
                 <CIForm

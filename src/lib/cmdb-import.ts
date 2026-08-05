@@ -18,6 +18,7 @@ import {
   CIStatus,
   CIType,
   normaliseCIAttributes,
+  parseInventoryNumber,
   type MITSConfigurationItem,
 } from "@/types/mits";
 
@@ -29,11 +30,16 @@ import {
    keeping unmapped fields) happens once. Two implementations of "update the item with
    this tag" would differ in exactly the rule that matters.
 
-   Matching is by asset tag: a record whose tag already exists **updates** that item
-   rather than creating a second one. That is what makes a re-import of a corrected
-   export idempotent, which is how an inventory actually gets cleaned up. A record
-   without a tag is always a create, because there is nothing to match on and guessing by
-   name would merge two identically named laptops.
+   Matching is by MITS number first, then by asset tag: a record naming either
+   **updates** that item rather than creating a second one. That is what makes a
+   re-import of a corrected export idempotent, which is how an inventory actually gets
+   cleaned up.
+
+   The number comes first because it is the identifier every object has — the tag is
+   optional and empty on most rows, and keying on it alone meant an export of a fresh
+   instance re-imported as a complete second inventory. A record naming neither is
+   always a create: there is nothing to match on, and guessing by name would merge two
+   identically named laptops.
 
    Organizations, sites and people are resolved by their human-readable value — an export
    contains "Weller GmbH", not a UUID. Matched case-insensitively against name, code and
@@ -49,6 +55,16 @@ import {
 /** One incoming row, already reduced to named fields. Everything optional but the name. */
 export interface ImportRecord {
   name: string;
+  /**
+   * MITS's own number, as a **match key only**.
+   *
+   * `INV-10000001` or the bare counter. Never written: the store assigns it on
+   * insert and keeps it on update, so a column carrying it can find the row it
+   * belongs to and nothing else. That is what makes a CSV exported from MITS
+   * re-importable — matching on `asset_tag` alone creates a second copy of every
+   * asset that has no sticker.
+   */
+  inventory_match?: string;
   asset_tag?: string;
   type?: string;
   status?: string;
@@ -133,6 +149,25 @@ export function importItemRecords(records: ImportRecord[]): ImportSummary {
     ).map((row) => [key(row.asset_tag), row.id]),
   );
 
+  /*
+   * The same table for the MITS number.
+   *
+   * Read once rather than one lookup per row: four hundred rows would otherwise be
+   * four hundred queries against a synchronous driver. Soft-deleted objects are
+   * excluded — a re-import must not resurrect one by updating it in place, and the
+   * restore path is where that decision belongs.
+   */
+  const existingByNumber = new Map<number, string>(
+    (
+      db
+        .prepare(
+          `SELECT id, inventory_number FROM mits_configuration_item
+            WHERE deleted_at IS NULL AND inventory_number IS NOT NULL`,
+        )
+        .all() as { id: string; inventory_number: number }[]
+    ).map((row) => [row.inventory_number, row.id]),
+  );
+
   const summary: ImportSummary = {
     created: 0,
     updated: 0,
@@ -164,7 +199,19 @@ export function importItemRecords(records: ImportRecord[]): ImportSummary {
     };
 
     const assetTag = value("asset_tag");
-    const existingId = assetTag ? existingByTag.get(key(assetTag)) : undefined;
+
+    /*
+     * The MITS number wins over the tag when both are given.
+     *
+     * They can disagree — somebody edits the tag column of an exported sheet, which
+     * is a legitimate reason to run an import at all. The number identifies the row
+     * and the tag is one of its fields, so the number decides which row is being
+     * edited and the tag is part of the edit.
+     */
+    const matchNumber = parseInventoryNumber(value("inventory_match"));
+    const existingId =
+      (matchNumber !== null ? existingByNumber.get(matchNumber) : undefined) ??
+      (assetTag ? existingByTag.get(key(assetTag)) : undefined);
     const existing = existingId ? getConfigurationItem(existingId) : null;
 
     const resolve = (
@@ -310,6 +357,7 @@ export function importConfigurationItems(
       // 1-based and counting the header, so the number matches what a spreadsheet shows.
       sourceLine: index + 2,
       name: pick("name"),
+      inventory_match: pick("inventory_match"),
       asset_tag: pick("asset_tag"),
       type: pick("type"),
       status: pick("status"),

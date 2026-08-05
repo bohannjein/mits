@@ -65,6 +65,9 @@ try {
   const triageRules = await import("../src/lib/triage-rules");
   const reminders = await import("../src/lib/ticket-reminders");
   const notifications = await import("../src/lib/notifications");
+  const cmdbExport = await import("../src/lib/cmdb-export");
+  const cmdbImport = await import("../src/lib/cmdb-import");
+  const csv = await import("../src/lib/csv");
   const db = (await import("../src/lib/db/sqlite")).db;
 
   /*
@@ -315,6 +318,112 @@ try {
    * a root's parent is a value and not NULL, and that is a property of the
    * statement, which is what this suite tests.
    */
+  /*
+   * Export and re-import, over real rows.
+   *
+   * The offline suite proves the round trip on hand-built items; this proves the
+   * half it cannot reach — that `exportLookups` reads the tables the export needs,
+   * that a re-import of the produced file matches the same objects instead of
+   * creating second copies, and that the MITS number survives it untouched.
+   *
+   * That last one is the whole reason the `info:` prefix exists: a plain
+   * "Inventarnummer" column would be guessed as the *foreign* number on the way
+   * back and overwrite the tag on a sticker.
+   */
+  console.log("cmdb export round trip");
+  let exported = "";
+  check("export", () => {
+    const items = cmdb.listConfigurationItems();
+    exported = cmdbExport.itemsToCsv(items, cmdb.exportLookups());
+    if (!exported.includes("Bezeichnung")) throw new Error("kein Kopfsatz");
+    const { rows } = csv.parseDelimited(exported);
+    if (rows.length !== items.length) {
+      throw new Error(`${rows.length} Zeilen für ${items.length} Objekte`);
+    }
+    return rows.length;
+  });
+
+  check("references are exported as readable values", () => {
+    const { rows } = csv.parseDelimited(exported);
+    const row = rows.find((entry) => entry.Fremdnummer === "NB-1");
+    if (!row) throw new Error("Zeile NB-1 fehlt");
+    // The site was named Berlin above; the assignee is the reporter fixture.
+    if (row.Standort !== "Berlin") throw new Error(`Standort: ${row.Standort}`);
+    return row.Standort;
+  });
+
+  check("re-importing the export updates and creates nothing", () => {
+    const before = cmdb.cmdbCounts().total;
+    const { headers } = csv.parseDelimited(exported);
+    const mapping = csv.mappingForSubmit(csv.guessColumnMapping(headers));
+
+    const summary = cmdbImport.importConfigurationItems(exported, mapping);
+
+    if (summary.created !== 0) {
+      throw new Error(`${summary.created} neu angelegt statt aktualisiert`);
+    }
+    if (summary.skipped.length > 0) {
+      throw new Error(JSON.stringify(summary.skipped));
+    }
+    const after = cmdb.cmdbCounts().total;
+    if (after !== before) throw new Error(`${before} -> ${after} Objekte`);
+    return summary;
+  });
+
+  check("the MITS number survived the round trip", () => {
+    const item = cmdb.getConfigurationItem(ciId);
+    if (!item) throw new Error("Objekt nicht gefunden");
+    if (mits.formatInventoryNumber(item.inventory_number) !== "INV-10000001") {
+      throw new Error(mits.formatInventoryNumber(item.inventory_number));
+    }
+    // …and it did not land in the foreign number, which is the failure the
+    // read-only prefix prevents.
+    if (item.asset_tag !== "NB-1") throw new Error(`Fremdnummer: ${item.asset_tag}`);
+    return item.inventory_number;
+  });
+
+  check("an edited cell comes back changed", () => {
+    const edited = exported.replace("in Reparatur", "geprüft und wieder im Einsatz");
+    const { headers } = csv.parseDelimited(edited);
+    const mapping = csv.mappingForSubmit(csv.guessColumnMapping(headers));
+    cmdbImport.importConfigurationItems(edited, mapping);
+
+    const item = cmdb.getConfigurationItem(ciId);
+    if (item?.note !== "geprüft und wieder im Einsatz") {
+      throw new Error(`Notiz: ${item?.note}`);
+    }
+    return item.note;
+  });
+
+  check("attributes survive as attributes", () => {
+    const withAttr = cmdb.saveConfigurationItem(
+      mits.MITSConfigurationItemSchema.omit({
+        created_at: true,
+        updated_at: true,
+      }).parse({
+        id: "",
+        name: "Notebook 3",
+        type: "hardware",
+        asset_tag: "NB-3",
+        attributes: { RAM: "32 GB" },
+      }),
+    );
+
+    const text = cmdbExport.itemsToCsv(
+      cmdb.listConfigurationItems(),
+      cmdb.exportLookups(),
+    );
+    const { headers } = csv.parseDelimited(text);
+    const mapping = csv.mappingForSubmit(csv.guessColumnMapping(headers));
+    cmdbImport.importConfigurationItems(text, mapping);
+
+    const again = cmdb.getConfigurationItem(withAttr.id);
+    if (again?.attributes.RAM !== "32 GB") {
+      throw new Error(JSON.stringify(again?.attributes));
+    }
+    return again.attributes;
+  });
+
   console.log("ticket categories");
   const rootId = randomUUID();
   const childId = randomUUID();

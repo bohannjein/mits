@@ -380,6 +380,7 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /api/analytics          Kennzahlen als JSON oder `?format=csv` (Agenten)
 /api/mail/poll          Postfach abrufen, Service-Token **oder** Admin-Sitzung
 /api/v1/cmdb/…          REST-Schnittstelle, Token **oder** Agenten-Sitzung
+/api/v1/cmdb/items?format=csv  Bestand als CSV — genau das Format, das der Import liest
 /api/v1/tickets         Ticket von einer Maschine, nur `Authorization: Bearer`
 ```
 

@@ -2,7 +2,11 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
+import type { ExportLookups } from "@/lib/cmdb-export";
 import { db, nextInventoryNumber } from "@/lib/db/sqlite";
+import { listLocations } from "@/lib/locations";
+import { listOrganizations } from "@/lib/organizations";
+import { listUsers } from "@/lib/users";
 import {
   CIRelationKind,
   CIStatus,
@@ -645,4 +649,33 @@ export function suggestCIsForTicket(
   );
 
   return { assigned, onSite };
+}
+
+/**
+ * The three id→label tables the CSV export writes instead of ids.
+ *
+ * Built once per request rather than per row: three full reads over tables with
+ * tens to hundreds of rows against a synchronous driver, versus one lookup per
+ * asset per reference — four hundred assets would be twelve hundred queries.
+ *
+ * The address, not the display name, for people: `assigned_email` is what the
+ * importer matches on, and a name is neither unique nor stable.
+ *
+ * Here and not in `cmdb-api.ts`, where it started: that module imports the request
+ * guard, which reaches `next/navigation` and therefore React's client build. The
+ * offline DB suite runs under `--conditions=react-server` and cannot load it, so a
+ * helper that only reads tables belongs on this side of that line.
+ */
+export function exportLookups(): ExportLookups {
+  return {
+    organizations: Object.fromEntries(
+      listOrganizations().map((entry) => [entry.id, entry.name]),
+    ),
+    locations: Object.fromEntries(
+      listLocations().map((entry) => [entry.id, entry.name]),
+    ),
+    userEmails: Object.fromEntries(
+      listUsers().map((entry) => [entry.id, entry.email]),
+    ),
+  };
 }

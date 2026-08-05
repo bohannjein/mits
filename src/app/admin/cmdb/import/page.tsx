@@ -49,6 +49,16 @@ export default async function CMDBImportPage() {
             <p className="mt-2 max-w-2xl text-muted-foreground">
               Bestandsdaten aus OTRS oder einer Tabelle übernehmen.
             </p>
+
+            {/*
+              Named here because it is a workflow nobody guesses: the CSV the CMDB
+              exports is this page's own input format, so „exportieren, in Excel
+              korrigieren, zurückspielen" is the way to fix four hundred rows. Not a
+              field hint — it is what the page is for on the second visit.
+            */}
+            <p className="mt-2 max-w-2xl text-muted-foreground">
+              Ein CSV-Export aus der CMDB lässt sich unverändert wieder einlesen.
+            </p>
           </div>
 
           <Separator className="my-8 bg-border" />

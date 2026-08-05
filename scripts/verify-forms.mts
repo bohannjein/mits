@@ -59,6 +59,18 @@ import {
 } from "../src/lib/services/ai/similarity";
 import { suggestFaqs } from "../src/lib/services/ai/deflection";
 import {
+  AS_ATTRIBUTE,
+  IGNORE_COLUMN,
+  guessColumnMapping,
+  mappingForSubmit,
+} from "../src/lib/csv";
+import {
+  EXPORT_COLUMNS,
+  attributeKeys,
+  exportFilename,
+  itemsToCsv,
+} from "../src/lib/cmdb-export";
+import {
   MAX_BUCKETS,
   autoGranularity,
   bucketKey,
@@ -4033,6 +4045,277 @@ console.log("\nauto-triage");
     triage("Kaffeemaschine", [urgent]).match === null,
   );
   check("an empty rule list is inert", triage("Drucker", []).categoryId === "");
+}
+
+console.log("\ncolumn guessing");
+{
+  const guess = (header: string) => guessColumnMapping([header])[header];
+
+  /*
+   * The bug this section exists for.
+   *
+   * The patterns are substrings and were ordered wrongly, so `nummer$` matched
+   * "Seriennummer" before the serial pattern was reached. A file with both columns
+   * put the tag in the tag column and then dropped every serial number: the second
+   * column resolved to asset_tag too, found it taken, and became "do not import".
+   * The import reported success and the field was empty on every row.
+   */
+  check("a serial number is a serial number", guess("Seriennummer") === "serial_number");
+  check("an inventory number is the foreign tag", guess("Inventarnummer") === "asset_tag");
+  check("so is a Fremdnummer", guess("Fremdnummer") === "asset_tag");
+
+  // …and the two together, which is the case that actually failed.
+  {
+    const mapping = guessColumnMapping(["Fremdnummer", "Seriennummer"]);
+    check(
+      "both number columns land in different fields",
+      mapping["Fremdnummer"] === "asset_tag" &&
+        mapping["Seriennummer"] === "serial_number",
+    );
+  }
+
+  // One column per target still holds: a second name column is ignored rather
+  // than overwriting the first one's mapping.
+  {
+    const mapping = guessColumnMapping(["Bezeichnung", "Name"]);
+    check(
+      "a second column for one target is ignored",
+      mapping["Bezeichnung"] === "name" && mapping["Name"] === IGNORE_COLUMN,
+    );
+  }
+
+  check("OTRS calls the class Klasse", guess("Klasse") === "type");
+  check(
+    "and the deployment state Verwendungsstatus",
+    guess("Verwendungsstatus") === "status",
+  );
+  /*
+   * The incident state is kept as an attribute, not as the status.
+   *
+   * OTRS ITSM has two status axes and MITS has one. Folding them together would be
+   * unrecoverable — "in production with an open incident" arrives as one or the
+   * other — and dropping it would throw the information away. It also has to be
+   * decided before the guess table, because "vorfallstatus" contains "status":
+   * whichever of the two columns came first would claim the field and the other
+   * would be silently dropped.
+   */
+  check(
+    "the incident state becomes an attribute",
+    guess("Vorfallstatus") === AS_ATTRIBUTE,
+  );
+  check("so does InciState", guess("InciState") === AS_ATTRIBUTE);
+  // …and the real status axis is unaffected, whichever order they arrive in.
+  {
+    const mapping = guessColumnMapping(["Vorfallstatus", "Verwendungsstatus"]);
+    check(
+      "the deployment state still reaches the status field",
+      mapping["Verwendungsstatus"] === "status" &&
+        mapping["Vorfallstatus"] === AS_ATTRIBUTE,
+    );
+  }
+
+  /*
+   * MITS's own number is its own target and is checked before the generic number
+   * pattern — it also ends in "nummer". A plain `Inventarnummer` still means
+   * somebody else's number and stays the foreign one, which is the distinction that
+   * keeps an OTRS export importing correctly.
+   */
+  check("the MITS number has its own target", guess("MITS-Nummer") === "inventory_match");
+  check("MITS-Nr works too", guess("MITS-Nr") === "inventory_match");
+  check(
+    "a plain Inventarnummer is still the foreign number",
+    guess("Inventarnummer") === "asset_tag",
+  );
+
+  // The attribute prefix wins over the guess table, which is what keeps an
+  // exported attribute column an attribute.
+  check(
+    "an attribute column stays an attribute",
+    guess(`${ATTRIBUTE_PREFIX}RAM`) === AS_ATTRIBUTE,
+  );
+
+  // …and does not gain a second prefix on the next round trip.
+  {
+    const submitted = mappingForSubmit({ [`${ATTRIBUTE_PREFIX}RAM`]: AS_ATTRIBUTE });
+    check(
+      "an already-prefixed attribute is not prefixed twice",
+      submitted[`${ATTRIBUTE_PREFIX}RAM`] === `${ATTRIBUTE_PREFIX}RAM`,
+    );
+  }
+  {
+    const submitted = mappingForSubmit({ "Betriebssystem": AS_ATTRIBUTE });
+    check(
+      "a plain column is named after itself",
+      submitted["Betriebssystem"] === `${ATTRIBUTE_PREFIX}Betriebssystem`,
+    );
+  }
+  check(
+    "an ignored column does not reach the server",
+    Object.keys(mappingForSubmit({ Irgendwas: IGNORE_COLUMN })).length === 0,
+  );
+
+  // OTRS deployment states. `Wartung` is repair and not stock: not available, not
+  // scrapped. `Pilot` is in service — somebody is using the machine.
+  check("Wartung is repair", coerceCIStatus("Wartung") === "repair");
+  check("Pilot is in service", coerceCIStatus("Pilot") === "active");
+  check("Abgelaufen is retired", coerceCIStatus("Abgelaufen") === "retired");
+  // The safe direction: an unknown state must not scrap an asset silently.
+  check("an unknown state is in service", coerceCIStatus("Blubb") === "active");
+  check("an OTRS Location class is not hardware", coerceCIType("Location") === "other");
+  check("a Server class is hardware", coerceCIType("Server") === "hardware");
+}
+
+console.log("\ncmdb export");
+{
+  const item = (over: Record<string, unknown>) =>
+    MITSConfigurationItemSchema.parse({
+      id: "ci-1",
+      inventory_number: 1,
+      name: "Notebook 1",
+      type: "hardware",
+      status: "active",
+      created_at: "2026-08-05T10:00:00.000Z",
+      updated_at: "2026-08-05T10:00:00.000Z",
+      ...over,
+    });
+
+  const lookups = {
+    organizations: { "org-1": "Weller GmbH" },
+    locations: { "loc-1": "Hamburg" },
+    userEmails: { "user-1": "anna@firma.de" },
+  };
+
+  /*
+   * The property the whole file exists for: every header the export writes is one
+   * the importer's guess resolves back to the field it came from. A header renamed
+   * without its guess following along would silently drop a column on re-import,
+   * and the import would still report success.
+   */
+  {
+    const csv = itemsToCsv([item({})], lookups);
+    const { headers } = parseDelimited(csv);
+    const mapping = guessColumnMapping(headers);
+
+    const wrong = EXPORT_COLUMNS.filter(
+      (column) => mapping[column.header] !== column.target,
+    ).map((column) => `${column.header} -> ${mapping[column.header]}`);
+
+    check(
+      "every exported column maps back to its own field",
+      wrong.length === 0,
+      wrong.join(", "),
+    );
+  }
+
+  // The MITS number is exported and comes back as a match key, not as a value.
+  {
+    const csv = itemsToCsv([item({ inventory_number: 42 })], lookups);
+    const { headers, rows } = parseDelimited(csv);
+    check(
+      "the MITS number is exported in its label form",
+      rows[0]["MITS-Nummer"] === "INV-10000042",
+    );
+    check(
+      "…and maps to the match-only target",
+      guessColumnMapping(headers)["MITS-Nummer"] === "inventory_match",
+    );
+  }
+
+  // References become readable values, not ids — an export full of UUIDs is one
+  // nobody can edit, and the importer resolves these back by name.
+  {
+    const csv = itemsToCsv(
+      [
+        item({
+          organization_id: "org-1",
+          location_id: "loc-1",
+          assigned_user_id: "user-1",
+        }),
+      ],
+      lookups,
+    );
+    const { rows } = parseDelimited(csv);
+    check("the company is its name", rows[0].Firma === "Weller GmbH");
+    check("the site is its name", rows[0].Standort === "Hamburg");
+    check(
+      "the person is their address",
+      rows[0]["Zugeordnet an"] === "anna@firma.de",
+    );
+  }
+
+  // A reference whose target is gone becomes empty rather than the raw id. The
+  // importer would otherwise try to resolve a UUID and report it as unresolvable.
+  {
+    const csv = itemsToCsv([item({ organization_id: "org-weg" })], lookups);
+    const { rows } = parseDelimited(csv);
+    check("a dangling reference is empty", rows[0].Firma === "");
+  }
+
+  /*
+   * Quoting. A note containing the separator, a quote and a line break is the row
+   * that shifts every column to its right — and it opens in Excel without
+   * complaint and is wrong.
+   */
+  {
+    const nasty = 'Zeile 1;mit "Zitat"\nund Umbruch';
+    const csv = itemsToCsv([item({ note: nasty })], lookups);
+    const { rows } = parseDelimited(csv);
+    check("a semicolon survives", rows[0].Notiz.includes(";"));
+    check("a quote survives", rows[0].Notiz.includes('"Zitat"'));
+    check("the row is not split by the line break", rows.length === 1);
+  }
+
+  // Attributes: one column per key found anywhere, so the sheet stays rectangular.
+  {
+    const csv = itemsToCsv(
+      [
+        item({ id: "a", attributes: { RAM: "16 GB" } }),
+        item({ id: "b", attributes: { Betriebssystem: "Windows 11" } }),
+      ],
+      lookups,
+    );
+    const { headers, rows } = parseDelimited(csv);
+    check(
+      "both attribute columns exist",
+      headers.includes(`${ATTRIBUTE_PREFIX}RAM`) &&
+        headers.includes(`${ATTRIBUTE_PREFIX}Betriebssystem`),
+    );
+    check(
+      "an asset without the attribute has an empty cell",
+      rows[0][`${ATTRIBUTE_PREFIX}Betriebssystem`] === "",
+    );
+    check(
+      "attribute keys are sorted, so two exports diff cleanly",
+      attributeKeys([
+        item({ attributes: { RAM: "1", Akku: "2" } }),
+      ]).join(",") === "Akku,RAM",
+    );
+  }
+
+  // A seat count of zero is blank rather than "0" — noise on four hundred laptops
+  // whose licence rows are the only ones the number means anything for. Both read
+  // back as zero through `parseSeats`.
+  {
+    const csv = itemsToCsv([item({ seats_total: 0 })], lookups);
+    const { rows } = parseDelimited(csv);
+    check("zero seats is an empty cell", rows[0]["Lizenzplätze"] === "");
+  }
+
+  // An empty selection still writes the header row: an empty file reads as a
+  // failed download, a header row as "this filter matched nothing".
+  {
+    const { headers, rows } = parseDelimited(itemsToCsv([], lookups));
+    check(
+      "an empty export still has its headers",
+      headers.length === EXPORT_COLUMNS.length && rows.length === 0,
+    );
+  }
+
+  check(
+    "the filename carries the date",
+    exportFilename(new Date("2026-08-05T12:00:00.000Z")) ===
+      "mits-bestand-2026-08-05.csv",
+  );
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

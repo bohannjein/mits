@@ -90,3 +90,4 @@ export function itemToJson(item: MITSConfigurationItem): Record<string, unknown>
     updated_at: item.updated_at.toISOString(),
   };
 }
+

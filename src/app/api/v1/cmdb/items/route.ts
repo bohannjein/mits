@@ -1,6 +1,12 @@
 import { guardCMDBRequest, itemToJson } from "@/lib/cmdb-api";
+import { exportFilename, itemsToCsv } from "@/lib/cmdb-export";
 import { importItemRecords, type ImportRecord } from "@/lib/cmdb-import";
-import { cmdbCounts, listConfigurationItems, type CIFilter } from "@/lib/cmdb";
+import {
+  cmdbCounts,
+  exportLookups,
+  listConfigurationItems,
+  type CIFilter,
+} from "@/lib/cmdb";
 import { CIStatus, CIType } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -18,6 +24,16 @@ import { CIStatus, CIType } from "@/types/mits";
 /** A page, not a dump. A caller wanting everything asks repeatedly with an offset. */
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
+
+/**
+ * Ceiling for the CSV variant, which is unpaged.
+ *
+ * Well above any inventory this is built for and low enough that one request
+ * cannot build a hundred-megabyte string. Over it the answer says so and names the
+ * number, rather than truncating — a short export that claims to be complete is
+ * the one outcome worth refusing.
+ */
+const MAX_CSV_ROWS = 20_000;
 
 export async function GET(request: Request) {
   const guard = await guardCMDBRequest(request);
@@ -46,6 +62,40 @@ export async function GET(request: Request) {
   };
 
   const all = listConfigurationItems(filter);
+
+  /*
+   * `?format=csv` answers with the spreadsheet instead of JSON.
+   *
+   * On this route rather than a second one, because the filters are already parsed
+   * here and a separate export endpoint would be a second place deciding what
+   * `?type=license` selects. Same guard, same filter, different serialisation —
+   * the arrangement `/api/analytics?format=csv` already uses.
+   *
+   * Unpaged, deliberately: a download is the "give me everything" case, and an
+   * export silently cut off at a hundred rows is worse than no export. Capped all
+   * the same, because the whole sheet is built in memory as one string.
+   */
+  if (params.get("format") === "csv") {
+    if (all.length > MAX_CSV_ROWS) {
+      return Response.json(
+        {
+          error: `Zu viele Objekte für einen Export (${all.length}, Grenze ${MAX_CSV_ROWS}). Bitte filtern.`,
+        },
+        { status: 413 },
+      );
+    }
+
+    const csv = itemsToCsv(all, exportLookups());
+
+    return new Response(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${exportFilename(new Date())}"`,
+        // The inventory of the instance. Never a shared cache's business.
+        "Cache-Control": "private, no-store",
+      },
+    });
+  }
 
   const offset = clampInt(params.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
   const limit = clampInt(params.get("limit"), DEFAULT_LIMIT, 1, MAX_LIMIT);

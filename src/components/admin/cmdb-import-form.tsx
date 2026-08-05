@@ -38,8 +38,12 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  AS_ATTRIBUTE,
   ATTRIBUTE_PREFIX,
   CI_IMPORT_TARGETS,
+  IGNORE_COLUMN,
+  guessColumnMapping,
+  mappingForSubmit,
   parseDelimited,
   type DelimitedTable,
 } from "@/lib/csv";
@@ -57,47 +61,6 @@ import {
    put serial numbers in the model column.
    ────────────────────────────────────────────────────────────────────────── */
 
-const IGNORE = "__ignore";
-const AS_ATTRIBUTE = "__attribute";
-
-/** Header text, lowercased, to a target. Longest match wins by being checked first. */
-const GUESSES: [RegExp, string][] = [
-  [/^(bezeichnung|name|titel|asset|gerät|geraet)$/, "name"],
-  [/(inventar|asset.?tag|inventory|nummer$)/, "asset_tag"],
-  [/(seriennummer|serial)/, "serial_number"],
-  [/(hersteller|manufacturer|vendor)/, "manufacturer"],
-  [/(modell|model|typbezeichnung)/, "model"],
-  [/^(art|typ|type|kategorie|category)$/, "type"],
-  [/(zustand|status|state)/, "status"],
-  [/(firma|kunde|company|customer|organisation|organization|mandant)/, "organization"],
-  [/(standort|filiale|location|site|raum)/, "location"],
-  [/(mail|benutzer|user|besitzer|owner|zugeordnet)/, "assigned_email"],
-  [/(angeschafft|kauf|purchase|beschaffung)/, "purchased_on"],
-  [/(garantie|warranty|gewährleistung)/, "warranty_until"],
-  [/(plätze|plaetze|seats|lizenzen|anzahl)/, "seats_total"],
-  [/(ablauf|läuft|laeuft|expire|valid)/, "expires_at"],
-  [/(notiz|note|bemerkung|kommentar|comment|beschreibung)/, "note"],
-];
-
-function guessMapping(headers: string[]): Record<string, string> {
-  const used = new Set<string>();
-  const mapping: Record<string, string> = {};
-
-  for (const header of headers) {
-    const key = header.trim().toLowerCase();
-    const hit = GUESSES.find(([pattern]) => pattern.test(key));
-    // One column per target. A second "Nummer" column becomes an attribute rather than
-    // overwriting the first one's mapping.
-    if (hit && !used.has(hit[1])) {
-      used.add(hit[1]);
-      mapping[header] = hit[1];
-    } else {
-      mapping[header] = IGNORE;
-    }
-  }
-  return mapping;
-}
-
 export function CMDBImportForm() {
   const [text, setText] = useState("");
   const [table, setTable] = useState<DelimitedTable | null>(null);
@@ -109,7 +72,7 @@ export function CMDBImportForm() {
     setText(raw);
     const parsed = parseDelimited(raw);
     setTable(parsed);
-    setMapping(guessMapping(parsed.headers));
+    setMapping(guessColumnMapping(parsed.headers));
   };
 
   const readFile = async (file: File | undefined) => {
@@ -118,18 +81,11 @@ export function CMDBImportForm() {
   };
 
   /*
-   * `__attribute` is a UI choice, not a value the server knows. It becomes
-   * `attr:<Spaltenname>` on the way out, so the attribute is named after the column it
-   * came from — which is what an admin mapping thirty OTRS columns expects.
+   * `__attribute` is a UI choice, not a value the server knows — `mappingForSubmit`
+   * turns it into `attr:<Spaltenname>`. Shared with the guess so a re-imported
+   * export cannot end up as `attr:attr:RAM` on the second round trip.
    */
-  const submitted = Object.fromEntries(
-    Object.entries(mapping)
-      .filter(([, target]) => target !== IGNORE)
-      .map(([column, target]) => [
-        column,
-        target === AS_ATTRIBUTE ? `${ATTRIBUTE_PREFIX}${column}` : target,
-      ]),
-  );
+  const submitted = mappingForSubmit(mapping);
 
   const hasName = Object.values(submitted).includes("name");
   const mapped = Object.keys(submitted).length;
@@ -228,7 +184,7 @@ export function CMDBImportForm() {
                   </span>
 
                   <Select
-                    value={mapping[header] ?? IGNORE}
+                    value={mapping[header] ?? IGNORE_COLUMN}
                     onValueChange={(value) =>
                       setMapping((current) => ({ ...current, [header]: value }))
                     }
@@ -241,7 +197,7 @@ export function CMDBImportForm() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={IGNORE}>Nicht importieren</SelectItem>
+                      <SelectItem value={IGNORE_COLUMN}>Nicht importieren</SelectItem>
                       <SelectItem value={AS_ATTRIBUTE}>Als Eigenschaft</SelectItem>
                       {CI_IMPORT_TARGETS.map((target) => (
                         <SelectItem key={target.key} value={target.key}>
