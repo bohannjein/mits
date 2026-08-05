@@ -9,6 +9,9 @@ import { TriModalContainer } from "@/components/tickets/tri-modal-container";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { requireUser } from "@/lib/auth/session";
+import { getFeatureFlags } from "@/lib/features";
+import { listCategoryTree } from "@/lib/ticket-categories";
+import { listTriageRules } from "@/lib/triage-rules";
 import { getFormSchema, listCatalogSchemas } from "@/lib/form-schemas";
 import { listActiveLocations } from "@/lib/locations";
 import { QUICK_TICKET_SCHEMA } from "@/lib/mock-schemas";
@@ -49,6 +52,7 @@ export default async function NewTicketPage({
     getFormSchema(QUICK_TICKET_SCHEMA.id) ?? QUICK_TICKET_SCHEMA;
   const catalogSchemas = listCatalogSchemas();
   const announcements = getActiveAnnouncements();
+  const flags = getFeatureFlags();
 
   /*
    * Choices for the `location` and `user` field widgets. Loaded here rather than
@@ -127,6 +131,22 @@ export default async function NewTicketPage({
             faqs={
               isAIFeatureOn(getAISettings(), "deflection") ? getPortalFaqs() : []
             }
+            /*
+             * The intent tiles, and the keyword rules behind the hints.
+             *
+             * Both empty when their module is off, which is the whole off switch —
+             * `IntentTiles` renders null on an empty tree and `ChatIntake` skips
+             * the keyword half on an empty rule list. No conditional markup here,
+             * so there is no branch that can render half of the feature.
+             *
+             * The FAQ above is gated on `deflection` and the rules on
+             * `feature_smart_routing`: an admin who wants keyword-driven articles
+             * and no lexical guessing gets exactly that.
+             */
+            categories={
+              flags.feature_ticket_categories ? listCategoryTree() : []
+            }
+            triageRules={flags.feature_smart_routing ? listTriageRules() : []}
           />
         </div>
       </main>

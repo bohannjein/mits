@@ -3,6 +3,8 @@ import "server-only";
 import { canViewBoard } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/sqlite";
+import { isFeatureEnabled } from "@/lib/features";
+import { dueReminders } from "@/lib/ticket-reminders";
 import { formatTicketNumber } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -26,7 +28,7 @@ import { formatTicketNumber } from "@/types/mits";
    see anyway, further back. It is clamped so it cannot become a full-table scan.
    ────────────────────────────────────────────────────────────────────────── */
 
-export type NotificationKind = "reply" | "ticket" | "assigned";
+export type NotificationKind = "reply" | "ticket" | "assigned" | "reminder";
 
 export interface MITSNotification {
   /** Stable across polls, so the client can collapse a repeat. */
@@ -205,6 +207,37 @@ export function listNotifications(
         description: `${formatTicketNumber(row.ticket_number ?? 0)} · ${row.title}`,
         href: `${base}/${row.ticket_id}`,
         createdAt: row.created_at,
+      });
+    }
+  }
+
+  /*
+   * Reminders this reader set on themselves, now due.
+   *
+   * Every role, not staff only: a reporter who put „Freitag nachfragen" on their
+   * own ticket is the most reasonable use of the feature there is.
+   *
+   * The event's timestamp is `due_at`, not the row's `created_at`, and that is
+   * what makes the cursor work: a reminder set last week and due in ten minutes
+   * has to be *new* now, and a `created_at` outside the lookback window would
+   * mean it was never reported at all. The cursor then moves past it, so it is
+   * announced exactly once.
+   *
+   * No self-exclusion clause, unlike the three queries above. Those skip events
+   * the caller caused because being told about your own reply is noise; here the
+   * caller causing it is the entire point.
+   */
+  if (isFeatureEnabled("feature_ticket_reminders")) {
+    for (const reminder of dueReminders(user.id, from)) {
+      events.push({
+        key: `reminder:${reminder.id}`,
+        kind: "reminder",
+        title: "Erinnerung fällig",
+        description: reminder.note
+          ? `${formatTicketNumber(reminder.ticket_number)} · ${reminder.note}`
+          : `${formatTicketNumber(reminder.ticket_number)} · ${reminder.ticket_title}`,
+        href: `${base}/${reminder.ticket_id}`,
+        createdAt: reminder.due_at,
       });
     }
   }

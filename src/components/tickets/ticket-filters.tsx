@@ -40,6 +40,8 @@ const UNASSIGNED = "__unassigned";
 export interface TicketFilterValues {
   q?: string;
   locationId?: string;
+  category?: string;
+  subCategory?: string;
   status?: string;
   priority?: string;
   assignedTo?: string;
@@ -80,6 +82,17 @@ export function TicketFilters({
     >
       {/* Carried along so filtering does not silently drop the search term. */}
       <input type="hidden" name="q" value={values.q ?? ""} />
+      {/*
+        The same for the category pair, and hidden rather than editable on purpose.
+        The cascading pair lives in `QueueFilterBar`, where one control's options
+        depend on the other's value; a second copy of that logic inside a GET form
+        would be two places deciding which children belong to which root. Here they
+        only have to survive the submit — a GET form sends its fields and nothing
+        else, so without these two the category filter would vanish the moment
+        somebody set a status.
+      */}
+      <input type="hidden" name="category" value={values.category ?? ""} />
+      <input type="hidden" name="subCategory" value={values.subCategory ?? ""} />
       {Object.entries(carry ?? {}).map(([name, value]) => (
         <input key={name} type="hidden" name={name} value={value} />
       ))}

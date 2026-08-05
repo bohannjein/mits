@@ -134,6 +134,17 @@ export async function purgeData(scopes: PurgeScopes): Promise<PurgeReport> {
       run("DELETE FROM mits_ticket_worklog");
       run("DELETE FROM mits_ticket_checklist");
       run("DELETE FROM mits_ticket_ci");
+      /*
+       * Reminders go with their tickets.
+       *
+       * Every read of this table joins `mits_ticket`, so leftovers would be
+       * invisible rather than broken — which is exactly why they have to be
+       * deleted here: an invisible row nobody ever sees again is one nothing will
+       * ever clean up. The categories are *not* touched: they are master data like
+       * the locations, and this scope is "the ticket stock", not "the filing
+       * system it used".
+       */
+      run("DELETE FROM mits_ticket_reminder");
       // The history of the tickets that are going. Nothing in it refers to anything
       // that survives, and a log about rows nobody can open is not a record.
       run("DELETE FROM mits_audit_log");

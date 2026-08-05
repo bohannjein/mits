@@ -4,6 +4,7 @@ import {
   ArrowRightLeftIcon,
   CheckSquareIcon,
   ClockIcon,
+  FolderTreeIcon,
   LinkIcon,
   MessageSquareIcon,
   PrinterIcon,
@@ -11,6 +12,11 @@ import {
 import { useState, type ReactNode } from "react";
 
 import { DispatchDialog } from "@/components/tickets/dispatch-dialog";
+import { ReRouteModal } from "@/components/tickets/re-route-modal";
+import {
+  ReminderPopover,
+  type ReminderRow,
+} from "@/components/tickets/reminder-popover";
 import { TicketParticipants } from "@/components/tickets/ticket-participants";
 import {
   TicketChecklist,
@@ -30,6 +36,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import type { MITSCategoryNode } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    The agent's working surface: one bar of actions, and what they open.
@@ -61,6 +68,8 @@ export function TicketWorkspace({
   checklist,
   worklog,
   links,
+  reminders,
+  routing,
   children,
 }: {
   ticketId: string;
@@ -73,6 +82,14 @@ export function TicketWorkspace({
   worklog: { entries: WorklogRow[]; today: string } | null;
   /** Null when the linking module is switched off. */
   links: LinkRow[] | null;
+  /** Null when reminders are switched off. Empty array means "none set yet". */
+  reminders: ReminderRow[] | null;
+  /** Null when categories are switched off — no tree means nothing to re-route to. */
+  routing: {
+    categories: MITSCategoryNode[];
+    currentCategoryId: string | null;
+    suggestion: { id: string; path: string[] } | null;
+  } | null;
   /** The conversation, server-rendered. */
   children: ReactNode;
 }) {
@@ -80,6 +97,7 @@ export function TicketWorkspace({
   const [dispatching, setDispatching] = useState(false);
   const [timing, setTiming] = useState(false);
   const [linking, setLinking] = useState(false);
+  const [rerouting, setRerouting] = useState(false);
 
   const answered = checklist?.filter((row) => row.value !== "").length ?? 0;
   const total = checklist?.length ?? 0;
@@ -108,6 +126,29 @@ export function TicketWorkspace({
           label="Dispatch"
           onClick={() => setDispatching(true)}
         />
+
+        {/*
+          Re-Route beside Dispatch, because the two are the same gesture aimed at
+          different things: Dispatch hands the ticket to a person, Re-Route moves
+          it to a queue. Adjacent so the agent who realises „das ist nicht mein
+          Thema" finds both readings of that thought in one place.
+        */}
+        {routing && (
+          <BarButton
+            icon={<FolderTreeIcon strokeWidth={1.5} />}
+            label="Re-Route"
+            onClick={() => setRerouting(true)}
+          />
+        )}
+
+        {/*
+          Its own trigger rather than a `BarButton`, because it opens a popover and
+          the popover has to be anchored to the element that opened it. Same height,
+          radius and hover behaviour — see the note on `BarButton`.
+        */}
+        {reminders && (
+          <ReminderPopover ticketId={ticketId} reminders={reminders} />
+        )}
 
         {checklist && (
           <BarButton
@@ -174,6 +215,17 @@ export function TicketWorkspace({
         open={dispatching}
         onOpenChange={setDispatching}
       />
+
+      {routing && (
+        <ReRouteModal
+          ticketId={ticketId}
+          categories={routing.categories}
+          currentCategoryId={routing.currentCategoryId}
+          suggestion={routing.suggestion}
+          open={rerouting}
+          onOpenChange={setRerouting}
+        />
+      )}
 
       {worklog && (
         <Dialog open={timing} onOpenChange={setTiming}>

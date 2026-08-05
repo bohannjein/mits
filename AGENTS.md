@@ -29,6 +29,8 @@ die die jeweilige Sitzung nie berührt.
 | Datei | Worum es geht |
 |---|---|
 | `.claude/rules/tickets.md` | Ticketseite, Chatverlauf, Antwortzeile, Textbausteine |
+| `.claude/rules/reminders.md` | Snooze, Fälligkeit, Cron-Nudge, Widget |
+| `.claude/rules/categories.md` | Kategoriebaum, Queue-Filter, Smart-Routing, Intent-Kacheln |
 | `.claude/rules/realtime.md` | SSE, Signale, Coalescing, Pop-out und Floating-Fenster |
 | `.claude/rules/cmdb.md` | Objekte, Lizenzen, Firmen, Import, REST |
 | `.claude/rules/analytics.md` | Kennzahlen, Zeiträume, Caching, Diagrammfarben |
@@ -252,6 +254,36 @@ mit Dateien, Entscheidungen und Stolperfallen steht in **[ROADMAP.md](ROADMAP.md
 | — | Nummernkreise `TCK-1…` und `INV-1…`, Löschknopf mit Passwortabfrage | ✅ |
 | — | CMDB: Firmen, Objekte, Beziehungen, Lizenzen, Import, REST (12. Flag) | ✅ |
 | — | Dual-Theme, Rollen-Rename, Bubbles, Toasts, Queue, Zeit, Makros, S3, Mail-Abruf | ✅ |
+| — | Erinnerungen, Kategoriebaum + kaskadierender Filter, Smart-Routing (3 Flags) | ✅ |
+
+## Drei Kern-Features nach der CMDB
+
+Erinnerungen, Kategorien und Smart-Routing. Die Begründungen stehen in
+`.claude/rules/reminders.md` und `.claude/rules/categories.md`; was hier stehen
+muss, weil es überall gilt:
+
+**Kategorie und Formular-Kategorie sind zwei verschiedene Dinge.**
+`MITSFormSchema.category` ist eine Freitext-Überschrift auf einem Formular und
+bleibt das. `mits_ticket.category_id` zeigt auf `mits_ticket_category` — die
+Ablage-Dimension, auf die die Queue filtert und die die Regeln schreiben.
+
+**Die Wurzel einer Kategorie hat `parent_id = ''`, nicht `NULL`.** SQL zählt
+NULLs in einem Unique-Index als verschieden, „Hardware" ließe sich also zweimal
+als Wurzel anlegen — und der Filter zeigte dann zwei gleiche Einträge mit je der
+Hälfte der Tickets.
+
+**Der Melder gewinnt gegen die Regel.** Die Intent-Kacheln sind der Melder, der
+seine Anfrage einordnet; eine Regel füllt nur die Lücke (Freitext, Mail, REST).
+Priorität darf eine Regel nur **erhöhen**.
+
+**`services/ai/routing.ts` schreibt weiterhin keine Kategorie.** Der
+Modellvorschlag bleibt ein Tag. Was schreiben darf, ist das deterministische
+Regelwerk unter `/admin/settings/routing` — nachlesbar, und die Historie sagt
+mit `category_changed`, was es getan hat.
+
+**Erinnerungen sind pro Person und werden abgeleitet, nicht zugestellt.** Es gibt
+keine Benachrichtigungstabelle; `dueReminders` liest das Fenster
+`since < due_at <= now`. `/api/cron/reminders` liefert nichts, es stößt nur an.
 
 ## Nach der CMDB: Betriebsausbau
 
@@ -330,6 +362,8 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /mits/analytics         Statistiken (Agenten), Anwender gesperrt
 /admin/…                Administration
 /admin/macros           Makros
+/admin/categories       Kategoriebaum: Haupt- und Unterkategorien, Kachel-Symbol
+/admin/settings/routing Stichwort-Regeln: Kategorie, Mindestpriorität, FAQ-Vorschläge
 /admin/settings/storage Dateispeicher (Platte oder S3)
 /admin/settings/api-keys API-Keys je System, Token nur einmal sichtbar
 /admin/status           Systemzustand: was eingerichtet ist, plus Live-Verbindung
@@ -342,6 +376,7 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /api/tickets/check-updates  Queue-ETag, antwortet 304 wenn nichts anders ist
 /api/tickets/[id]/activity  Fingerabdruck, Ersatzweg wenn der Stream fehlt
 /api/notifications/digest   Sammelmeldung ab der eingestellten Schwelle
+/api/cron/reminders     Fällige Erinnerungen anstoßen, Service-Token **oder** Admin-Sitzung
 /api/analytics          Kennzahlen als JSON oder `?format=csv` (Agenten)
 /api/mail/poll          Postfach abrufen, Service-Token **oder** Admin-Sitzung
 /api/v1/cmdb/…          REST-Schnittstelle, Token **oder** Agenten-Sitzung

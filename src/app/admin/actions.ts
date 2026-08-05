@@ -31,6 +31,12 @@ import { verifyS3 } from "@/lib/services/s3";
 import { getS3Settings, setS3Settings } from "@/lib/services/storage";
 import { LocationError, getLocation, replaceLocations } from "@/lib/locations";
 import {
+  CategoryError,
+  isFilableCategory,
+  replaceCategories,
+} from "@/lib/ticket-categories";
+import { TriageRuleError, setTriageRules } from "@/lib/triage-rules";
+import {
   OrganizationError,
   deleteOrganization,
   getOrganization,
@@ -85,7 +91,10 @@ import {
   AI_FEATURES,
   AI_FEATURE_META,
   CannedResponseSchema,
+  CATEGORY_ROOT,
   MacroSchema,
+  MITSTicketCategorySchema,
+  TriageRuleSchema,
   S3SettingsSchema,
   isS3Configured,
   isS3Endpoint,
@@ -415,6 +424,113 @@ export async function saveFeatureFlagsAction(
         : `Gespeichert. Abgeschaltet: ${off
             .map((key) => FEATURE_FLAG_META[key].label)
             .join(", ")}.`,
+  };
+}
+
+/* ── Ticket categories ──────────────────────────────────────────────────── */
+
+/**
+ * Replace the whole category tree.
+ *
+ * Submitted as one list of rows with a parent each, like the locations — the
+ * editor is a list and a diff-based API would only move the bookkeeping into the
+ * form. `replaceCategories` is where the orphan, self-parent and duplicate-sibling
+ * checks live; they are not in the mask, because a hand-built POST reaches this
+ * action and not the mask.
+ *
+ * Revalidates the queue and the intake: the first renders the cascading filter,
+ * the second the intent tiles, and both are server-rendered from this table.
+ */
+export async function saveCategoriesAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const payload = parsePayload(
+    formData,
+    "categories",
+    z.array(MITSTicketCategorySchema),
+  );
+  if (!payload.ok) return { ok: false, error: payload.error };
+
+  let saved;
+  try {
+    saved = replaceCategories(payload.data);
+  } catch (error) {
+    if (error instanceof CategoryError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath("/admin/categories");
+  revalidatePath("/customer/new");
+  revalidatePath("/mits");
+
+  const roots = saved.filter((entry) => entry.parent_id === CATEGORY_ROOT).length;
+  return {
+    ok: true,
+    message: `${roots} Hauptkategorie(n) und ${saved.length - roots} Unterkategorie(n) gespeichert.`,
+  };
+}
+
+/* ── Triage rules ───────────────────────────────────────────────────────── */
+
+/**
+ * Replace the keyword rules.
+ *
+ * The mask is a list of rules, so this is the same shape as the categories above.
+ * `setTriageRules` lower-cases and de-duplicates the keywords and drops a rule
+ * that has none — a row in the list that can never match is worse than an absent
+ * one, because somebody will assume it works.
+ *
+ * `/customer/new` is revalidated as well as the queue: the same rules decide which
+ * FAQ entries the intake offers while somebody types, so a new keyword has to
+ * reach that page without a rebuild.
+ */
+export async function saveTriageRulesAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const payload = parsePayload(formData, "rules", z.array(TriageRuleSchema));
+  if (!payload.ok) return { ok: false, error: payload.error };
+
+  /*
+   * A rule may only point at a category that exists.
+   *
+   * Checked here rather than in the storage layer, which has no business reading
+   * the category table: a rule with a dangling target would file tickets under an
+   * id no filter resolves, and the mask would report a successful save.
+   */
+  for (const rule of payload.data) {
+    if (rule.category_id && !isFilableCategory(rule.category_id)) {
+      return {
+        ok: false,
+        error: `Regel „${rule.title}“ zeigt auf eine Kategorie, die es nicht gibt.`,
+      };
+    }
+  }
+
+  let saved;
+  try {
+    saved = setTriageRules(payload.data);
+  } catch (error) {
+    if (error instanceof TriageRuleError) return { ok: false, error: error.message };
+    throw error;
+  }
+
+  revalidatePath("/admin/settings/routing");
+  revalidatePath("/customer/new");
+  revalidatePath("/mits");
+
+  const filing = saved.filter((rule) => rule.category_id !== "").length;
+  return {
+    ok: true,
+    message:
+      saved.length === 0
+        ? "Keine Regeln — eingehende Tickets bleiben unkategorisiert."
+        : `${saved.length} Regel(n) gespeichert, ${filing} davon vergeben eine Kategorie.`,
   };
 }
 

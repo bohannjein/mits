@@ -10,6 +10,7 @@ import { TicketLive } from "@/components/tickets/ticket-live";
 import { PayloadFields } from "@/components/tickets/payload-fields";
 import { TicketMessages } from "@/components/tickets/ticket-messages";
 import { TicketParticipants } from "@/components/tickets/ticket-participants";
+import { ReminderPopover } from "@/components/tickets/reminder-popover";
 import {
   Accordion,
   AccordionContent,
@@ -22,6 +23,9 @@ import { getFeatureFlags } from "@/lib/features";
 import { getFormSchema } from "@/lib/form-schemas";
 import { resolveFields } from "@/lib/forms/schema-to-zod";
 import { getLocation } from "@/lib/locations";
+import { formatDateTime } from "@/lib/format";
+import { getSystemTimezone } from "@/lib/system-settings";
+import { listRemindersForTicket } from "@/lib/ticket-reminders";
 import { listUploadsForTicket } from "@/lib/storage";
 import { collectLinks } from "@/lib/ticket-resources";
 import { TicketResources } from "@/components/tickets/ticket-resources";
@@ -92,6 +96,24 @@ export default async function CustomerTicketPage({
   markTicketRead(id, user.id);
 
   const flags = getFeatureFlags();
+
+  /*
+   * This reporter's reminders on this ticket, formatted server-side.
+   *
+   * Identical arrangement to the agent page: the popover is a client component, so
+   * the instance's timezone is applied here and `overdue` is decided against the
+   * server's clock rather than the visitor's.
+   */
+  const timezone = getSystemTimezone();
+  const nowMs = Date.now();
+  const reminders = flags.feature_ticket_reminders
+    ? listRemindersForTicket(id, user.id).map((entry) => ({
+        id: entry.id,
+        dueLabel: formatDateTime(new Date(entry.due_at), timezone),
+        note: entry.note,
+        overdue: new Date(entry.due_at).getTime() <= nowMs,
+      }))
+    : null;
 
   // The same visibility-filtered thread the bubbles are built from, so a link
   // posted in an internal note cannot reach this list.
@@ -237,6 +259,25 @@ export default async function CustomerTicketPage({
                     canEdit={ticket.created_by === user.id}
                   />
                 </div>
+
+                {/*
+                  The reporter's own reminder, on their own ticket.
+
+                  „Freitag nachfragen, wenn nichts passiert ist" is the most
+                  reasonable thing somebody waiting on a ticket can do, and the
+                  alternative is that they ask on Tuesday instead. Same component
+                  as the agent's, same action, same server-side check — the
+                  reminder table is keyed on the user, so there is nothing here
+                  that a reporter could reach on somebody else's behalf.
+                */}
+                {reminders && (
+                  <div className="mt-3">
+                    <ReminderPopover
+                      ticketId={ticket.id}
+                      reminders={reminders}
+                    />
+                  </div>
+                )}
 
                 {/*
                   Only while nobody has picked it up. `withdrawTicket` checks the

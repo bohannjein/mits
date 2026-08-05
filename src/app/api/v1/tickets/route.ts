@@ -141,6 +141,15 @@ export async function POST(request: Request) {
         },
         priority,
         location_id: null,
+        /*
+         * A machine states no category, and deliberately cannot.
+         *
+         * The REST body is an alert from monitoring, not a filing decision — a
+         * script that could name a category would be a script that files a
+         * hundred tickets into the wrong queue on a copy-paste. The triage rules
+         * read the text it did send and do the filing.
+         */
+        category_id: null,
       },
       actor,
       // Same meaning as for a mail from a stranger: the account owns the

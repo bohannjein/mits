@@ -8,10 +8,12 @@ import {
 
 import { IncidentBanner } from "@/components/dashboard/incident-banner";
 import { PresenceList } from "@/components/dashboard/presence-list";
+import { RemindersWidget } from "@/components/dashboard/reminders-widget";
 import { StatsTiles } from "@/components/dashboard/stats-tiles";
 import { AppHeader } from "@/components/layout/app-header";
 import { QueueLive } from "@/components/tickets/queue-live";
 import { QueueShortcuts } from "@/components/tickets/queue-shortcuts";
+import { QueueFilterBar } from "@/components/tickets/queue-filter-bar";
 import { QueueTabs } from "@/components/tickets/queue-tabs";
 import type { TicketFilterValues } from "@/components/tickets/ticket-filters";
 import { TicketPager } from "@/components/tickets/ticket-pager";
@@ -37,6 +39,10 @@ import { getFeatureFlags } from "@/lib/features";
 import { listLocations, ticketCountsByLocation } from "@/lib/locations";
 import { listPresence } from "@/lib/presence";
 import { detectClusters } from "@/lib/services/ai/clustering";
+import { categoryLabel, listCategoryTree } from "@/lib/ticket-categories";
+import { listUpcomingReminders } from "@/lib/ticket-reminders";
+import { getSystemTimezone } from "@/lib/system-settings";
+import { formatDateTime } from "@/lib/format";
 import {
   jumpToTicketNumber,
   parseTicketQuery,
@@ -52,7 +58,11 @@ import {
   toPage,
   todayCounts,
 } from "@/lib/tickets";
-import { TICKET_STATUS_LABELS, type TicketStatus } from "@/types/mits";
+import {
+  TICKET_STATUS_LABELS,
+  formatTicketNumber,
+  type TicketStatus,
+} from "@/types/mits";
 
 export const metadata: Metadata = {
   title: "Queue — MITS",
@@ -137,8 +147,44 @@ export default async function AgentQueuePage({
   const locations = listLocations();
   const { opened, closed } = todayCounts();
 
+  /*
+   * The tree for the filter, and the readable path for the notice.
+   *
+   * Read even when the filter is switched off, because the notice has to name a
+   * category that is *already* in the URL — a deep link from before somebody
+   * disabled the module still narrows the list, and a notice that said "1 Filter
+   * aktiv:" with nothing after it is worse than one that names it.
+   */
+  const categories = listCategoryTree();
+  const activeCategoryLabel = categoryLabel(filter.categoryId ?? null);
+
+  /*
+   * The agent's own reminders, formatted here.
+   *
+   * The widget is a client component (each row's tick is a form), so the due times
+   * are turned into strings on this side — the instance's timezone is a server
+   * read, and handing the browser an ISO string plus a zone name would put a second
+   * formatter in the bundle for the one thing every other timestamp in MITS goes
+   * through `lib/format.ts` for.
+   */
+  const timezone = getSystemTimezone();
+  const now = Date.now();
+  const reminderRows = flags.feature_ticket_reminders
+    ? listUpcomingReminders(user.id).map((entry) => ({
+        id: entry.id,
+        ticketId: entry.ticket_id,
+        ticketNumber: formatTicketNumber(entry.ticket_number),
+        ticketTitle: entry.ticket_title,
+        dueLabel: formatDateTime(new Date(entry.due_at), timezone),
+        note: entry.note,
+        overdue: new Date(entry.due_at).getTime() <= now,
+      }))
+    : [];
+
   const showAside =
-    flags.feature_stats_heatmap || flags.feature_presence_sidebar;
+    flags.feature_stats_heatmap ||
+    flags.feature_presence_sidebar ||
+    reminderRows.length > 0;
 
   /*
    * Awaited, unlike the counts above: the banner belongs at the top of the page
@@ -241,13 +287,29 @@ export default async function AgentQueuePage({
                 }
               />
 
-              {/* The filter block that used to sit here is gone. It occupied the
-                  screen permanently for an occasional operation and pushed the
-                  ticket list below the fold; searching now happens in the header
-                  dialog (Ctrl+K). Deep-link filters in the URL still apply — only
-                  the form is gone, not the capability. */}
+              {/*
+                The category pair, and only it.
+
+                The full filter block that used to sit here is still gone, for the
+                reason it went: six controls occupied the screen permanently for an
+                occasional operation and pushed the ticket list below the fold.
+                Filtering by category is the exception — it is how a desk with
+                specialists divides the day's work, so it is the one filter that is
+                touched on the way in rather than occasionally.
+
+                Renders nothing when no categories exist, so an instance that never
+                adopted them sees the queue exactly as before.
+              */}
+              {flags.feature_ticket_categories && (
+                <QueueFilterBar categories={categories} basePath="/mits" />
+              )}
+
               {activeCount > 0 && (
-                <ActiveFilterNotice count={activeCount} values={values} />
+                <ActiveFilterNotice
+                  count={activeCount}
+                  values={values}
+                  categoryLabel={activeCategoryLabel}
+                />
               )}
 
               {tickets.length === 0 ? (
@@ -282,6 +344,10 @@ export default async function AgentQueuePage({
 
             {showAside && (
               <aside className="grid gap-6">
+                {/* First in the column: it is the only module here that is about
+                    something the agent asked to be reminded of at a particular
+                    time, and the two below it are ambient. */}
+                <RemindersWidget rows={reminderRows} detailBase="/mits/tickets" />
                 {flags.feature_stats_heatmap && (
                   <StatsTiles
                     opened={opened}
@@ -314,12 +380,23 @@ export default async function AgentQueuePage({
 function ActiveFilterNotice({
   count,
   values,
+  /**
+   * The category's readable path, resolved on the server.
+   *
+   * Named rather than counted, unlike the five below it: „Standort" tells somebody
+   * a site filter is on and the dropdown beside it says which, but the category is
+   * the filter most likely to have arrived in a pasted URL — and „Kategorie" alone
+   * would leave them to guess which one narrowed the queue.
+   */
+  categoryLabel,
 }: {
   count: number;
   values: TicketFilterValues;
+  categoryLabel: string;
 }) {
   const parts: string[] = [];
   if (values.q) parts.push(`Text „${values.q}“`);
+  if (categoryLabel) parts.push(`Kategorie ${categoryLabel}`);
   if (values.locationId) parts.push("Standort");
   if (values.status) parts.push(`Status ${TICKET_STATUS_LABELS[values.status as TicketStatus] ?? values.status}`);
   if (values.priority) parts.push("Priorität");

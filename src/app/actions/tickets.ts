@@ -29,6 +29,7 @@ import {
   TicketUpdateError,
   assignTicket,
   getTicketFor,
+  setTicketCategory,
   setTicketCc,
   setTicketPriority,
   setTicketStatus,
@@ -286,6 +287,49 @@ export async function setTicketPriorityAction(
   revalidateTicket(ticketId);
 
   return { ok: true, message: "Priorität geändert." };
+}
+
+/**
+ * Re-file a ticket under a different category.
+ *
+ * Agents only. A reporter states a category on the way in — that is what the
+ * intent tiles are — but correcting the queue afterwards is a decision about how
+ * the desk is organised, and it moves the ticket out of somebody else's filter.
+ *
+ * The empty string clears it, and that is a real answer rather than a no-op: a
+ * ticket wrongly filed is worse than one honestly unfiled, because only the
+ * second shows up when somebody looks for what still needs sorting.
+ */
+export async function setTicketCategoryAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, true);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  if (!isFeatureEnabled("feature_ticket_categories")) {
+    return { ok: false, error: "Kategorien sind abgeschaltet." };
+  }
+
+  const raw = String(formData.get("categoryId") ?? "").trim();
+  const categoryId = raw === "" || raw === "__none" ? null : raw;
+
+  try {
+    setTicketCategory(ticketId, categoryId, auth.user);
+  } catch (error) {
+    if (error instanceof TicketUpdateError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+
+  revalidateTicket(ticketId);
+
+  return {
+    ok: true,
+    message: categoryId ? "Kategorie geändert." : "Kategorie entfernt.",
+  };
 }
 
 /**

@@ -147,6 +147,16 @@ export function SchemaForm({
         payload: values as Record<string, unknown>,
         priority: derivePriority(values),
         location_id: locationId,
+        /*
+         * Null here, filled by the container.
+         *
+         * The intent tiles sit above the tab strip, so the chosen category belongs
+         * to the intake as a whole rather than to one of its three forms —
+         * `TriModalContainer` writes it into the request body the same way it
+         * writes the site. Threading it through every mode and through
+         * `ServiceCatalog` would be four props for one value that none of them own.
+         */
+        category_id: null,
       });
     } finally {
       setSubmitting(false);

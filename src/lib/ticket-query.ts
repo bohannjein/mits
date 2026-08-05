@@ -48,6 +48,10 @@ export interface ParsedTicketQuery {
   values: {
     q?: string;
     locationId?: string;
+    /** Root category, as it stands in the URL. */
+    category?: string;
+    /** Child of it. Only meaningful together with `category`. */
+    subCategory?: string;
     status?: string;
     priority?: string;
     assignedTo?: string;
@@ -74,9 +78,34 @@ export function parseTicketQuery(
   const from = isoDate(one(params.from));
   const to = isoDate(one(params.to));
 
-  const activeCount = [locationId, status, priority, assignedTo, from, to].filter(
-    Boolean,
-  ).length;
+  /*
+   * Two parameters, one filter.
+   *
+   * The deeper choice wins, because a subcategory implies its parent — filtering
+   * on both would be „Hardware AND Notebooks", and the day somebody hand-edits a
+   * URL to a subcategory of a *different* root that is a query which matches
+   * nothing and looks like an empty queue.
+   *
+   * Neither is validated against the category table here. `ticketWhere` expands
+   * whatever it gets through `descendantCategoryIds`, and an unknown id expands to
+   * itself — so a stale bookmark matches nothing rather than silently dropping
+   * the filter and presenting a wider list as if it were narrowed. Validating here
+   * would mean a database read in a function that is otherwise pure string work,
+   * and it would have to make the same decision anyway.
+   */
+  const category = one(params.category);
+  const subCategory = one(params.subCategory);
+  const categoryId = subCategory || category;
+
+  const activeCount = [
+    locationId,
+    categoryId,
+    status,
+    priority,
+    assignedTo,
+    from,
+    to,
+  ].filter(Boolean).length;
 
   /*
    * Undefined keys are omitted, not set to undefined.
@@ -90,6 +119,7 @@ export function parseTicketQuery(
   const filter: TicketFilter = { ...(options.ownOnly ? { ownOnly: true } : {}) };
   if (q) filter.q = q;
   if (locationId) filter.locationId = locationId;
+  if (categoryId) filter.categoryId = categoryId;
   if (status) filter.status = status;
   if (priority) filter.priority = priority;
   if (assignedTo) filter.assignedTo = assignedTo;
@@ -98,7 +128,17 @@ export function parseTicketQuery(
 
   return {
     filter,
-    values: { q, locationId, status, priority, assignedTo, from, to },
+    values: {
+      q,
+      locationId,
+      category,
+      subCategory,
+      status,
+      priority,
+      assignedTo,
+      from,
+      to,
+    },
     activeCount,
   };
 }

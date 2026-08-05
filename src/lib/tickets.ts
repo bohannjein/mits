@@ -11,6 +11,15 @@ import { publish } from "@/lib/services/realtime";
 import { getFormSchema } from "@/lib/form-schemas";
 import { resolveFields, schemaToZod } from "@/lib/forms/schema-to-zod";
 import { getLocation } from "@/lib/locations";
+import { isFeatureEnabled } from "@/lib/features";
+import { triage } from "@/lib/services/auto-triage";
+import { openingFieldName } from "@/lib/ticket-opening";
+import {
+  categoryLabel,
+  descendantCategoryIds,
+  isFilableCategory,
+} from "@/lib/ticket-categories";
+import { listTriageRules } from "@/lib/triage-rules";
 import { UploadError, linkUploadsToTicket } from "@/lib/storage";
 import {
   DEFAULT_TICKET_SORT,
@@ -25,6 +34,7 @@ import {
   MITSTicketSchema,
   normalizeCcEmails,
   OPEN_TICKET_STATUSES,
+  PRIORITY_RANK,
   type MITSTicket,
   type MITSTicketDraft,
   type TicketPriority,
@@ -48,6 +58,7 @@ interface TicketRow {
   id: string;
   ticket_number: number | null;
   location_id: string | null;
+  category_id: string | null;
   created_by: string;
   created_by_email: string;
   source: string;
@@ -82,6 +93,7 @@ function rowToTicket(row: TicketRow): MITSTicket {
     // visibly broken rather than quietly plausible.
     ticket_number: row.ticket_number ?? 0,
     location_id: row.location_id,
+    category_id: row.category_id,
     source: row.source,
     form_schema_id: row.form_schema_id ?? undefined,
     title: row.title,
@@ -213,11 +225,48 @@ export function createTicket(
   const source =
     draft.source === "email" && !origin ? "legacy" : draft.source;
 
+  /*
+   * Filing: what the reporter said, and what the rules make of it.
+   *
+   * The reporter's choice wins. The intent tiles are exactly this — somebody
+   * saying „das ist ein Notebook-Problem" — and a rule that overrode it would be
+   * a machine contradicting a person who was looking at the answer. The rules
+   * only fill a gap: a free-text ticket, a mailed one, a wizard form that carries
+   * no category.
+   *
+   * `isFilableCategory` is not a formality. A cached form or a hand-built request
+   * can name a category that has since been deleted, and storing that id would be
+   * a ticket permanently invisible to every category filter — worse than
+   * uncategorised, because the queue would show it as filed.
+   */
+  const triaged = triageForDraft(draft, parsed.data, schema.title);
+
+  const categoryId =
+    draft.category_id && isFilableCategory(draft.category_id)
+      ? draft.category_id
+      : triaged.categoryId && isFilableCategory(triaged.categoryId)
+        ? triaged.categoryId
+        : null;
+
+  /*
+   * A rule may raise the priority, never lower it.
+   *
+   * `rankOf` decides, not the enum's declaration order by accident — and the
+   * comparison is against the priority computed above, which for a reporter is
+   * already clamped to the default. So a rule can escalate „Server down" out of
+   * `medium`, and cannot quietly demote what an agent set on the way in.
+   */
+  const finalPriority =
+    triaged.priority && priorityRank(triaged.priority) > priorityRank(priority)
+      ? triaged.priority
+      : priority;
+
   const ticket: TicketRow = {
     id: randomUUID(),
     // Filled inside the transaction below, where the read cannot race an insert.
     ticket_number: null,
     location_id: draft.location_id,
+    category_id: categoryId,
     // Ownership is always the account. Only the *display and reply* address can
     // differ, and only for the mail ingest — see `MailIngestOrigin`.
     created_by: user.id,
@@ -227,22 +276,30 @@ export function createTicket(
     title: deriveTitle(parsed.data, schema.title),
     payload: JSON.stringify(parsed.data),
     status: "open",
-    priority,
+    priority: finalPriority,
     assigned_to: null,
     created_at: new Date().toISOString(),
   };
 
   const fileIds = collectFileIds(schema, parsed.data);
 
+  /*
+   * Every key of the bound object appears here, and that is not style.
+   * better-sqlite3 refuses an object with a key the statement does not name —
+   * "Too many parameter values were provided" — rather than ignoring it, so
+   * adding `category_id` to `TicketRow` without adding it to this list turns
+   * **every** ticket creation into a 500. Two places, one change; `test:db`
+   * exists because a type checker cannot see the contract between them.
+   */
   const insert = db.prepare(
     `INSERT INTO mits_ticket
-       (id, ticket_number, location_id, created_by, created_by_email, source,
-        form_schema_id, title, payload, status, priority, assigned_to, created_at,
-        tags, major_incident)
+       (id, ticket_number, location_id, category_id, created_by, created_by_email,
+        source, form_schema_id, title, payload, status, priority, assigned_to,
+        created_at, tags, major_incident)
      VALUES
-       (@id, @ticket_number, @location_id, @created_by, @created_by_email, @source,
-        @form_schema_id, @title, @payload, @status, @priority, @assigned_to,
-        @created_at, '[]', 0)`,
+       (@id, @ticket_number, @location_id, @category_id, @created_by,
+        @created_by_email, @source, @form_schema_id, @title, @payload, @status,
+        @priority, @assigned_to, @created_at, '[]', 0)`,
   );
 
   // One transaction: a payload referencing a foreign or already-used attachment
@@ -278,6 +335,42 @@ export function createTicket(
   invalidateAnalytics();
 
   return rowToTicket(ticket);
+}
+
+/** Ordering for the „never lower it" comparison. See `PRIORITY_RANK`. */
+function priorityRank(priority: TicketPriority): number {
+  return PRIORITY_RANK[priority];
+}
+
+/**
+ * What the triage rules make of a draft, or nothing at all.
+ *
+ * Off by default and returns an inert answer when the module is off, so the
+ * create path has no branch for it — the alternative is a conditional around two
+ * separate assignments, and the version of that which forgets one of them looks
+ * like working code.
+ *
+ * The text is title plus the reporter's own words, which is the same pair
+ * `services/ai/routing.ts` sends to the model. Not the whole payload: a form's
+ * dropdown labels and its site name are vocabulary nobody wrote, and matching
+ * keywords against them files tickets by the shape of the form rather than by
+ * what the person said.
+ */
+function triageForDraft(
+  draft: MITSTicketDraft,
+  payload: Record<string, unknown>,
+  fallbackTitle: string,
+): { categoryId: string; priority: TicketPriority | "" } {
+  if (!isFeatureEnabled("feature_smart_routing")) {
+    return { categoryId: "", priority: "" };
+  }
+
+  const field = openingFieldName(payload);
+  const body = field ? String(payload[field] ?? "") : "";
+  const text = `${deriveTitle(payload, fallbackTitle)}\n${body}`;
+
+  const outcome = triage(text, listTriageRules());
+  return { categoryId: outcome.categoryId, priority: outcome.priority };
 }
 
 /**
@@ -332,6 +425,7 @@ const ALIVE = "mits_ticket.deleted_at IS NULL";
  */
 const TICKET_COLUMNS = `
   mits_ticket.id, mits_ticket.ticket_number, mits_ticket.location_id,
+  mits_ticket.category_id,
   mits_ticket.created_by, mits_ticket.created_by_email, mits_ticket.source,
   mits_ticket.form_schema_id, mits_ticket.title, mits_ticket.payload,
   mits_ticket.status, mits_ticket.priority, mits_ticket.assigned_to,
@@ -446,6 +540,16 @@ export interface TicketFilter {
   /** Free text over title and reporter address. */
   q?: string;
   locationId?: string;
+  /**
+   * Category id. Matches the category **and everything under it**.
+   *
+   * One field for both dropdowns, because a subcategory already implies its
+   * parent: the cascading control sends the deepest thing chosen, so
+   * `?category=hardware&subCategory=notebooks` narrows to notebooks and
+   * `?category=hardware` alone to all of Hardware. Two filter fields would be two
+   * clauses that can contradict each other — a subcategory from a different root.
+   */
+  categoryId?: string;
   status?: TicketStatus;
   priority?: TicketPriority;
   /** Agent id, or the literal "unassigned". */
@@ -669,6 +773,30 @@ function ticketWhere(
   if (filter.locationId) {
     clauses.push("mits_ticket.location_id = ?");
     whereParams.push(filter.locationId);
+  }
+  /*
+   * Category, and everything filed under it.
+   *
+   * `IN (…)` over the subtree rather than `= ?`, because a root that only matched
+   * tickets filed *directly* on it would find almost nothing: the point of
+   * subcategories is that tickets live in the leaves. Picking „Hardware" has to
+   * mean „Hardware und alles darunter", which is what the dropdown says it does.
+   *
+   * The subtree is expanded in JavaScript, not in a recursive CTE. It comes from a
+   * table with tens of rows that is read on every queue render anyway, and the
+   * expansion is also where the cycle guard lives — a hand-edited parent loop
+   * hangs a recursive CTE and truncates here.
+   *
+   * An unknown id yields the id itself, so the clause matches nothing rather than
+   * everything. That direction matters: a stale bookmark should show an empty
+   * queue, not silently drop the filter and look like a complete one.
+   */
+  if (filter.categoryId) {
+    const ids = descendantCategoryIds(filter.categoryId);
+    clauses.push(
+      `mits_ticket.category_id IN (${ids.map(() => "?").join(", ")})`,
+    );
+    whereParams.push(...ids);
   }
   if (filter.status) {
     clauses.push("mits_ticket.status = ?");
@@ -1196,6 +1324,57 @@ export function setTicketPriority(
     });
     announce(ticketId, actor.id);
   }
+
+  return requireTicket(ticketId);
+}
+
+/**
+ * Re-file a ticket under a different category.
+ *
+ * The queue correction an agent makes when a ticket landed in the wrong place —
+ * whether a person or a triage rule put it there.
+ *
+ * Audited with the readable path rather than with the ids. „von Hardware /
+ * Drucker auf Software / M365" is a history entry somebody can act on; two UUIDs
+ * are a row that proves a change happened and says nothing about what it was.
+ * The label is resolved *before* the write for the old value and after it for the
+ * new one, which is the only order that survives a category being renamed in
+ * between.
+ *
+ * `null` clears it. That is a legitimate correction: a ticket wrongly filed is
+ * worse than one honestly unfiled, because only the second one shows up when
+ * somebody looks for what still needs sorting.
+ */
+export function setTicketCategory(
+  ticketId: string,
+  categoryId: string | null,
+  actor: SessionUser,
+): MITSTicket {
+  const before = requireTicket(ticketId);
+
+  // Rejected rather than silently dropped to null, unlike on the create path: a
+  // re-route is somebody at the desk choosing from a list that was rendered from
+  // this same table, so an unknown id means the list is stale and saying so is
+  // more useful than filing the ticket nowhere.
+  if (categoryId && !isFilableCategory(categoryId)) {
+    throw new TicketUpdateError("Die gewählte Kategorie ist unbekannt.");
+  }
+
+  if (before.category_id === categoryId) return before;
+
+  const fromLabel = categoryLabel(before.category_id);
+
+  db.prepare("UPDATE mits_ticket SET category_id = ? WHERE id = ?").run(
+    categoryId,
+    ticketId,
+  );
+
+  recordAudit(ticketId, actor, "category_changed", {
+    field: "category",
+    from: fromLabel,
+    to: categoryLabel(categoryId),
+  });
+  announce(ticketId, actor.id);
 
   return requireTicket(ticketId);
 }

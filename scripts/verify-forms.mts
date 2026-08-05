@@ -12,6 +12,20 @@ import {
 } from "../src/lib/retract-window";
 import { NotificationSettingsSchema, channelConfig } from "../src/types/mits";
 import { deterministicDigest } from "../src/lib/notification-digest";
+import {
+  MORNING_HOUR,
+  instantForZonedTime,
+  parseLocalDateTime,
+  reminderDueAt,
+  resolveReminderDue,
+} from "../src/lib/reminder-presets";
+import {
+  KEYWORD_PREFIX_MIN,
+  matchTriageRules,
+  matchesKeyword,
+  triage,
+} from "../src/lib/services/auto-triage";
+import { TriageRuleSchema } from "../src/types/mits";
 /**
  * Checks the JSON-Schema → zod compiler against the example schemas.
  *
@@ -3756,6 +3770,269 @@ console.log("template tokens");
     firstNameOf("anna.meier@firma.de") === "anna.meier@firma.de",
   );
   check("empty stays empty", firstNameOf("   ") === "");
+}
+
+console.log("\nreminder presets");
+{
+  const BERLIN = "Europe/Berlin";
+
+  /*
+   * The offsets are plain arithmetic and must not be snapped to a wall clock:
+   * "in 2 Stunden" means two hours from now, and rounding the shortest preset is
+   * how it becomes the one that lies most.
+   */
+  const noon = new Date("2026-08-05T12:00:00.000Z");
+  check(
+    "two hours is two hours",
+    reminderDueAt("hours-2", noon, BERLIN).toISOString() ===
+      "2026-08-05T14:00:00.000Z",
+  );
+  check(
+    "three days is three days",
+    reminderDueAt("days-3", noon, BERLIN).toISOString() ===
+      "2026-08-08T12:00:00.000Z",
+  );
+
+  /*
+   * "Morgen 09:00" is a wall-clock time in the instance's zone, so the stored
+   * instant differs by the offset. Berlin is UTC+2 in August: 09:00 local is
+   * 07:00Z. Getting this wrong by one pass of the correction lands in the wrong
+   * hour for every zone but UTC.
+   */
+  check(
+    "tomorrow 09:00 Berlin is 07:00Z in summer",
+    reminderDueAt("tomorrow-9", noon, BERLIN).toISOString() ===
+      "2026-08-06T07:00:00.000Z",
+  );
+  check(
+    "tomorrow 09:00 UTC is 09:00Z",
+    reminderDueAt("tomorrow-9", noon, "UTC").toISOString() ===
+      "2026-08-06T09:00:00.000Z",
+  );
+
+  /*
+   * Late-evening UTC is already the next calendar day in Berlin, so "tomorrow"
+   * has to be the day after that. Adding 24 h to the instant would answer the
+   * 6th here, which is today for the person reading it.
+   */
+  const lateEvening = new Date("2026-08-05T22:30:00.000Z");
+  check(
+    "tomorrow is the next local day, not now plus 24h",
+    reminderDueAt("tomorrow-9", lateEvening, BERLIN).toISOString() ===
+      "2026-08-07T07:00:00.000Z",
+  );
+
+  // Winter: Berlin is UTC+1, so the same wall time is an hour earlier in UTC.
+  // This is the case a single-offset implementation gets wrong twice a year.
+  const january = new Date("2026-01-15T12:00:00.000Z");
+  check(
+    "tomorrow 09:00 Berlin is 08:00Z in winter",
+    reminderDueAt("tomorrow-9", january, BERLIN).toISOString() ===
+      "2026-01-16T08:00:00.000Z",
+  );
+
+  // The DST boundary itself. Clocks go forward on 29 March 2026 at 02:00 local,
+  // so 09:00 that morning is already summer time.
+  const beforeSwitch = new Date("2026-03-28T12:00:00.000Z");
+  check(
+    "the morning of the spring-forward switch is summer time",
+    reminderDueAt("tomorrow-9", beforeSwitch, BERLIN).toISOString() ===
+      "2026-03-29T07:00:00.000Z",
+  );
+
+  check(
+    "the morning hour is nine",
+    instantForZonedTime(2026, 8, 6, MORNING_HOUR, 0, "UTC").toISOString() ===
+      "2026-08-06T09:00:00.000Z",
+  );
+
+  // A month boundary, so nothing depends on a hand-written month-length table.
+  check(
+    "tomorrow crosses into the next month",
+    reminderDueAt(
+      "tomorrow-9",
+      new Date("2026-08-31T12:00:00.000Z"),
+      "UTC",
+    ).toISOString() === "2026-09-01T09:00:00.000Z",
+  );
+
+  /*
+   * A datetime-local reading carries no zone. Interpreting it in the server's
+   * zone would file a Berlin agent's 14:30 as 16:30 on an instance in UTC.
+   */
+  check(
+    "a local reading resolves through the instance zone",
+    parseLocalDateTime("2026-08-06T14:30", BERLIN)?.toISOString() ===
+      "2026-08-06T12:30:00.000Z",
+  );
+  check("a malformed reading is null", parseLocalDateTime("morgen", BERLIN) === null);
+  check(
+    "a reading without minutes is null",
+    parseLocalDateTime("2026-08-06T14", BERLIN) === null,
+  );
+
+  // The bounds. A past date is refused rather than clamped to now: a reminder
+  // that fires the instant it is created looks like a broken button.
+  check(
+    "a preset resolves",
+    resolveReminderDue({ preset: "hours-2" }, noon, BERLIN) !== null,
+  );
+  check(
+    "an unknown preset falls through to the date, and there is none",
+    resolveReminderDue({ preset: "next-week" }, noon, BERLIN) === null,
+  );
+  check(
+    "a past date is refused",
+    resolveReminderDue({ at: "2020-01-01T09:00" }, noon, BERLIN) === null,
+  );
+  check(
+    "a date ten years out is refused",
+    resolveReminderDue({ at: "2036-01-01T09:00" }, noon, BERLIN) === null,
+  );
+  check(
+    "a date next week is accepted",
+    resolveReminderDue({ at: "2026-08-12T09:00" }, noon, BERLIN) !== null,
+  );
+  check("nothing at all is null", resolveReminderDue({}, noon, BERLIN) === null);
+}
+
+console.log("\nauto-triage");
+{
+  const rule = (over: Record<string, unknown>) =>
+    TriageRuleSchema.parse({ id: "r", title: "t", ...over });
+
+  const printers = rule({
+    id: "printers",
+    title: "Drucker",
+    keywords: ["drucker", "toner"],
+    category_id: "cat-printers",
+    order_index: 0,
+  });
+  const hardware = rule({
+    id: "hardware",
+    title: "Hardware",
+    keywords: ["notebook"],
+    category_id: "cat-hardware",
+    order_index: 1,
+  });
+
+  check("an exact token matches", matchesKeyword(["drucker"], "drucker"));
+  check("an absent token does not", !matchesKeyword(["monitor"], "drucker"));
+
+  /*
+   * German compounds are the whole reason the prefix rule exists:
+   * "Druckereinstellungen" is one token, and a whole-word-only matcher would
+   * miss most of how people write.
+   */
+  check(
+    "a compound matches on its prefix",
+    matchesKeyword(["druckereinstellungen"], "drucker"),
+  );
+  // Below the floor the prefix rule would fire on unrelated words - "mail" on
+  // "mailand", "netz" on half the vocabulary.
+  check(
+    "a short keyword does not match as a prefix",
+    KEYWORD_PREFIX_MIN === 5 && !matchesKeyword(["mailand"], "mail"),
+  );
+
+  check(
+    "a matching rule is found",
+    matchTriageRules("Der Drucker im 2. OG druckt nicht", [printers, hardware])
+      .length === 1,
+  );
+  check(
+    "nothing matches an unrelated text",
+    matchTriageRules("Bildschirm flackert", [printers, hardware]).length === 0,
+  );
+
+  /*
+   * Strength is the number of distinct keywords found, not their total count:
+   * one word said eight times is one piece of evidence.
+   */
+  const both = rule({
+    id: "both",
+    title: "Beides",
+    keywords: ["drucker", "toner"],
+    category_id: "cat-both",
+    order_index: 5,
+  });
+  const single = rule({
+    id: "one",
+    title: "Eins",
+    keywords: ["drucker"],
+    category_id: "cat-one",
+    order_index: 0,
+  });
+  check(
+    "two distinct hits beat one, whatever the order index",
+    triage("Drucker braucht Toner", [single, both]).categoryId === "cat-both",
+  );
+  check(
+    "repetition does not raise the score",
+    triage("Drucker Drucker Drucker", [single, both]).categoryId === "cat-one",
+  );
+
+  // A disabled rule is invisible to the matcher.
+  check(
+    "a disabled rule never matches",
+    triage("Drucker kaputt", [rule({ ...printers, enabled: false })])
+      .categoryId === "",
+  );
+
+  /*
+   * A rule may exist only to offer articles. Letting it win the category would
+   * mean a better-matching filing rule below it never applies.
+   */
+  const articlesOnly = rule({
+    id: "pw",
+    title: "Passwort",
+    keywords: ["passwort", "kennwort"],
+    faq_ids: ["faq-1"],
+    order_index: 0,
+  });
+  const filing = rule({
+    id: "accounts",
+    title: "Konten",
+    keywords: ["passwort"],
+    category_id: "cat-accounts",
+    order_index: 1,
+  });
+  const outcome = triage("Passwort und Kennwort vergessen", [
+    articlesOnly,
+    filing,
+  ]);
+  check(
+    "a rule without a category does not block one with it",
+    outcome.categoryId === "cat-accounts",
+  );
+  check(
+    "articles come from every match, not only the deciding one",
+    outcome.faqIds.join(",") === "faq-1",
+  );
+
+  // Priority travels with the deciding rule, so the two cannot come from two
+  // different statements about the same ticket.
+  const urgent = rule({
+    id: "server",
+    title: "Server",
+    keywords: ["server", "ausfall"],
+    category_id: "cat-server",
+    priority: "critical",
+    order_index: 0,
+  });
+  check(
+    "the deciding rule carries the priority",
+    triage("Server Ausfall", [urgent]).priority === "critical",
+  );
+  check(
+    "no match means no priority change",
+    triage("Kaffeemaschine", [urgent]).priority === "",
+  );
+  check(
+    "no match means no rule",
+    triage("Kaffeemaschine", [urgent]).match === null,
+  );
+  check("an empty rule list is inert", triage("Drucker", []).categoryId === "");
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

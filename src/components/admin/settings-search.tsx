@@ -9,6 +9,7 @@ import {
   BuildingIcon,
   ClockIcon,
   DatabaseIcon,
+  FolderTreeIcon,
   HardDriveIcon,
   HeadsetIcon,
   KeyRoundIcon,
@@ -20,6 +21,7 @@ import {
   SearchIcon,
   ServerIcon,
   ShieldAlertIcon,
+  SparklesIcon,
   ToggleRightIcon,
   UserPlusIcon,
   UsersIcon,
@@ -81,6 +83,20 @@ const ENTRIES: SettingsEntry[] = [
     label: "Standorte",
     icon: MapPinIcon,
     keywords: "filiale niederlassung ort code adresse gebäude",
+  },
+  {
+    href: "/admin/categories",
+    label: "Kategorien",
+    icon: FolderTreeIcon,
+    keywords:
+      "kategorie unterkategorie baum hierarchie einsortieren queue filter kacheln intent hardware software",
+  },
+  {
+    href: "/admin/settings/routing",
+    label: "Smart-Routing",
+    icon: SparklesIcon,
+    keywords:
+      "triage regeln stichworte keywords automatisch zuordnen routing falsche queue faq vorschlag notebook drucker",
   },
   {
     href: "/admin/organizations",

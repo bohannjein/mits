@@ -17,9 +17,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  DEFLECTION_LIMIT,
   suggestFaqs,
   type DeflectionHit,
 } from "@/lib/services/ai/deflection";
+import { triage } from "@/lib/services/auto-triage";
 import { formatFileSize } from "@/types/mits";
 import { cn } from "@/lib/utils";
 import {
@@ -27,6 +29,7 @@ import {
   type IntakeCategory,
   type MITSTicketDraft,
   type PortalFaq,
+  type TriageRule,
 } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -65,11 +68,24 @@ export function ChatIntake({
    * with no articles passes.
    */
   faqs = [],
+  /**
+   * Keyword rules, the second way an article gets offered.
+   *
+   * The lexical match beside it finds what *shares vocabulary* with the article,
+   * which misses the case an admin can see coming: „Notebook" should pull up the
+   * notebook articles whether or not those articles happen to use the word often
+   * enough to clear the threshold. A rule says so directly.
+   *
+   * Empty when smart routing is off, which switches this half off and leaves the
+   * lexical half working.
+   */
+  triageRules = [],
 }: {
   schemaId: string;
   onSubmit: (draft: MITSTicketDraft) => Promise<void>;
   greetingName?: string;
   faqs?: PortalFaq[];
+  triageRules?: TriageRule[];
 }) {
   const reduceMotion = useReducedMotion();
 
@@ -127,10 +143,34 @@ export function ChatIntake({
     if (faqs.length === 0 || dismissedHints) return;
 
     const timer = window.setTimeout(() => {
-      setHits(suggestFaqs(`${title} ${description}`, faqs));
+      const text = `${title} ${description}`;
+
+      /*
+       * Keyword rules first, then the lexical match — and the order is the point.
+       *
+       * A rule is an admin saying „diese Artikel gehören zu diesem Wort", which is
+       * a stronger statement than a token overlap of 0.4. So the rules' articles
+       * head the list, and the lexical hits fill whatever room is left up to
+       * `DEFLECTION_LIMIT`.
+       *
+       * Deduplicated on the id: an article can be both named by a rule and found
+       * by the overlap, and the same question twice reads as a rendering bug.
+       */
+      const byKeyword = triage(text, triageRules)
+        .faqIds.map((id) => faqs.find((faq) => faq.id === id))
+        .filter((faq): faq is PortalFaq => faq !== undefined)
+        // Score 1: it was named, not measured. Nothing reads it here, but the
+        // shape has to match, and inventing a fraction would be a made-up number.
+        .map((faq) => ({ id: faq.id, question: faq.question, score: 1 }));
+
+      const lexical = suggestFaqs(text, faqs).filter(
+        (hit) => !byKeyword.some((named) => named.id === hit.id),
+      );
+
+      setHits([...byKeyword, ...lexical].slice(0, DEFLECTION_LIMIT));
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [title, description, faqs, dismissedHints]);
+  }, [title, description, faqs, triageRules, dismissedHints]);
 
   const handleSend = async () => {
     if (!canSend) return;
@@ -158,6 +198,9 @@ export function ChatIntake({
         },
         priority: "medium",
         location_id: null,
+        // Filled by the container, which owns the intent tiles above the tabs —
+        // see the same note in `SchemaForm`.
+        category_id: null,
       });
     } finally {
       // Left set on success too: the container swaps this whole component for the

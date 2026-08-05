@@ -34,6 +34,7 @@ const KIND_NOUN: Record<NotificationKind, [singular: string, plural: string]> = 
   reply: ["neue Antwort", "neue Antworten"],
   ticket: ["neues Ticket im Pool", "neue Tickets im Pool"],
   assigned: ["Ticket dir zugewiesen", "Tickets dir zugewiesen"],
+  reminder: ["fällige Erinnerung", "fällige Erinnerungen"],
 };
 
 /** German enumeration: "a, b und c". */

@@ -380,6 +380,66 @@ function migrateAppTables(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_mits_api_key_hash
       ON mits_api_key (key_hash);
+
+    -- Ticket categories, two levels deep in practice and arbitrarily deep in the
+    -- schema. A row with an empty parent is a root.
+    --
+    -- parent_id is NOT NULL with an empty-string default rather than nullable,
+    -- and that is the whole reason the unique index below works. SQLite (like
+    -- every SQL engine) treats NULLs as distinct in a unique index, so a
+    -- UNIQUE (parent_id, name) over a nullable column would happily accept
+    -- "Hardware" as a root twice — the one duplicate that matters, because the
+    -- cascading filter then shows two identical entries and each carries half the
+    -- tickets. The empty string is a value and collides with itself.
+    --
+    -- No self-referencing foreign key: '' is not a row, so the reference would
+    -- fail for every root. Removing a subtree is replaceCategories' job, and
+    -- mits_ticket.category_id is deliberately left dangling rather than taking
+    -- tickets with it — the same rule mits_location follows.
+    -- (No backticks anywhere in this block: the whole thing is a template
+    --  literal, and one would end it mid-statement.)
+    CREATE TABLE IF NOT EXISTS mits_ticket_category (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      parent_id   TEXT NOT NULL DEFAULT '',
+      -- Lucide icon name, resolved at render time. Only read for roots: the
+      -- intent tiles draw one per top-level category.
+      icon        TEXT NOT NULL DEFAULT '',
+      order_index INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_mits_category_sibling
+      ON mits_ticket_category (parent_id, name);
+    CREATE INDEX IF NOT EXISTS idx_mits_category_parent
+      ON mits_ticket_category (parent_id, order_index);
+
+    -- Somebody's note to themselves about a ticket, with a time attached.
+    --
+    -- Per user, not per ticket: two agents on one ticket have two different
+    -- reasons to look at it again, and a shared reminder would mean the first one
+    -- to tick it off silences the other. That is also why user_id leads the
+    -- index — every read is "what is due for *me*".
+    --
+    -- is_done rather than deleting the row: a reminder that fired and was
+    -- acknowledged is the record that somebody dealt with it, and the widget's
+    -- tick has to be undoable within the same render.
+    CREATE TABLE IF NOT EXISTS mits_ticket_reminder (
+      id         TEXT PRIMARY KEY,
+      ticket_id  TEXT NOT NULL,
+      user_id    TEXT NOT NULL,
+      due_at     TEXT NOT NULL,
+      note       TEXT NOT NULL DEFAULT '',
+      is_done    INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    -- The shape of every read: mine, still open, soonest first.
+    CREATE INDEX IF NOT EXISTS idx_mits_reminder_user
+      ON mits_ticket_reminder (user_id, is_done, due_at);
+    CREATE INDEX IF NOT EXISTS idx_mits_reminder_ticket
+      ON mits_ticket_reminder (ticket_id, user_id);
   `);
 
   addColumns(database);
@@ -675,6 +735,22 @@ function addColumns(database: Database.Database): void {
       column: "inventory_number",
       definition: "INTEGER",
     },
+    /*
+     * Which category this ticket belongs to — the leaf, not the root.
+     *
+     * Nullable, and NULL means "nobody has said": every ticket written before
+     * categories existed is genuinely uncategorised, and the cascading filter has
+     * to be able to distinguish that from "Hardware / unspecified". Guessing one
+     * from the form schema's free-text `category` string on migration would file a
+     * few thousand tickets under a name that merely looks similar.
+     *
+     * The leaf rather than the pair: a leaf implies its ancestors, and storing both
+     * would be two columns that can disagree. `resolveCategoryPath` walks up.
+     *
+     * No foreign key, like `location_id`: deleting a category must not delete the
+     * tickets that referenced it, and a ticket whose category is gone still opens.
+     */
+    { table: "mits_ticket", column: "category_id", definition: "TEXT" },
   ];
 
   for (const { table, column, definition } of additions) {
@@ -707,6 +783,17 @@ function addColumns(database: Database.Database): void {
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_mits_ci_inventory_number
        ON mits_configuration_item (inventory_number)
        WHERE inventory_number IS NOT NULL`,
+  );
+
+  /*
+   * Partial, on the rows the category filter actually selects. An uncategorised
+   * ticket is never a match for `?category=`, so keeping the NULLs out of the
+   * index costs nothing and keeps it small on an instance that never adopted
+   * categories at all.
+   */
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_mits_ticket_category
+       ON mits_ticket (category_id) WHERE category_id IS NOT NULL`,
   );
 }
 

@@ -3,6 +3,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   BellIcon,
+  BellRingIcon,
   CheckCircle2Icon,
   MessageSquareIcon,
   TicketIcon,
@@ -59,6 +60,7 @@ export type ToastKind =
   | "reply"
   | "ticket"
   | "assigned"
+  | "reminder"
   | "digest"
   | "system";
 
@@ -96,6 +98,9 @@ const ICONS: Record<ToastKind, typeof BellIcon> = {
   reply: MessageSquareIcon,
   ticket: TicketIcon,
   assigned: UserIcon,
+  // A ringing bell, not the plain one: this is the only channel somebody asked
+  // for by hand, and the digest below already owns the quiet bell.
+  reminder: BellRingIcon,
   // The one that stands for several things at once, so a bell rather than any
   // one of the three icons it replaced.
   digest: BellIcon,

@@ -5,11 +5,18 @@ import { FaqAccordion } from "@/components/dashboard/faq-accordion";
 import { MaintenanceNotice } from "@/components/dashboard/maintenance-notice";
 import { OpenTicketsPanel } from "@/components/dashboard/open-tickets-panel";
 import { PortalActions } from "@/components/dashboard/portal-actions";
+import { RemindersWidget } from "@/components/dashboard/reminders-widget";
 import { ResourceGrid } from "@/components/dashboard/resource-grid";
 import { ServiceStatus } from "@/components/dashboard/service-status";
 import { AppHeader } from "@/components/layout/app-header";
 import { requireUser } from "@/lib/auth/session";
-import { resolveRefreshMinutes } from "@/lib/system-settings";
+import { getFeatureFlags } from "@/lib/features";
+import { formatDateTime } from "@/lib/format";
+import { listUpcomingReminders } from "@/lib/ticket-reminders";
+import {
+  getSystemTimezone,
+  resolveRefreshMinutes,
+} from "@/lib/system-settings";
 import {
   getActiveAnnouncements,
   getActiveMaintenanceNotices,
@@ -19,7 +26,11 @@ import {
   getPortalServices,
 } from "@/lib/portal";
 import { listOwnTickets } from "@/lib/tickets";
-import { fillPortalText, type PortalWidgetKey } from "@/types/mits";
+import {
+  fillPortalText,
+  formatTicketNumber,
+  type PortalWidgetKey,
+} from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    The reporter's self-service portal.
@@ -36,6 +47,27 @@ export default async function CustomerPortalPage() {
   const user = await requireUser("/customer");
   const config = getPortalConfig();
   const titles = config.widget_titles;
+
+  /*
+   * The reporter's own reminders, formatted server-side.
+   *
+   * Same arrangement as the queue's copy of this widget: the component is a client
+   * one because each row's tick is a form, so the instance's timezone is applied
+   * here rather than shipping a second formatter to the browser.
+   */
+  const timezone = getSystemTimezone();
+  const nowMs = Date.now();
+  const reminderRows = getFeatureFlags().feature_ticket_reminders
+    ? listUpcomingReminders(user.id).map((entry) => ({
+        id: entry.id,
+        ticketId: entry.ticket_id,
+        ticketNumber: formatTicketNumber(entry.ticket_number),
+        ticketTitle: entry.ticket_title,
+        dueLabel: formatDateTime(new Date(entry.due_at), timezone),
+        note: entry.note,
+        overdue: new Date(entry.due_at).getTime() <= nowMs,
+      }))
+    : [];
 
   // Just the given name: "Hallo Jana" reads like a colleague, the full address
   // like a mail merge.
@@ -95,6 +127,16 @@ export default async function CustomerPortalPage() {
               for, and burying it behind a toggle would let an admin lock everyone
               out of the intake by accident. */}
           <PortalActions label={config.ticket_button_label} />
+
+          {/*
+            Reminders, and deliberately not one of the configurable widgets below.
+            The list is empty for almost everybody almost always — `RemindersWidget`
+            renders null on an empty list — so it costs nothing when it is not
+            relevant, and it is the one panel on this page that is about a moment
+            somebody chose. A toggle for it would be a switch that silently drops a
+            reminder the person asked for.
+          */}
+          <RemindersWidget rows={reminderRows} detailBase="/customer/tickets" />
 
           {config.widget_order
             .filter((key) => config.enabled_widgets[key])

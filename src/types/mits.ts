@@ -324,6 +324,17 @@ export const MITSTicketSchema = z.object({
   ticket_number: z.coerce.number().int().nonnegative().default(0),
   /** Branch or site this ticket belongs to. Null for tickets filed before locations. */
   location_id: z.string().nullable().default(null),
+  /**
+   * The category this ticket sits in — always the leaf, never the pair.
+   *
+   * Null means uncategorised, which is honest for every ticket filed before
+   * categories existed and for one the triage rules did not recognise. The
+   * cascading filter treats it as "no match" rather than folding it into a root.
+   *
+   * Defaulted, so a row written before the column parses instead of throwing on
+   * read — the same reason `location_id` is.
+   */
+  category_id: z.string().nullable().default(null),
   source: TicketSource,
   /** Which MITSFormSchema produced `payload`. Absent for free-text legacy tickets. */
   form_schema_id: z.string().optional(),
@@ -436,6 +447,17 @@ export const MITSTicketDraftSchema = MITSTicketSchema.omit({
   priority: TicketPriority.default(DEFAULT_TICKET_PRIORITY),
   /** The reporter may state their site; everything else about them comes from the session. */
   location_id: z.string().nullable().default(null),
+  /**
+   * Kept rather than omitted, unlike `tags` and `cc_emails`, and the difference is
+   * what the value can do. A category is a filing decision: the intent tiles are
+   * the reporter making it, and getting it wrong costs a re-route. It grants
+   * nothing and reaches nobody.
+   *
+   * Still not trusted as given — `createTicket` checks the id against the category
+   * table and drops an unknown one to null rather than storing a dangling
+   * reference that no filter would ever match.
+   */
+  category_id: z.string().nullable().default(null),
 });
 export type MITSTicketDraft = z.infer<typeof MITSTicketDraftSchema>;
 
@@ -1105,6 +1127,7 @@ export const AuditAction = z.enum([
   "link_removed",
   "checklist_set",
   "cc_changed",
+  "category_changed",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
@@ -1126,6 +1149,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   link_removed: "Verknüpfung entfernt",
   checklist_set: "Checkliste beantwortet",
   cc_changed: "Beteiligte geändert",
+  category_changed: "Kategorie geändert",
 };
 
 /**
@@ -1790,6 +1814,17 @@ export const FeatureFlagsSchema = z.object({
   feature_stats_heatmap: z.boolean().default(true),
   feature_sla_countdown: z.boolean().default(false),
   feature_auto_merge_suggestions: z.boolean().default(false),
+  feature_ticket_reminders: z.boolean().default(true),
+  feature_ticket_categories: z.boolean().default(true),
+  /**
+   * Off by default, unlike the two above.
+   *
+   * The other two are inert until somebody uses them — an instance with no
+   * categories shows no filter, an instance with no reminders shows an empty
+   * widget. This one *writes* to incoming tickets, so it must be a decision
+   * somebody made rather than something that started happening after an update.
+   */
+  feature_smart_routing: z.boolean().default(false),
 });
 export type FeatureFlags = z.infer<typeof FeatureFlagsSchema>;
 export type FeatureFlagKey = keyof FeatureFlags;
@@ -1802,16 +1837,21 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = FeatureFlagsSchema.parse({});
    Modelled on the notification settings a phone has, because that is the mental
    model people already carry: a small number of named channels, each with its
    own switch and its own urgency, plus a few properties of the presentation
-   itself. It is not a free-form editor — the channels are the three things MITS
-   can tell somebody about, and inventing a fourth means writing the query that
-   finds it.
+   itself. It is not a free-form editor — the channels are the things MITS can
+   tell somebody about, and inventing another one means writing the query that
+   finds it. `reminder` is the fourth, and its query is `dueReminders`.
 
    **`feature_toast_notifications` stays the master switch.** These settings shape
    what is shown, they do not decide *whether*. Two places that can silence
    notifications is one place too many to look when they are missing.
    ────────────────────────────────────────────────────────────────────────── */
 
-export const NOTIFICATION_CHANNELS = ["reply", "ticket", "assigned"] as const;
+export const NOTIFICATION_CHANNELS = [
+  "reply",
+  "ticket",
+  "assigned",
+  "reminder",
+] as const;
 export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
 
 export const NOTIFICATION_CHANNEL_META: Record<
@@ -1835,6 +1875,20 @@ export const NOTIFICATION_CHANNEL_META: Record<
     description:
       "Jemand anderes hat dir ein Ticket übergeben. Nur für Agenten.",
     staffOnly: true,
+  },
+  reminder: {
+    /*
+     * Not staff-only, unlike the two above it.
+     *
+     * A reporter can set a reminder on their own ticket — "nachfragen, wenn bis
+     * Freitag nichts passiert ist" is the most reasonable thing somebody waiting
+     * on a ticket can do, and the alternative is that they ask on Tuesday
+     * instead.
+     */
+    label: "Erinnerung fällig",
+    description:
+      "Eine Erinnerung, die du selbst auf ein Ticket gelegt hast, ist fällig.",
+    staffOnly: false,
   },
 };
 
@@ -1899,6 +1953,16 @@ export const NotificationSettingsSchema = z.object({
   ticket_tone: ToastTone.default("info"),
   ticket_sticky: z.boolean().default(false),
 
+  reminder_enabled: z.boolean().default(true),
+  reminder_tone: ToastTone.default("warning"),
+  /*
+   * Stays until dismissed, like an assignment and for a stronger reason: the
+   * person asked to be told at this moment. A reminder that fired while they were
+   * in a meeting and vanished after five seconds is the one notification whose
+   * whole purpose was to survive not being watched.
+   */
+  reminder_sticky: z.boolean().default(true),
+
   assigned_enabled: z.boolean().default(true),
   assigned_tone: ToastTone.default("success"),
   /** On by default: a ticket handed to you is the one that must not scroll past. */
@@ -1909,7 +1973,7 @@ export type NotificationSettings = z.infer<typeof NotificationSettingsSchema>;
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings =
   NotificationSettingsSchema.parse({});
 
-/** The three per-channel keys, so the form and the client read them the same way. */
+/** The per-channel keys, so the form and the client read them the same way. */
 export function channelConfig(
   settings: NotificationSettings,
   channel: NotificationChannel,
@@ -2105,6 +2169,21 @@ export const FEATURE_FLAG_META: Record<
     label: "SLA-Countdown",
     description:
       "Restzeit bis zur Reaktionsfrist am Ticket. Ohne gepflegte SLA-Zeiten wenig aussagekräftig.",
+  },
+  feature_ticket_reminders: {
+    label: "Ticket-Erinnerungen",
+    description:
+      "Ein Ticket auf später legen: Knopf am Ticket, Einblendung bei Fälligkeit, Liste der anstehenden Erinnerungen im Portal.",
+  },
+  feature_ticket_categories: {
+    label: "Kategorien",
+    description:
+      "Haupt- und Unterkategorie am Ticket, kaskadierender Filter in der Queue. Gepflegt unter /admin/categories.",
+  },
+  feature_smart_routing: {
+    label: "Smart-Routing",
+    description:
+      "Regeln ordnen eingehende Tickets anhand von Stichworten einer Kategorie zu und zeigen Anwendern passende FAQ-Einträge. Gepflegt unter /admin/settings/routing.",
   },
   feature_auto_merge_suggestions: {
     label: "Zusammenführungs-Vorschläge",
@@ -3066,3 +3145,150 @@ export function isSafeResourceHref(href: string): boolean {
     return false;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Ticket categories: a tree, two levels deep in practice.
+
+   Distinct from `MITSFormSchema.category`, which is a free-text grouping
+   headline on a form and stays what it is. This is the filing dimension the
+   queue filters on and the triage rules write, so it needs ids: a ticket that
+   referenced a category by name would move to a different bucket the day
+   somebody fixed a typo in that name.
+
+   Depth is not enforced in the schema. The filter shows two levels because that
+   is what fits two dropdowns; nothing breaks on a third, it simply does not get
+   its own control. Enforcing a maximum would mean a migration the day somebody
+   wants "Hardware / Notebooks / Docking".
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const MITSTicketCategorySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1).max(80),
+  /**
+   * Empty string for a root, never null.
+   *
+   * The storage layer explains why at length: a nullable parent makes the
+   * sibling-uniqueness index useless for roots, because SQL counts NULLs as
+   * distinct. The empty string is a value and collides with itself, so
+   * "Hardware" cannot exist twice at the top level.
+   */
+  parent_id: z.string().default(""),
+  /** Lucide icon name, resolved at render time. Only the roots draw one. */
+  icon: z.string().max(60).default(""),
+  order_index: z.number().int().nonnegative().default(0),
+});
+export type MITSTicketCategory = z.infer<typeof MITSTicketCategorySchema>;
+
+/** A root with its children, which is the shape both the tree editor and the filter want. */
+export interface MITSCategoryNode extends MITSTicketCategory {
+  children: MITSTicketCategory[];
+}
+
+/** Root marker. A named constant because it appears in SQL, forms and URLs. */
+export const CATEGORY_ROOT = "";
+
+/**
+ * `Hardware / Notebooks` — the reading a badge and a filter notice both need.
+ *
+ * Joined with a slash rather than `›`: the path shows up in the ticket header,
+ * in the re-route dialog and in the filter notice, and a character that is not
+ * on a keyboard makes it unsearchable in the very field that searches payloads.
+ */
+export function categoryPathLabel(parts: string[]): string {
+  return parts.filter(Boolean).join(" / ");
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Reminders: snooze a ticket to a point in time.
+
+   Per user and per ticket, and the pair is deliberately not unique — "look at
+   this after the call" and "chase this on Friday" are two reminders, and
+   collapsing them into one row would silently discard the second.
+
+   `due_at` is an ISO instant, not a local date-time string. The presets below
+   compute it from a timezone once, at the moment somebody clicks; storing the
+   local reading would make "morgen 09:00" mean something different after a
+   DST switch, on exactly the tickets that were snoozed across one.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const MITSTicketReminderSchema = z.object({
+  id: z.string().min(1),
+  ticket_id: z.string().min(1),
+  user_id: z.string().min(1),
+  due_at: z.string().min(1),
+  note: z.string().max(500).default(""),
+  is_done: z.boolean().default(false),
+  created_at: z.string().min(1),
+});
+export type MITSTicketReminder = z.infer<typeof MITSTicketReminderSchema>;
+
+/**
+ * The three one-click offsets, plus the free date-time field beside them.
+ *
+ * Fixed rather than admin-configurable. They are the answer to "not now" at
+ * three different distances — later today, tomorrow morning, next week-ish —
+ * and a settings page for them would be four numbers nobody has an opinion
+ * about until they are wrong.
+ */
+export const REMINDER_PRESETS = [
+  { value: "hours-2", label: "In 2 Stunden" },
+  { value: "tomorrow-9", label: "Morgen 09:00 Uhr" },
+  { value: "days-3", label: "In 3 Tagen" },
+] as const;
+
+export type ReminderPreset = (typeof REMINDER_PRESETS)[number]["value"];
+
+export const REMINDER_PRESET_VALUES = REMINDER_PRESETS.map(
+  (entry) => entry.value,
+) as ReminderPreset[];
+
+export function isReminderPreset(value: unknown): value is ReminderPreset {
+  return (
+    typeof value === "string" &&
+    (REMINDER_PRESET_VALUES as string[]).includes(value)
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Triage rules: keywords in, category out.
+
+   Deterministic, admin-authored, and evaluated in order. Not a model, and that
+   is the decision rather than a limitation — a rule that files "Drucker" under
+   Hardware/Drucker can be read, tested and explained to the person whose ticket
+   it moved. `services/ai/routing.ts` keeps doing what it did: it suggests, in a
+   tag, and never writes a category.
+
+   The same rule also carries the FAQ entries worth offering while somebody is
+   still typing the word. One list, because it is one statement about a word: if
+   "Notebook" means Hardware/Notebooks, the articles about notebooks are the ones
+   to show — maintaining that twice is how the two drift apart.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const TriageRuleSchema = z.object({
+  id: z.string().min(1),
+  /** What an admin calls this rule in the list. Never shown to a reporter. */
+  title: z.string().min(1).max(120),
+  /**
+   * Words that trigger it, lower-cased on save.
+   *
+   * Matched as whole words against the ticket text, so "drucker" does not fire on
+   * "druckereinstellungen"… except that in German it should, which is why
+   * `matchesKeyword` also accepts a prefix of at least five characters. See there.
+   */
+  keywords: z.array(z.string().min(2).max(40)).max(40).default([]),
+  /** Category id assigned on a hit. Empty means "only offer the articles". */
+  category_id: z.string().max(64).default(""),
+  /**
+   * Raise the priority on a hit, or leave it alone.
+   *
+   * Only ever upward — `applyTriage` will not lower what a reporter or an agent
+   * already set. A rule that quietly demoted a ticket somebody marked urgent
+   * would be the worst kind of automation: invisible and contradicting a person.
+   */
+  priority: z.union([TicketPriority, z.literal("")]).default(""),
+  /** FAQ ids offered in the intake while the words are being typed. */
+  faq_ids: z.array(z.string().min(1)).max(10).default([]),
+  order_index: z.number().int().nonnegative().default(0),
+  enabled: z.boolean().default(true),
+});
+export type TriageRule = z.infer<typeof TriageRuleSchema>;

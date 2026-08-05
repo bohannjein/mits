@@ -1,4 +1,5 @@
 import {
+  AppWindowIcon,
   BookOpenIcon,
   BotIcon,
   DownloadIcon,
@@ -30,6 +31,9 @@ import {
  * components into the client bundle.
  */
 const ICONS: Record<string, LucideIcon> = {
+  // Added for the category tiles: „Software" needs a window, and `Laptop` and
+  // `KeyRound` below already cover the other two an intake starts with.
+  AppWindow: AppWindowIcon,
   BookOpen: BookOpenIcon,
   Bot: BotIcon,
   Download: DownloadIcon,

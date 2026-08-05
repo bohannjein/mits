@@ -61,6 +61,10 @@ try {
   const audit = await import("../src/lib/audit");
   const ai = await import("../src/lib/ai-settings");
   const realtime = await import("../src/lib/services/realtime");
+  const ticketCategories = await import("../src/lib/ticket-categories");
+  const triageRules = await import("../src/lib/triage-rules");
+  const reminders = await import("../src/lib/ticket-reminders");
+  const notifications = await import("../src/lib/notifications");
   const db = (await import("../src/lib/db/sqlite")).db;
 
   /*
@@ -303,6 +307,153 @@ try {
     return hits.length;
   });
 
+  /*
+   * Categories before tickets, so a ticket can actually be filed into one.
+   *
+   * The empty-string parent is the whole reason this section exists here rather
+   * than beside the locations: the sibling-uniqueness index only works because
+   * a root's parent is a value and not NULL, and that is a property of the
+   * statement, which is what this suite tests.
+   */
+  console.log("ticket categories");
+  const rootId = randomUUID();
+  const childId = randomUUID();
+  check("create a tree", () =>
+    ticketCategories.replaceCategories([
+      mits.MITSTicketCategorySchema.parse({
+        id: rootId,
+        name: "Hardware",
+        icon: "Laptop",
+      }),
+      mits.MITSTicketCategorySchema.parse({
+        id: childId,
+        name: "Notebooks",
+        parent_id: rootId,
+      }),
+    ]),
+  );
+  check("read the tree", () => {
+    const tree = ticketCategories.listCategoryTree();
+    if (tree.length !== 1) throw new Error(`expected 1 root, got ${tree.length}`);
+    if (tree[0].children.length !== 1) throw new Error("child missing");
+    return tree;
+  });
+  check("descendants include the root itself", () => {
+    const ids = ticketCategories.descendantCategoryIds(rootId);
+    if (!ids.includes(rootId) || !ids.includes(childId)) {
+      throw new Error(JSON.stringify(ids));
+    }
+    return ids;
+  });
+  check("path reads root first", () => {
+    const label = ticketCategories.categoryLabel(childId);
+    if (label !== "Hardware / Notebooks") throw new Error(label);
+    return label;
+  });
+  check("a deleted category has no path", () => {
+    const label = ticketCategories.categoryLabel(randomUUID());
+    if (label !== "") throw new Error(label);
+    return label;
+  });
+  check("an orphan is refused", () => {
+    try {
+      ticketCategories.replaceCategories([
+        mits.MITSTicketCategorySchema.parse({
+          id: childId,
+          name: "Notebooks",
+          parent_id: randomUUID(),
+        }),
+      ]);
+    } catch (error) {
+      if (error instanceof ticketCategories.CategoryError) return "refused";
+      throw error;
+    }
+    throw new Error("an orphan was accepted");
+  });
+  check("two roots with one name are refused", () => {
+    try {
+      ticketCategories.replaceCategories([
+        mits.MITSTicketCategorySchema.parse({ id: randomUUID(), name: "Hardware" }),
+        mits.MITSTicketCategorySchema.parse({ id: randomUUID(), name: "hardware" }),
+      ]);
+    } catch (error) {
+      if (error instanceof ticketCategories.CategoryError) return "refused";
+      throw error;
+    }
+    throw new Error("a duplicate sibling was accepted");
+  });
+  // Restore the tree the duplicate attempt above rolled back to nothing.
+  check("restore the tree", () =>
+    ticketCategories.replaceCategories([
+      mits.MITSTicketCategorySchema.parse({ id: rootId, name: "Hardware" }),
+      mits.MITSTicketCategorySchema.parse({
+        id: childId,
+        name: "Notebooks",
+        parent_id: rootId,
+      }),
+    ]),
+  );
+  check("ticket counts", () => ticketCategories.ticketCountsByCategory());
+
+  console.log("triage rules");
+  check("save", () =>
+    triageRules.setTriageRules([
+      mits.TriageRuleSchema.parse({
+        id: randomUUID(),
+        title: "Notebooks",
+        keywords: ["Notebook", "notebook", "akku"],
+        category_id: childId,
+        priority: "high",
+      }),
+    ]),
+  );
+  check("keywords are lower-cased and deduplicated", () => {
+    const rows = triageRules.listTriageRules();
+    if (rows.length !== 1) throw new Error(`expected 1, got ${rows.length}`);
+    if (rows[0].keywords.join(",") !== "notebook,akku") {
+      throw new Error(rows[0].keywords.join(","));
+    }
+    return rows;
+  });
+  check("a rule without keywords is dropped", () => {
+    triageRules.setTriageRules([
+      mits.TriageRuleSchema.parse({ id: randomUUID(), title: "Leer" }),
+    ]);
+    const rows = triageRules.listTriageRules();
+    if (rows.length !== 0) throw new Error(`expected 0, got ${rows.length}`);
+    return rows;
+  });
+  check("two rules with one name are refused", () => {
+    try {
+      triageRules.setTriageRules([
+        mits.TriageRuleSchema.parse({
+          id: randomUUID(),
+          title: "Doppelt",
+          keywords: ["a1"],
+        }),
+        mits.TriageRuleSchema.parse({
+          id: randomUUID(),
+          title: "doppelt",
+          keywords: ["b1"],
+        }),
+      ]);
+    } catch (error) {
+      if (error instanceof triageRules.TriageRuleError) return "refused";
+      throw error;
+    }
+    throw new Error("a duplicate title was accepted");
+  });
+  check("restore one rule", () =>
+    triageRules.setTriageRules([
+      mits.TriageRuleSchema.parse({
+        id: randomUUID(),
+        title: "Notebooks",
+        keywords: ["notebook"],
+        category_id: childId,
+      }),
+    ]),
+  );
+
   console.log("tickets");
   let ticketId = "";
   check("create", () => {
@@ -318,10 +469,72 @@ try {
           category: "hardware",
         },
         location_id: siteId,
+        // The reporter's own filing decision, which the create path checks against
+        // the category table before storing. An id that does not exist is dropped
+        // to null rather than stored as a reference no filter resolves.
+        category_id: childId,
       }),
       reporter,
     );
     ticketId = ticket.id;
+  });
+
+  check("the category stuck", () => {
+    const ticket = tickets.getTicketFor(ticketId, agent);
+    if (ticket?.category_id !== childId) {
+      throw new Error(String(ticket?.category_id));
+    }
+    return ticket.category_id;
+  });
+  check("an unknown category is dropped, not stored", () => {
+    const ticket = tickets.createTicket(
+      mits.MITSTicketDraftSchema.parse({
+        source: "legacy",
+        form_schema_id: "quick-ticket",
+        payload: {
+          title: "Monitor flackert",
+          description: "Der linke Monitor flackert seit heute Morgen dauerhaft.",
+        },
+        category_id: randomUUID(),
+      }),
+      // Filed by the agent, not the reporter: the free-text search check further
+      // down asserts an exact hit count for the reporter's name, and a second
+      // ticket of theirs would break an assertion that has nothing to do with
+      // categories.
+      agent,
+    );
+    if (ticket.category_id !== null) throw new Error(String(ticket.category_id));
+    return ticket.category_id;
+  });
+  check("filter by the root finds the child's ticket", () => {
+    const found = tickets.searchTickets({ categoryId: rootId }, agent);
+    if (!found.some((entry) => entry.id === ticketId)) {
+      throw new Error(`${found.length} rows, none of them ours`);
+    }
+    return found.length;
+  });
+  check("counting agrees with the listing", () =>
+    tickets.countSearchTickets({ categoryId: rootId }, agent),
+  );
+  check("an unknown category matches nothing", () => {
+    const n = tickets.countSearchTickets({ categoryId: randomUUID() }, agent);
+    if (n !== 0) throw new Error(`expected 0, got ${n}`);
+    return n;
+  });
+  check("re-route", () =>
+    tickets.setTicketCategory(ticketId, rootId, agent),
+  );
+  check("re-route to nothing", () =>
+    tickets.setTicketCategory(ticketId, null, agent),
+  );
+  check("re-route to an unknown category is refused", () => {
+    try {
+      tickets.setTicketCategory(ticketId, randomUUID(), agent);
+    } catch (error) {
+      if (error instanceof tickets.TicketUpdateError) return "refused";
+      throw error;
+    }
+    throw new Error("an unknown category was accepted");
   });
 
   check("attach a CI", () => cmdb.attachCIToTicket(ticketId, ciId, agentId));
@@ -637,6 +850,128 @@ try {
    * comments, worklogs, links, read marks, an audit trail and an attached object is
    * exactly the shape that makes a wrong order fail, and it exists at this point.
    */
+  console.log("reminders");
+  let reminderId = "";
+  check("create", () => {
+    const entry = reminders.createReminder(
+      ticketId,
+      agent,
+      new Date(Date.now() + 60_000),
+      "Beim Kunden nachfragen",
+    );
+    reminderId = entry.id;
+  });
+  check("a reminder on a foreign ticket is refused", () => {
+    try {
+      reminders.createReminder(
+        randomUUID(),
+        agent,
+        new Date(Date.now() + 60_000),
+        "",
+      );
+    } catch (error) {
+      if (error instanceof reminders.ReminderError) return "refused";
+      throw error;
+    }
+    throw new Error("a reminder was created on a ticket that does not exist");
+  });
+  check("list for the ticket", () => {
+    const rows = reminders.listRemindersForTicket(ticketId, agentId);
+    if (rows.length !== 1) throw new Error(`expected 1, got ${rows.length}`);
+    return rows;
+  });
+  check("the next one is the badge's", () => {
+    const next = reminders.nextReminderFor(ticketId, agentId);
+    if (next?.id !== reminderId) throw new Error(String(next?.id));
+    return next.id;
+  });
+  check("somebody else sees none of it", () => {
+    const rows = reminders.listRemindersForTicket(ticketId, reporterId);
+    if (rows.length !== 0) throw new Error(`expected 0, got ${rows.length}`);
+    return rows;
+  });
+  check("the widget list joins the ticket", () => {
+    const rows = reminders.listUpcomingReminders(agentId);
+    if (rows.length !== 1) throw new Error(`expected 1, got ${rows.length}`);
+    if (!rows[0].ticket_title) throw new Error("ticket title not joined");
+    return rows;
+  });
+
+  /*
+   * A reminder in the past is due, and `dueReminders` is what the notification
+   * feed reads. The window is `since < due_at <= now`, which is what makes the
+   * announcement happen exactly once without a delivery flag.
+   */
+  const past = new Date(Date.now() - 60_000);
+  let dueId = "";
+  check("create one that is already due", () => {
+    const entry = reminders.createReminder(ticketId, agent, past, "Fällig");
+    dueId = entry.id;
+  });
+  check("it is counted as due", () => {
+    const n = reminders.countDueReminders(agentId);
+    if (n !== 1) throw new Error(`expected 1, got ${n}`);
+    return n;
+  });
+  check("it appears in the window", () => {
+    const rows = reminders.dueReminders(
+      agentId,
+      new Date(Date.now() - 120_000).toISOString(),
+    );
+    if (!rows.some((row) => row.id === dueId)) {
+      throw new Error(`${rows.length} rows, none of them ours`);
+    }
+    return rows.length;
+  });
+  check("and not in a window that has moved past it", () => {
+    const rows = reminders.dueReminders(agentId, new Date().toISOString());
+    if (rows.length !== 0) throw new Error(`expected 0, got ${rows.length}`);
+    return rows;
+  });
+  check("the cron sees somebody with work due", () => {
+    const ids = reminders.usersWithDueReminders();
+    if (!ids.includes(agentId)) throw new Error(JSON.stringify(ids));
+    return ids;
+  });
+  check("the notification feed carries it", () => {
+    const rows = notifications.listNotifications(
+      agent,
+      new Date(Date.now() - 120_000).toISOString(),
+    );
+    if (!rows.some((row) => row.kind === "reminder")) {
+      throw new Error(rows.map((row) => row.kind).join(",") || "none");
+    }
+    return rows.length;
+  });
+  check("ticking it off silences it", () => {
+    reminders.setReminderDone(dueId, agentId, true);
+    const n = reminders.countDueReminders(agentId);
+    if (n !== 0) throw new Error(`expected 0, got ${n}`);
+    return n;
+  });
+  check("and it can come back", () =>
+    reminders.setReminderDone(dueId, agentId, false),
+  );
+  check("somebody else cannot tick it off", () => {
+    try {
+      reminders.setReminderDone(dueId, reporterId, true);
+    } catch (error) {
+      if (error instanceof reminders.ReminderError) return "refused";
+      throw error;
+    }
+    throw new Error("a foreign reminder was ticked off");
+  });
+  check("delete", () => reminders.deleteReminder(reminderId, agentId));
+  check("deleting it twice is refused", () => {
+    try {
+      reminders.deleteReminder(reminderId, agentId);
+    } catch (error) {
+      if (error instanceof reminders.ReminderError) return "refused";
+      throw error;
+    }
+    throw new Error("a missing reminder was deleted");
+  });
+
   console.log("purge");
   const purge = await import("../src/lib/purge");
   check("counts before", () => {

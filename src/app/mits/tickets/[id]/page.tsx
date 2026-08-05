@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { AlertTriangleIcon, TagIcon, UserIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  FolderTreeIcon,
+  TagIcon,
+  UserIcon,
+} from "lucide-react";
 
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
@@ -32,6 +37,14 @@ import { getLocation } from "@/lib/locations";
 import { formatDateTime } from "@/lib/format";
 import { getSystemTimezone } from "@/lib/system-settings";
 import { listAuditFor } from "@/lib/audit";
+import {
+  categoryLabel,
+  categoryPath,
+  listCategoryTree,
+} from "@/lib/ticket-categories";
+import { listRemindersForTicket } from "@/lib/ticket-reminders";
+import { triage } from "@/lib/services/auto-triage";
+import { listTriageRules } from "@/lib/triage-rules";
 import { listUploadsForTicket } from "@/lib/storage";
 import { collectLinks } from "@/lib/ticket-resources";
 import {
@@ -259,6 +272,65 @@ export default async function AgentTicketPage({
       }
     : null;
 
+  /*
+   * This agent's own reminders on this ticket, formatted here.
+   *
+   * The popover is a client component, so the due times become strings on this
+   * side — every timestamp in MITS is rendered through `lib/format.ts` with the
+   * instance's timezone, and handing the browser an ISO string plus a zone name
+   * would be a second formatter for the one thing that already has one.
+   *
+   * `overdue` is computed here too, for the same reason: a client comparing
+   * against its own clock would disagree with the server on a laptop whose time is
+   * off, and „fällig" is the one word on this button that has to be right.
+   */
+  const timezone = getSystemTimezone();
+  const nowMs = Date.now();
+  const reminders = flags.feature_ticket_reminders
+    ? listRemindersForTicket(id, user.id).map((entry) => ({
+        id: entry.id,
+        dueLabel: formatDateTime(new Date(entry.due_at), timezone),
+        note: entry.note,
+        overdue: new Date(entry.due_at).getTime() <= nowMs,
+      }))
+    : null;
+
+  /*
+   * Everything the re-route dialog needs, or null.
+   *
+   * The suggestion comes from the **triage rules**, not from the model's routing
+   * tag. The tag names a *form schema* (`passt-eher:<id>`), and there is no table
+   * that maps a schema to a category — inventing one here would be this page
+   * guessing from strings. The rules, by contrast, produce a category id directly
+   * and can be read back: „Regel Drucker hätte das nach Hardware / Drucker
+   * gelegt". The tag keeps rendering as a badge in the header, unchanged.
+   *
+   * Null when the tree is empty as well as when the module is off: a dialog whose
+   * only option is „keine Kategorie" is a button that leads nowhere.
+   */
+  const categoryTree = flags.feature_ticket_categories ? listCategoryTree() : [];
+  const suggestedCategoryId = flags.feature_smart_routing
+    ? triage(
+        `${ticket.title}\n${openingField ? String(ticket.payload[openingField] ?? "") : ""}`,
+        listTriageRules(),
+      ).categoryId
+    : "";
+
+  const routing =
+    categoryTree.length > 0
+      ? {
+          categories: categoryTree,
+          currentCategoryId: ticket.category_id,
+          suggestion:
+            suggestedCategoryId && suggestedCategoryId !== ticket.category_id
+              ? {
+                  id: suggestedCategoryId,
+                  path: categoryPath(suggestedCategoryId),
+                }
+              : null,
+        }
+      : null;
+
   const links = flags.feature_ticket_linking
     ? listLinksFor(id, user).map((link) => ({
         id: link.id,
@@ -350,6 +422,22 @@ export default async function AgentTicketPage({
                     {TICKET_PRIORITY_LABELS[ticket.priority]}
                   </Badge>
 
+                  {/*
+                    The category, when there is one. Absent rather than „Keine
+                    Kategorie": an empty badge in a strip of five would read as a
+                    field somebody failed to fill in, and on an instance without
+                    categories it would sit on every ticket forever.
+                  */}
+                  {ticket.category_id && categoryLabel(ticket.category_id) && (
+                    <Badge
+                      variant="outline"
+                      className="h-auto rounded-full px-2 py-0 text-[11px] font-normal"
+                    >
+                      <FolderTreeIcon className="size-3" strokeWidth={1.5} />
+                      {categoryLabel(ticket.category_id)}
+                    </Badge>
+                  )}
+
                   {/* Assignment as a badge rather than a sidebar-only field: it is
                       the attribute most often checked and least often changed, so
                       it belongs where it can be read without opening anything. */}
@@ -402,6 +490,8 @@ export default async function AgentTicketPage({
                 checklist={checklist.length > 0 ? checklist : null}
                 worklog={worklog}
                 links={links}
+                reminders={reminders}
+                routing={routing}
               >
               <TicketMessages
                 // Prepended, not merged by timestamp: the opening message *is* the

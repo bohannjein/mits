@@ -17,6 +17,7 @@ import { SchemaForm } from "@/components/forms/schema-form";
 import { AiChatTab } from "@/components/tickets/ai-chat-tab";
 import { ChatIntake } from "@/components/tickets/chat-intake";
 import { TicketReceipt } from "@/components/tickets/draft-receipt";
+import { IntentTiles } from "@/components/tickets/intent-tiles";
 import { LocationPicker } from "@/components/tickets/location-picker";
 import { ServiceCatalog } from "@/components/tickets/service-catalog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -26,12 +27,14 @@ import { useIntakeStore } from "@/lib/store/intake-store";
 import { cn } from "@/lib/utils";
 import {
   MITSTicketSchema,
+  type MITSCategoryNode,
   type MITSFormSchema,
   type MITSLocation,
   type MITSTicket,
   type MITSTicketDraft,
   type PortalFaq,
   type TicketSource,
+  type TriageRule,
 } from "@/types/mits";
 import {
   FormOptionsProvider,
@@ -106,6 +109,17 @@ export function TriModalContainer({
   greetingName = "",
   /** FAQ entries for the self-service hints. Empty switches the area off. */
   faqs = [],
+  /** The category tree, for the intent tiles. Empty hides them entirely. */
+  categories = [],
+  /**
+   * Keyword rules, for the FAQ hints.
+   *
+   * Sent whole to the browser like the FAQ beside it, and for the same reason: the
+   * matching runs on every pause in typing, so a request per keystroke-burst is
+   * not an option. They contain no secrets — a keyword and a category name are
+   * both things the reporter is about to be shown anyway.
+   */
+  triageRules = [],
 }: {
   quickTicketSchema: MITSFormSchema;
   catalogSchemas: MITSFormSchema[];
@@ -114,6 +128,8 @@ export function TriModalContainer({
   fieldOptions?: FormFieldOptions;
   greetingName?: string;
   faqs?: PortalFaq[];
+  categories?: MITSCategoryNode[];
+  triageRules?: TriageRule[];
 }) {
   const router = useRouter();
   // Both tabs' AI proposal and the wizard resolve ids against the same list.
@@ -143,6 +159,15 @@ export function TriModalContainer({
   /** The persisted ticket, shown as a confirmation instead of the old JSON dump. */
   const [created, setCreated] = useState<MITSTicket | null>(null);
   const [locationId, setLocationId] = useState<string | null>(null);
+  /**
+   * The intent answer, and which tile group is open.
+   *
+   * Both here rather than inside `IntentTiles`, because this component re-renders
+   * the tiles on every tab switch and on every keystroke that changes `error` —
+   * state living in the child would fold the second step back up mid-choice.
+   */
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [openIntent, setOpenIntent] = useState<string | null>(null);
   /** Accepted AI proposal: which form to open and with which values. */
   const [aiProposal, setAiProposal] = useState<{
     schemaId: string;
@@ -172,7 +197,24 @@ export function TriModalContainer({
     const response = await fetch("/api/tickets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...draft, payload, location_id: locationId }),
+      /*
+       * The site and the category are written here, over whatever the mode sent.
+       *
+       * Both are chosen once above the tab strip, so the three forms pass null and
+       * this is the single place that knows the answer — threading `categoryId`
+       * through `ServiceCatalog` into `SchemaForm` would be four props for a value
+       * none of them owns.
+       *
+       * The server does not trust it either way: `createTicket` checks the id
+       * against the category table and drops an unknown one rather than storing a
+       * reference no filter resolves.
+       */
+      body: JSON.stringify({
+        ...draft,
+        payload,
+        location_id: locationId,
+        category_id: categoryId,
+      }),
     });
 
     if (response.status === 401) {
@@ -279,6 +321,23 @@ export function TriModalContainer({
         onChange={setLocationId}
       />
 
+      {/*
+        Above the tabs, beside the site picker, and for the same reason: the
+        question „worum geht es" is about the ticket, not about which of three
+        forms somebody fills in. Held here so switching tabs mid-thought does not
+        throw the answer away — and so all three modes stamp the same category.
+
+        Renders nothing when no categories exist, which is how an instance that
+        never adopted them sees no change at all.
+      */}
+      <IntentTiles
+        categories={categories}
+        value={categoryId}
+        onChange={setCategoryId}
+        openRoot={openIntent}
+        onOpenRoot={setOpenIntent}
+      />
+
       {/* One provider for all three tabs. The catalogue and the AI proposal render
           their own <SchemaForm> further down the tree and pick the choices up from
           here, so no intake path can end up with an empty picker by omission. */}
@@ -297,6 +356,10 @@ export function TriModalContainer({
                 onSubmit={handleSubmit}
                 greetingName={greetingName}
                 faqs={faqs}
+                // The keyword path into the same hint area: „Notebook" pulls the
+                // articles an admin attached to that word, where the lexical
+                // match only finds what happens to share vocabulary.
+                triageRules={triageRules}
               />
             </TabPanel>
           </TabsContent>

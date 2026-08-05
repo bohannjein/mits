@@ -283,6 +283,10 @@ async function openTicket(
         payload: incident.payload,
         priority: incident.priority,
         location_id: null,
+        // A mail states no category. The triage rules are the only thing that can
+        // file one, and `createTicket` runs them — which is the main reason they
+        // exist: a mailbox is where uncategorised tickets come from.
+        category_id: null,
       },
       actor,
       origin,
@@ -321,6 +325,8 @@ async function openTicket(
         },
         priority: "medium",
         location_id: null,
+        // See the incident branch above: the rules file a mailed ticket, nothing else can.
+        category_id: null,
       },
       actor,
       origin,
