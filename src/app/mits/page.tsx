@@ -21,9 +21,7 @@ import { TicketTable } from "@/components/tickets/ticket-table";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
-  AGENT_SCOPE_LABELS,
   AGENT_VIEWS,
-  AGENT_VIEW_LABELS,
   filterFor,
   getSavedAgentView,
   isAgentScope,
@@ -204,19 +202,29 @@ export default async function AgentQueuePage({
           <QueueLive />
           {/* j / k / Enter / c over the table below. Renders nothing. */}
           <QueueShortcuts />
-          <div>
-            <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
-              Queue
-            </h1>
-            <p className="mt-2 text-muted-foreground">
-              {/* `total`, not `tickets.length` — the latter is now the page size,
-                  and a queue of two hundred reporting "50 Tickets" is a number
-                  somebody would act on. */}
-              {AGENT_SCOPE_LABELS[scope]} · {AGENT_VIEW_LABELS[view]} —{" "}
-              {total} {total === 1 ? "Ticket" : "Tickets"}, angemeldet als{" "}
-              {user.email}.
-            </p>
-          </div>
+          {/*
+            The heading, and nothing under it.
+
+            The line that used to sit here read "Pool · Eingang — 1 Ticket,
+            angemeldet als admin@mits.local." and every part of it was already on
+            screen: the scope and the view are the two tab strips directly below
+            (`QueueTabs` renders `AGENT_SCOPE_LABELS` and `AGENT_VIEW_LABELS`), the
+            count is the badge on the active tab and the range in `TicketPager`, and
+            the address is in the user menu in the header.
+
+            It was not merely redundant. Restating the tab you are on *above* the
+            tabs makes the tabs look like they are not the answer — and it cost the
+            two lines of vertical space that the ticket table wants, on the page
+            whose whole job is to show as many rows as fit.
+
+            The one number that is genuinely nowhere else is the *filtered* total
+            when a deep filter narrows the list below what the tab badge claims.
+            That belongs in `ActiveFilterNotice`, which is the line explaining why
+            the two disagree — see there.
+          */}
+          <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
+            Queue
+          </h1>
 
           <Separator className="my-8 bg-border" />
 
@@ -309,6 +317,7 @@ export default async function AgentQueuePage({
                   count={activeCount}
                   values={values}
                   categoryLabel={activeCategoryLabel}
+                  total={total}
                 />
               )}
 
@@ -389,10 +398,21 @@ function ActiveFilterNotice({
    * would leave them to guess which one narrowed the queue.
    */
   categoryLabel,
+  /**
+   * How many tickets survive the filter.
+   *
+   * The one count that is not visible anywhere else. The badge on the active tab
+   * is the *unfiltered* size of that view — `counts` is built from the view preset
+   * alone — and `TicketPager` renders nothing at all on a single page. So a
+   * narrowed queue could show a tab claiming forty above a table of three with
+   * nothing saying why.
+   */
+  total,
 }: {
   count: number;
   values: TicketFilterValues;
   categoryLabel: string;
+  total: number;
 }) {
   const parts: string[] = [];
   if (values.q) parts.push(`Text „${values.q}“`);
@@ -407,7 +427,10 @@ function ActiveFilterNotice({
     <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3">
       <FilterIcon className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden />
       <span className="min-w-40 flex-1 text-sm">
-        {count} {count === 1 ? "Filter" : "Filter"} aktiv: {parts.join(" · ")}
+        {count} {count === 1 ? "Filter" : "Filter"} aktiv: {parts.join(" · ")} —{" "}
+        <span className="tabular-nums">
+          {total} {total === 1 ? "Treffer" : "Treffer"}
+        </span>
       </span>
       <Button
         asChild
