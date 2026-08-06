@@ -4,6 +4,7 @@ import { bearerToken, verifyApiKey } from "@/lib/api-keys";
 import { API_TOKEN_HEADER, isValidApiToken } from "@/lib/api-tokens";
 import { requireApiRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
+import { canSeeArea } from "@/lib/role-visibility";
 import {
   formatInventoryNumber,
   type MITSConfigurationItem,
@@ -48,6 +49,22 @@ export async function guardCMDBRequest(request: Request): Promise<ApiGuard> {
 
   const auth = await requireApiRole("agent", request);
   if ("response" in auth) return { ok: false, response: auth.response };
+
+  /*
+   * Dieselbe Regel wie auf /mits/cmdb, nur auf dem Sitzungsweg: eine Rolle, der
+   * die CMDB ausgeblendet ist, bekommt sie auch nicht als JSON. Über einem Token
+   * steht keine Rolle — das ist ein System, und ein Inventarskript wird nicht
+   * dadurch weniger berechtigt, dass ein Admin den Agenten die Ansicht nimmt.
+   */
+  if (!canSeeArea(auth.user.role, "mits_cmdb")) {
+    return {
+      ok: false,
+      response: Response.json(
+        { error: "Für diese Rolle ist die CMDB nicht freigegeben." },
+        { status: 403 },
+      ),
+    };
+  }
 
   return { ok: true };
 }

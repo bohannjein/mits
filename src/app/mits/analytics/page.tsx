@@ -12,7 +12,7 @@ import {
   type Granularity,
   type TimeRange,
 } from "@/lib/analytics/range";
-import { requireRole } from "@/lib/auth/session";
+import { requireArea, requireRole } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
   title: "Statistiken — MITS",
@@ -38,7 +38,8 @@ export default async function AnalyticsPage({
 }: {
   searchParams: Promise<{ range?: string; granularity?: string }>;
 }) {
-  await requireRole("agent", "/mits/analytics");
+  const viewer = await requireRole("agent", "/mits/analytics");
+  requireArea("mits_analytics", viewer.role);
 
   const params = await searchParams;
   const settings = getAnalyticsSettings();

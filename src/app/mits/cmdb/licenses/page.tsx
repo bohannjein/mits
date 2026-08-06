@@ -10,7 +10,7 @@ import { BackLink } from "@/components/layout/back-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { requireRole } from "@/lib/auth/session";
+import { requireArea, requireRole } from "@/lib/auth/session";
 import { listLicences } from "@/lib/cmdb";
 import { isFeatureEnabled } from "@/lib/features";
 import { formatDate } from "@/lib/format";
@@ -42,7 +42,8 @@ export const metadata: Metadata = {
    ────────────────────────────────────────────────────────────────────────── */
 
 export default async function LicencesPage() {
-  await requireRole("agent", "/mits/cmdb/licenses");
+  const viewer = await requireRole("agent", "/mits/cmdb/licenses");
+  requireArea("mits_cmdb", viewer.role);
 
   if (!isFeatureEnabled("feature_cmdb")) notFound();
 

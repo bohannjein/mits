@@ -2,7 +2,13 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
-import { ArrowRight, Bot, ListChecks, type LucideIcon } from "lucide-react";
+import {
+  ArrowRight,
+  Bot,
+  ListChecks,
+  PenLine,
+  type LucideIcon,
+} from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -18,25 +24,41 @@ import { cn } from "@/lib/utils";
    `icon` is a React component and would not survive server→client serialisation.
    ────────────────────────────────────────────────────────────────────────── */
 
-const ACTIONS: {
+type Action = {
   href: string;
   icon: LucideIcon;
   title: string;
   /** The AI tile carries the Gemini gradient, as on every AI surface in MITS. */
   gemini?: boolean;
-}[] = [
-  {
-    href: "/customer/new?mode=ai_chat",
-    icon: Bot,
-    title: "Smart IT-Helpdesk",
-    gemini: true,
-  },
-  {
-    href: "/customer/new?mode=wizard",
-    icon: ListChecks,
-    title: "Formular-Katalog",
-  },
-];
+};
+
+const AI_ACTION: Action = {
+  href: "/customer/new?mode=ai_chat",
+  icon: Bot,
+  title: "Smart IT-Helpdesk",
+  gemini: true,
+};
+
+const CATALOG_ACTION: Action = {
+  href: "/customer/new?mode=wizard",
+  icon: ListChecks,
+  title: "Formular-Katalog",
+};
+
+/**
+ * Die Auffangkachel.
+ *
+ * Steht nur da, wenn keine der beiden anderen es tut — sonst wäre das Portal um
+ * eine dritte Kachel gewachsen, die es nie hatte. Sie wird gebraucht, weil der
+ * Reiter „Schnellerstellung" nie eine eigene Kachel hatte: man kam über eine der
+ * beiden anderen hinein und wechselte den Reiter. Bleibt für eine Rolle nur er
+ * übrig, gäbe es ohne diese Kachel keinen Weg mehr ins Formular.
+ */
+const QUICK_ACTION: Action = {
+  href: "/customer/new?mode=legacy",
+  icon: PenLine,
+  title: "Ticket schreiben",
+};
 
 const ENTRANCE = {
   type: "spring",
@@ -50,16 +72,35 @@ const LIFT = { type: "spring", stiffness: 420, damping: 30, mass: 0.6 } as const
 export function PortalActions({
   /** From the portal config — `ticket_button_label`. */
   label,
+  /** Bereich `intake_ai`. */
+  showAi = true,
+  /** Mindestens ein Katalogformular ist für diese Rolle sichtbar. */
+  showCatalog = true,
+  /** Das Freitext-Formular ist für diese Rolle sichtbar. */
+  showQuick = true,
 }: {
   label?: string;
+  showAi?: boolean;
+  showCatalog?: boolean;
+  showQuick?: boolean;
 }) {
   const reduceMotion = useReducedMotion();
+
+  const actions = [
+    ...(showAi ? [AI_ACTION] : []),
+    ...(showCatalog ? [CATALOG_ACTION] : []),
+    ...(!showAi && !showCatalog && showQuick ? [QUICK_ACTION] : []),
+  ];
+
+  // Nichts freigegeben, also keine Überschrift über einer leeren Reihe. Die Seite
+  // sagt an dieser Stelle dann gar nichts, statt eine Aufforderung ohne Ziel.
+  if (actions.length === 0) return null;
 
   return (
     <section aria-label={label ?? "Ticket erfassen"} className="grid gap-3">
       {label && <h2 className="label-industrial">{label}</h2>}
       <div className="grid gap-4 sm:grid-cols-2">
-      {ACTIONS.map(({ href, icon: Icon, title, gemini }, index) => (
+      {actions.map(({ href, icon: Icon, title, gemini }, index) => (
         <motion.div
           key={href}
           className="group relative"

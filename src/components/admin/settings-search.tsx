@@ -9,6 +9,7 @@ import {
   BuildingIcon,
   ClockIcon,
   DatabaseIcon,
+  EyeOffIcon,
   FolderTreeIcon,
   HardDriveIcon,
   HeadsetIcon,
@@ -77,6 +78,13 @@ const ENTRIES: SettingsEntry[] = [
     label: "Module",
     icon: ToggleRightIcon,
     keywords: `funktionen features schalter aktivieren abschalten ${FEATURE_KEYWORDS}`,
+  },
+  {
+    href: "/admin/settings/roles",
+    label: "Sichtbarkeit",
+    icon: EyeOffIcon,
+    keywords:
+      "rollen rechte berechtigung sichtbar ausblenden verstecken formulare katalog bereiche menü navigation benutzer agent einschränken",
   },
   {
     href: "/admin/locations",

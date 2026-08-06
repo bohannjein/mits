@@ -11,7 +11,8 @@ import { TicketPager } from "@/components/tickets/ticket-pager";
 import { TicketTable } from "@/components/tickets/ticket-table";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { requireUser } from "@/lib/auth/session";
+import { requireArea, requireUser } from "@/lib/auth/session";
+import { canSeeArea } from "@/lib/role-visibility";
 import { getFeatureFlags } from "@/lib/features";
 import { listLocations } from "@/lib/locations";
 import { getOrganization } from "@/lib/organizations";
@@ -44,13 +45,16 @@ export default async function MyTicketsPage({
   // Authoritative guard. The proxy already redirected anonymous visitors, but
   // this is the check that actually decides.
   const user = await requireUser("/customer/tickets");
+  requireArea("customer_tickets", user.role);
 
   const params = await searchParams;
   const flags = getFeatureFlags();
 
   const one = (value: string | string[] | undefined) =>
     Array.isArray(value) ? value[0] : value;
-  const searchEnabled = flags.feature_ticket_search;
+  // Modul an, und für diese Rolle nicht ausgeblendet — beides muss stimmen.
+  const searchEnabled =
+    flags.feature_ticket_search && canSeeArea(user.role, "ticket_search");
 
   // Typing a number jumps straight into the ticket. Throws a redirect, so
   // nothing below runs in that case.

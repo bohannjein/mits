@@ -14,6 +14,7 @@ import { getSessionUser } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
 import { listLocations } from "@/lib/locations";
 import { getNotificationSettings } from "@/lib/notification-settings";
+import { visibleAreas } from "@/lib/role-visibility";
 import { resolveRefreshMinutes } from "@/lib/system-settings";
 
 /**
@@ -29,10 +30,19 @@ export async function AppHeader() {
    * form. Staff search the board, everyone else their own tickets — the target
    * decides the scope, and `searchTickets` enforces it again server-side.
    */
+  /*
+   * Zwei Achsen, und beide müssen zustimmen: das Modul für die Instanz, die
+   * Sichtbarkeit für diese Rolle. Ein Aufruf für alle Bereiche, weil das
+   * Benutzermenü darunter drei davon braucht — `getRoleVisibility` ist ein
+   * indizierter Read, aber ein synchroner, und der blockiert für alle.
+   */
+  const areas = user ? visibleAreas(user.role) : null;
+
   const showSearch =
     user !== null &&
     !user.mustChangePassword &&
-    isFeatureEnabled("feature_ticket_search");
+    isFeatureEnabled("feature_ticket_search") &&
+    areas?.ticket_search === true;
 
   const staff = user !== null && canViewBoard(user.role);
 
@@ -152,7 +162,14 @@ export async function AppHeader() {
             {/* Renders nothing until `?` is pressed. Here so every page has it
                 without knowing about it — same as the watcher above. */}
             {!user.mustChangePassword && <ShortcutHelp />}
-            <UserMenu user={user} />
+            {/* Die Bereichsschalter werden hier aufgelöst und nicht im Menü: das
+                Menü ist eine Client-Komponente und hätte sonst einen zweiten Weg
+                zu einer Regel, die auf dem Server steht. */}
+            <UserMenu
+              user={user}
+              showOwnTickets={areas?.customer_tickets !== false}
+              showAnalytics={areas?.mits_analytics !== false}
+            />
           </>
         ) : (
           <div className="flex items-center gap-2">

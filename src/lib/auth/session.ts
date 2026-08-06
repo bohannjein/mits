@@ -4,9 +4,17 @@ import { headers } from "next/headers";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 
-import { deniedPathFor, hasAtLeast, toRole, type MITSRole } from "@/lib/auth/roles";
+import {
+  deniedPathFor,
+  hasAtLeast,
+  homeFor,
+  toRole,
+  type MITSRole,
+} from "@/lib/auth/roles";
 import { auth, ensureAuthSchema } from "@/lib/auth/server";
+import { canSeeArea } from "@/lib/role-visibility";
 import { mustChangePassword } from "@/lib/users";
+import type { NavArea } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Authoritative session access.
@@ -200,4 +208,27 @@ export async function requireRole(
     redirect(deniedTo ?? (returnTo ? deniedPathFor(returnTo) : "/forbidden"));
   }
   return user;
+}
+
+/**
+ * Page guard for a surface an admin may have taken away from this role.
+ *
+ * A different question from `requireRole`, and it comes **after** it: that one
+ * asks whether the role may be here at all, this one whether the instance still
+ * offers the area to it. Both run — the visibility settings are a narrowing on
+ * top of the role model, never a replacement for it.
+ *
+ * The target is the role's own home, not `/forbidden`. Nothing was forbidden:
+ * the instance does not offer this area to this role, which is the same
+ * distinction `deniedPathFor` makes for a reporter who follows a link into
+ * `/mits`. Never the area itself, or it would be a loop — which is why
+ * `/customer` and `/mits` carry no `NavArea` and cannot be switched off.
+ *
+ * Lives here rather than beside `canSeeArea` because `next/navigation` may not
+ * be imported into `lib/role-visibility.ts` — see the note there.
+ */
+export function requireArea(area: NavArea, role: unknown): void {
+  if (!canSeeArea(role, area)) {
+    redirect(homeFor(role));
+  }
 }

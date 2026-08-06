@@ -11,7 +11,12 @@ import { ServiceStatus } from "@/components/dashboard/service-status";
 import { AppHeader } from "@/components/layout/app-header";
 import { requireUser } from "@/lib/auth/session";
 import { getFeatureFlags } from "@/lib/features";
+import {
+  listCatalogSchemasFor,
+  quickTicketSchemaFor,
+} from "@/lib/form-schemas";
 import { formatDateTime } from "@/lib/format";
+import { visibleAreas } from "@/lib/role-visibility";
 import { listUpcomingReminders } from "@/lib/ticket-reminders";
 import {
   getSystemTimezone,
@@ -69,6 +74,23 @@ export default async function CustomerPortalPage() {
       }))
     : [];
 
+  /*
+   * Was der Ticketeingang dieser Rolle noch anbietet.
+   *
+   * Hier aufgelöst und nicht in der Kachelkomponente: die ist ein Client-Bauteil
+   * (die Icons sind React-Komponenten und überleben die Serialisierung nicht),
+   * und die Regel dort noch einmal zu lesen wäre eine zweite Stelle, an der sie
+   * gelten muss. Dieselbe Ableitung wie in `/customer/new` — beide fragen, ob es
+   * unter dem Reiter etwas gibt.
+   */
+  const areas = visibleAreas(user.role);
+  const intakeOpen = areas.customer_new;
+  const intake = {
+    ai: intakeOpen && areas.intake_ai,
+    catalog: intakeOpen && listCatalogSchemasFor(user.role).length > 0,
+    quick: intakeOpen && Boolean(quickTicketSchemaFor(user.role)),
+  };
+
   // Just the given name: "Hallo Jana" reads like a colleague, the full address
   // like a mail merge.
   const firstName = user.name.split(/\s+/)[0] || user.name;
@@ -125,8 +147,17 @@ export default async function CustomerPortalPage() {
 
           {/* Above the configurable widgets on purpose: it is what the portal is
               for, and burying it behind a toggle would let an admin lock everyone
-              out of the intake by accident. */}
-          <PortalActions label={config.ticket_button_label} />
+              out of the intake by accident.
+
+              Die Kacheln spiegeln, was der Eingang für diese Rolle noch anbietet.
+              Ein sichtbarer Weg in eine Umleitung ist die schlechtere Antwort als
+              kein Weg — dieselbe Regel wie beim Benutzermenü. */}
+          <PortalActions
+            label={config.ticket_button_label}
+            showAi={intake.ai}
+            showCatalog={intake.catalog}
+            showQuick={intake.quick}
+          />
 
           {/*
             Reminders, and deliberately not one of the configurable widgets below.

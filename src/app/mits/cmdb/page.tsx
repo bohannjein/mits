@@ -11,7 +11,7 @@ import { BackLink } from "@/components/layout/back-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { requireRole } from "@/lib/auth/session";
+import { requireArea, requireRole } from "@/lib/auth/session";
 import { cmdbCounts, listConfigurationItems, type CIFilter } from "@/lib/cmdb";
 import { isFeatureEnabled } from "@/lib/features";
 import { listActiveLocations, listLocations } from "@/lib/locations";
@@ -39,7 +39,9 @@ export default async function CMDBPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireRole("agent", "/mits/cmdb");
+  const viewer = await requireRole("agent", "/mits/cmdb");
+  // Zwei Achsen: das Modul kann für die Instanz aus sein, oder für diese Rolle.
+  requireArea("mits_cmdb", viewer.role);
 
   // A switched-off module has no pages, not just no links.
   if (!isFeatureEnabled("feature_cmdb")) notFound();

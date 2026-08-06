@@ -1,4 +1,5 @@
 import { requireApiRole } from "@/lib/auth/session";
+import { canSeeArea } from "@/lib/role-visibility";
 import { analyticsToCsv, csvFilename } from "@/lib/analytics/export";
 import { collectAnalytics, earliestTicketAt } from "@/lib/analytics/queries";
 import { getAnalyticsSettings } from "@/lib/analytics/settings";
@@ -34,6 +35,18 @@ import {
 export async function GET(request: Request) {
   const auth = await requireApiRole("agent", request);
   if ("response" in auth) return auth.response;
+
+  /*
+   * Vierte Stelle derselben Regel: die Seite zu verstecken und die Route offen
+   * zu lassen wäre sinnlos, weil die Zahlen in der Route liegen. Dieselbe
+   * Begründung wie beim Rollen-Gate eine Zeile darüber, nur die andere Achse.
+   */
+  if (!canSeeArea(auth.user.role, "mits_analytics")) {
+    return Response.json(
+      { error: "Für diese Rolle sind die Statistiken nicht freigegeben." },
+      { status: 403 },
+    );
+  }
 
   const params = new URL(request.url).searchParams;
 

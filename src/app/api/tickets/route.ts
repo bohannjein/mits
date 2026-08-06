@@ -1,5 +1,6 @@
 import { requireApiUser } from "@/lib/auth/session";
 import { listCatalogSchemas } from "@/lib/form-schemas";
+import { canSeeForm } from "@/lib/role-visibility";
 import { ticketCreatedMail } from "@/lib/mail-templates";
 import { tagTicketInBackground } from "@/lib/services/ai/routing";
 import { sendNotification, ticketUrl } from "@/lib/smtp";
@@ -87,6 +88,32 @@ export async function POST(request: Request) {
         })),
       },
       { status: 400 },
+    );
+  }
+
+  /*
+   * Das Formular muss für diese Rolle freigegeben sein.
+   *
+   * Hier und nicht in `createTicket`: das ist die eine Tür, durch die ein Mensch
+   * ein *gewähltes* Formular schickt. Die beiden anderen Aufrufer —
+   * `/api/v1/tickets` und der Mail-Ingest — legen unter einem Auffang-Konto ab,
+   * dessen Rolle mit der Sache nichts zu tun hat; eine Regel dort hieße, dass
+   * ein Admin durch das Ausblenden eines Formulars die Überwachung stumm
+   * schaltet, ohne dass irgendetwas das sagt.
+   *
+   * 403 und nicht 404: dass es das Formular gibt, hat der Katalog nie behauptet,
+   * aber der Aufrufer hat es benannt — ein „unbekannt" wäre eine Falschauskunft
+   * und schickte jemanden auf die Suche nach einem Tippfehler.
+   *
+   * Ein Entwurf ohne Formular-Id fällt durch: `createTicket` lehnt ihn eine Zeile
+   * weiter mit „Unbekanntes Formular-Schema" ab, und hier stünde sonst eine
+   * Prüfung, die für den einen Fall zuständig wäre, den sie nicht abdeckt.
+   */
+  const formSchemaId = draft.data.form_schema_id;
+  if (formSchemaId && !canSeeForm(user.role, formSchemaId)) {
+    return Response.json(
+      { error: "Dieses Formular ist für deine Rolle nicht freigegeben." },
+      { status: 403 },
     );
   }
 

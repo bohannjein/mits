@@ -26,6 +26,16 @@ import {
   triage,
 } from "../src/lib/services/auto-triage";
 import { TriageRuleSchema } from "../src/types/mits";
+import {
+  DEFAULT_ROLE_VISIBILITY,
+  NAV_AREAS,
+  NAV_AREA_META,
+  RESTRICTABLE_ROLES,
+  RoleVisibilitySchema,
+  areasForRole,
+  roleSeesArea,
+  roleSeesForm,
+} from "../src/types/mits";
 /**
  * Checks the JSON-Schema → zod compiler against the example schemas.
  *
@@ -4315,6 +4325,103 @@ console.log("\ncmdb export");
     "the filename carries the date",
     exportFilename(new Date("2026-08-05T12:00:00.000Z")) ===
       "mits-bestand-2026-08-05.csv",
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Sichtbarkeit je Rolle.
+
+   Rein und deshalb hier prüfbar. Das Fehlerbild jeder dieser Regeln ist eine
+   Oberfläche, die für eine Rolle stillschweigend weniger zeigt als gedacht —
+   also nichts, was beim Klicken auffällt, solange man mit dem eigenen
+   Admin-Konto testet.
+   ────────────────────────────────────────────────────────────────────────── */
+
+console.log("\nrole visibility");
+{
+  check(
+    "nichts weggenommen ist der Default",
+    DEFAULT_ROLE_VISIBILITY.user.hidden_forms.length === 0 &&
+      DEFAULT_ROLE_VISIBILITY.agent.hidden_areas.length === 0,
+  );
+
+  check(
+    "admin steht nicht in den einschränkbaren Rollen",
+    !(RESTRICTABLE_ROLES as readonly string[]).includes("admin"),
+  );
+
+  const rules = RoleVisibilitySchema.parse({
+    user: {
+      hidden_forms: ["hardware-order", "hardware-order", " "],
+      // Der Fall, der ohne Filter die ganze Konfiguration mitnähme.
+      hidden_areas: ["mits_cmdb", "widget_das_es_nicht_mehr_gibt"],
+    },
+  });
+
+  check(
+    "ein unbekannter Bereichsschlüssel wird verworfen, nicht abgelehnt",
+    rules.user.hidden_areas.length === 1 &&
+      rules.user.hidden_areas[0] === "mits_cmdb",
+  );
+  check(
+    "die Formularregel daneben überlebt das",
+    rules.user.hidden_forms.length === 1 &&
+      rules.user.hidden_forms[0] === "hardware-order",
+  );
+  check(
+    "eine fehlende Rolle heißt: alles sichtbar",
+    rules.agent.hidden_forms.length === 0 &&
+      rules.agent.hidden_areas.length === 0,
+  );
+
+  check(
+    "ein ausgeblendetes Formular ist für diese Rolle weg",
+    !roleSeesForm(rules, "user", "hardware-order"),
+  );
+  check(
+    "für jede andere Rolle nicht",
+    roleSeesForm(rules, "agent", "hardware-order"),
+  );
+  check(
+    "die Administration sieht alles, egal was gespeichert ist",
+    roleSeesForm(rules, "admin", "hardware-order") &&
+      roleSeesArea(rules, "admin", "mits_cmdb"),
+  );
+
+  check(
+    "ein Bereich lässt sich nehmen",
+    !roleSeesArea(rules, "user", "mits_cmdb"),
+  );
+  check(
+    "und die anderen Bereiche bleiben",
+    roleSeesArea(rules, "user", "customer_new"),
+  );
+
+  // Ein Melder bekommt in der Maske keinen Schalter für einen Agentenbereich —
+  // sonst behauptete die Oberfläche, er käme sonst in die CMDB.
+  check(
+    "der Melder sieht nur seine eigenen Flächen",
+    !areasForRole("user").includes("mits_cmdb") &&
+      areasForRole("user").includes("customer_new"),
+  );
+  check(
+    "der Agent bekommt beides",
+    areasForRole("agent").includes("mits_cmdb") &&
+      areasForRole("agent").includes("customer_new"),
+  );
+
+  // Jeder Bereich braucht eine Beschriftung, sonst ließe er sich nicht rendern.
+  check(
+    "jeder Bereich ist beschriftet",
+    NAV_AREAS.every((area) => NAV_AREA_META[area].label.trim().length > 0),
+  );
+
+  // Die beiden Zuhause tragen keinen Schlüssel: sie sind das Ziel der Umleitung,
+  // und ein abschaltbares Ziel wäre eine Schleife.
+  check(
+    "es gibt keinen Schalter für /customer oder /mits",
+    !(NAV_AREAS as readonly string[]).includes("customer_home") &&
+      !(NAV_AREAS as readonly string[]).includes("mits_home"),
   );
 }
 

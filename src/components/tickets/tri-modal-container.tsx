@@ -120,8 +120,18 @@ export function TriModalContainer({
    * both things the reporter is about to be shown anyway.
    */
   triageRules = [],
+  /**
+   * Ob der KI-Reiter angeboten wird.
+   *
+   * Serverseitig entschieden (`intake_ai` unter /admin/settings/roles), weil die
+   * beiden anderen Reiter an einem Formular hängen und dieser an nichts — er
+   * bräuchte sonst als einziger keinen Schalter, und „warum lässt sich der Chat
+   * nicht abschalten" wäre eine berechtigte Frage.
+   */
+  aiChat = true,
 }: {
-  quickTicketSchema: MITSFormSchema;
+  /** Fehlt, wenn diese Rolle das Freitext-Formular nicht sieht. Dann ohne den Reiter. */
+  quickTicketSchema?: MITSFormSchema;
   catalogSchemas: MITSFormSchema[];
   initialMode?: TicketSource;
   locations?: MITSLocation[];
@@ -130,10 +140,13 @@ export function TriModalContainer({
   faqs?: PortalFaq[];
   categories?: MITSCategoryNode[];
   triageRules?: TriageRule[];
+  aiChat?: boolean;
 }) {
   const router = useRouter();
   // Both tabs' AI proposal and the wizard resolve ids against the same list.
-  const allSchemas = [quickTicketSchema, ...catalogSchemas];
+  const allSchemas = quickTicketSchema
+    ? [quickTicketSchema, ...catalogSchemas]
+    : catalogSchemas;
   const storeMode = useIntakeStore((state) => state.mode);
   const setMode = useIntakeStore((state) => state.setMode);
 
@@ -153,7 +166,31 @@ export function TriModalContainer({
     setStoreOwnsMode(true);
   }, [initialMode, setMode]);
 
-  const mode = storeOwnsMode ? storeMode : initialMode!;
+  /*
+   * Welche der drei Reiter es hier überhaupt gibt.
+   *
+   * Zwei hängen an einem Formular und verschwinden mit ihm — ein „Service-Katalog"
+   * über einer leeren Liste ist ein Reiter, der aussieht, als sei etwas kaputt.
+   * Der Dritte hat kein Formular hinter sich und deshalb einen eigenen Schalter.
+   */
+  const tabs = TABS.filter(({ value }) => {
+    if (value === "legacy") return Boolean(quickTicketSchema);
+    if (value === "wizard") return catalogSchemas.length > 0;
+    return aiChat;
+  });
+
+  /*
+   * Der gemerkte oder verlinkte Reiter, sofern es ihn hier gibt.
+   *
+   * Der Modus überlebt im Store und in `?mode=`, die Sichtbarkeit kann sich
+   * dazwischen geändert haben — ohne diesen Rückfall stünde jemand mit einem
+   * gemerkten „ai_chat" vor einem Reiterstreifen ohne ausgewählten Reiter und
+   * einer leeren Fläche darunter.
+   */
+  const wanted = storeOwnsMode ? storeMode : initialMode!;
+  const mode = tabs.some((tab) => tab.value === wanted)
+    ? wanted
+    : tabs[0]?.value;
   const dismissDraft = useIntakeStore((state) => state.dismissDraft);
   const [error, setError] = useState<string | null>(null);
   /** The persisted ticket, shown as a confirmation instead of the old JSON dump. */
@@ -262,6 +299,27 @@ export function TriModalContainer({
     );
   }
 
+  /*
+   * Kein Reiter übrig.
+   *
+   * Die Seite leitet in diesem Fall bereits um; das hier ist die zweite Hälfte
+   * derselben Regel, für den Fall, dass diese Komponente irgendwann woanders
+   * gerendert wird. Eine Meldung und keine leere Fläche: „hier steht nichts" ist
+   * von „hier ist etwas kaputt" sonst nicht zu unterscheiden.
+   */
+  if (!mode) {
+    return (
+      <Alert className="rounded-2xl border-border px-4 py-3 shadow-elev-1">
+        <TriangleAlertIcon strokeWidth={1.5} />
+        <AlertTitle>Kein Eingang freigeschaltet</AlertTitle>
+        <AlertDescription>
+          Für diese Rolle ist kein Ticketformular freigegeben. Die IT-Abteilung
+          kann das unter „Sichtbarkeit“ ändern.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
   return (
     <Tabs
       value={mode}
@@ -269,7 +327,7 @@ export function TriModalContainer({
       className="gap-6"
     >
       <TabsList className="h-auto w-full flex-wrap gap-1 rounded-full border border-border bg-card p-1.5">
-        {TABS.map(({ value, label, icon: Icon, gemini }) => (
+        {tabs.map(({ value, label, icon: Icon, gemini }) => (
           <TabsTrigger
             key={value}
             value={value}
@@ -342,6 +400,7 @@ export function TriModalContainer({
           their own <SchemaForm> further down the tree and pick the choices up from
           here, so no intake path can end up with an empty picker by omission. */}
       <FormOptionsProvider options={fieldOptions}>
+          {quickTicketSchema && (
           <TabsContent value="legacy">
             <TabPanel>
               {/*
@@ -363,6 +422,7 @@ export function TriModalContainer({
               />
             </TabPanel>
           </TabsContent>
+          )}
 
           <TabsContent value="wizard">
             <TabPanel>

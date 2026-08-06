@@ -2193,6 +2193,193 @@ export const FEATURE_FLAG_META: Record<
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Sichtbarkeit je Rolle.
+
+   Ein Feature-Flag schaltet ein Modul für die ganze Instanz ab. Das hier ist die
+   andere Achse: das Modul bleibt an, und **eine Rolle** bekommt es nicht zu
+   sehen. Zwei Dinge, die man sonst über einen Schalter erledigen möchte und
+   dabei feststellt, dass es zwei Fragen sind — „gibt es die CMDB auf dieser
+   Instanz" und „darf ein Melder sie sehen".
+
+   Alles ist per Default sichtbar, und zwar als Abwesenheit eines Eintrags: die
+   gespeicherte Form ist eine Liste des *Weggenommenen*. Ein neu angelegtes
+   Formular ist damit für jede Rolle sichtbar, ohne dass irgendwo eine Zeile
+   nachgezogen werden muss — die Gegenrichtung (Liste des Erlaubten) hätte jedes
+   neue Formular still für alle unsichtbar gemacht.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Rollen, deren Sicht sich beschneiden lässt.
+ *
+ * `admin` steht bewusst nicht darin, und zwar nicht als Bequemlichkeit: die
+ * Maske, in der man die Einschränkungen pflegt, liegt selbst unter `/admin`.
+ * Eine Rolle, die sich den Weg zu ihrer eigenen Einstellung wegnehmen kann,
+ * sperrt die Instanz aus — und der letzte Admin kann sich aus demselben Grund
+ * schon heute nicht selbst herabstufen.
+ *
+ * Die Reihenfolge ist aufsteigend und wird als Rang gelesen (siehe
+ * `areasForRole`), damit diese Datei ohne Import aus `lib/auth/roles` auskommt.
+ */
+export const RESTRICTABLE_ROLES = ["user", "agent"] as const;
+export type RestrictableRole = (typeof RESTRICTABLE_ROLES)[number];
+
+export function isRestrictableRole(value: unknown): value is RestrictableRole {
+  return (
+    typeof value === "string" &&
+    (RESTRICTABLE_ROLES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Navigierbare Flächen, die einer Rolle abgenommen werden können.
+ *
+ * Eine feste Liste und kein freier Pfad: jeder Eintrag hat auf der Serverseite
+ * eine Stelle, die ihn durchsetzt. Ein Pfadmuster, das ein Admin eintippt, wäre
+ * eine Regel ohne Gegenstück — sie würde den Link ausblenden und die Seite
+ * offen lassen, also genau die Kosmetik, die dieses Projekt an Schaltern nicht
+ * haben will.
+ *
+ * **Kein Eintrag für das Zuhause einer Rolle.** `/customer` für den Melder und
+ * `/mits` für den Agenten sind das Ziel jeder Umleitung; sie wegnehmbar zu
+ * machen hieße, eine Rolle in eine Schleife zu schicken.
+ */
+export const NAV_AREAS = [
+  "customer_new",
+  "customer_tickets",
+  "intake_ai",
+  "ticket_search",
+  "mits_cmdb",
+  "mits_analytics",
+] as const;
+export type NavArea = (typeof NAV_AREAS)[number];
+
+export const NAV_AREA_META: Record<
+  NavArea,
+  {
+    label: string;
+    description: string;
+    /**
+     * Niedrigste Rolle, für die es die Fläche überhaupt gibt. Darunter ist
+     * nichts wegzunehmen, und ein Schalter dafür wäre eine Behauptung, ein
+     * Melder käme sonst in die CMDB.
+     */
+    role: RestrictableRole;
+  }
+> = {
+  customer_new: {
+    label: "Ticket erstellen",
+    description:
+      "Der Eingang unter /customer/new samt der Kacheln auf dem Portal. Abgeschaltet bleibt der Weg über E-Mail und Schnittstelle offen.",
+    role: "user",
+  },
+  customer_tickets: {
+    label: "Meine Tickets",
+    description:
+      "Die eigene Ticketliste unter /customer/tickets, inklusive des Eintrags im Benutzermenü.",
+    role: "user",
+  },
+  intake_ai: {
+    label: "KI-Assistent",
+    description:
+      "Der Chat-Reiter im Ticketeingang und die Portal-Kachel dorthin. Die beiden anderen Reiter hängen an den Formularen.",
+    role: "user",
+  },
+  ticket_search: {
+    label: "Ticket-Suche",
+    description: "Das Suchfeld in der Kopfzeile und der Sprung per Nummer.",
+    role: "user",
+  },
+  mits_cmdb: {
+    label: "CMDB",
+    description:
+      "Bestand, Lizenzen und Objekt-Detailansicht unter /mits/cmdb.",
+    role: "agent",
+  },
+  mits_analytics: {
+    label: "Statistiken",
+    description: "Die Auswertung unter /mits/analytics und ihre JSON-Ausgabe.",
+    role: "agent",
+  },
+};
+
+/** Die Flächen, die es für diese Rolle gibt — in der Reihenfolge von `NAV_AREAS`. */
+export function areasForRole(role: RestrictableRole): NavArea[] {
+  const rank = RESTRICTABLE_ROLES.indexOf(role);
+  return NAV_AREAS.filter(
+    (area) => RESTRICTABLE_ROLES.indexOf(NAV_AREA_META[area].role) <= rank,
+  );
+}
+
+/**
+ * Was einer Rolle fehlt.
+ *
+ * `hidden_areas` ist ein `z.array(z.string())` mit einem Filter in der
+ * Transform und **kein** `z.array(Enum)`: Zod 4 lehnt ein unbekanntes Element
+ * ab, statt es verwerfen zu lassen, und ein in einer späteren Version
+ * entfernter Bereichsschlüssel nähme sonst die komplette Konfiguration mit —
+ * inklusive der Formularregeln, um die es hier eigentlich geht. Dieselbe Falle
+ * wie bei `widget_order` in `PortalConfigSchema`.
+ *
+ * Formular-Ids werden **nicht** gegen den Bestand geprüft. Ein Formular kann aus
+ * dem Katalog verschwinden und später zurückkommen; die Regel dazu jetzt
+ * wegzuwerfen hieße, es bei der Rückkehr still für alle sichtbar zu machen.
+ */
+const RoleRulesSchema = z.object({
+  hidden_forms: z
+    .array(z.string())
+    .default([])
+    .transform((ids) => [...new Set(ids.map((id) => id.trim()).filter(Boolean))]),
+  hidden_areas: z
+    .array(z.string())
+    .default([])
+    .transform((keys) => [
+      ...new Set(
+        keys.filter((key): key is NavArea =>
+          (NAV_AREAS as readonly string[]).includes(key),
+        ),
+      ),
+    ]),
+});
+export type RoleRules = z.infer<typeof RoleRulesSchema>;
+
+export const RoleVisibilitySchema = z.object({
+  user: RoleRulesSchema.default({ hidden_forms: [], hidden_areas: [] }),
+  agent: RoleRulesSchema.default({ hidden_forms: [], hidden_areas: [] }),
+});
+export type RoleVisibility = z.infer<typeof RoleVisibilitySchema>;
+
+/** Nichts weggenommen — der Zustand einer Instanz, die die Maske nie geöffnet hat. */
+export const DEFAULT_ROLE_VISIBILITY: RoleVisibility =
+  RoleVisibilitySchema.parse({});
+
+/**
+ * Darf diese Rolle die Fläche sehen?
+ *
+ * Rein, damit die Regel offline prüfbar ist — der Serverteil (`lib/role-visibility.ts`)
+ * liest nur die Zeile und reicht sie hier herein. Eine Rolle außerhalb von
+ * `RESTRICTABLE_ROLES` ist `admin` oder etwas Unbekanntes; beides sieht alles,
+ * weil `toRole` Unbekanntes vorher auf `user` gezogen hat.
+ */
+export function roleSeesArea(
+  visibility: RoleVisibility,
+  role: unknown,
+  area: NavArea,
+): boolean {
+  if (!isRestrictableRole(role)) return true;
+  return !visibility[role].hidden_areas.includes(area);
+}
+
+/** Dasselbe für ein Formular, geprüft über seine Schema-Id. */
+export function roleSeesForm(
+  visibility: RoleVisibility,
+  role: unknown,
+  formSchemaId: string,
+): boolean {
+  if (!isRestrictableRole(role)) return true;
+  return !visibility[role].hidden_forms.includes(formSchemaId);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
    SMTP.
 
    The password lives in `mits_setting` like every other admin-managed value.

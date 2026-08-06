@@ -36,6 +36,7 @@ import { requireRole } from "@/lib/auth/session";
 import { getFeatureFlags } from "@/lib/features";
 import { listLocations, ticketCountsByLocation } from "@/lib/locations";
 import { listPresence } from "@/lib/presence";
+import { visibleAreas } from "@/lib/role-visibility";
 import { detectClusters } from "@/lib/services/ai/clustering";
 import { categoryLabel, listCategoryTree } from "@/lib/ticket-categories";
 import { listUpcomingReminders } from "@/lib/ticket-reminders";
@@ -85,8 +86,9 @@ export default async function AgentQueuePage({
 
   const params = await searchParams;
   const flags = getFeatureFlags();
+  const areas = visibleAreas(user.role);
 
-  if (flags.feature_ticket_search) {
+  if (flags.feature_ticket_search && areas.ticket_search) {
     jumpToTicketNumber(params.q as string | undefined, user);
   }
 
@@ -271,6 +273,8 @@ export default async function AgentQueuePage({
                 view={view}
                 counts={counts}
                 actions={
+                  /* Zweite Achse neben dem Modulschalter: die CMDB kann für die
+                     Instanz an und für diese Rolle ausgeblendet sein. */
                   /*
                    * The CMDB only. "Statistiken" used to sit here as its equal and
                    * has moved next to the pie chart in the sidebar — the CMDB is a
@@ -280,7 +284,7 @@ export default async function AgentQueuePage({
                    * Hidden with the module, not merely disabled: a link into a 404
                    * is a worse answer than no link.
                    */
-                  flags.feature_cmdb ? (
+                  flags.feature_cmdb && areas.mits_cmdb ? (
                     <Button
                       asChild
                       size="sm"
@@ -364,6 +368,7 @@ export default async function AgentQueuePage({
                     locations={locations}
                     counts={ticketCountsByLocation()}
                     showHeatmap={flags.feature_stats_heatmap}
+                    showAnalyticsLink={areas.mits_analytics}
                   />
                 )}
                 {flags.feature_presence_sidebar && (

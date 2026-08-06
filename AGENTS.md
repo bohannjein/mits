@@ -39,6 +39,7 @@ die die jeweilige Sitzung nie berührt.
 | `.claude/rules/notifications.md` | Toast-Kanäle, Darstellung, Sammelmeldung |
 | `.claude/rules/keyboard.md` | Kürzel, Formular-Isolation, Hilfe-Dialog |
 | `.claude/rules/portal.md` | portal_config, Widgets, FAQ, Status, Wartung |
+| `.claude/rules/visibility.md` | Was eine Rolle sieht: Formulare und Bereiche je Rolle |
 | `.claude/rules/deployment.md` | Images bauen, Registry, Portainer |
 | `.claude/rules/storage.md` | Dateiablage auf Platte oder S3, SigV4 |
 
@@ -364,6 +365,7 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /admin/macros           Makros
 /admin/categories       Kategoriebaum: Haupt- und Unterkategorien, Kachel-Symbol
 /admin/settings/routing Stichwort-Regeln: Kategorie, Mindestpriorität, FAQ-Vorschläge
+/admin/settings/roles   Sichtbarkeit je Rolle: welche Formulare, welche Bereiche
 /admin/settings/storage Dateispeicher (Platte oder S3)
 /admin/settings/api-keys API-Keys je System, Token nur einmal sichtbar
 /admin/status           Systemzustand: was eingerichtet ist, plus Live-Verbindung
@@ -585,6 +587,14 @@ Nachrichten; wer unten steht, scrollt automatisch mit.
 
 - **Rollen:** `user` < `agent` < `admin`. Vergleiche immer über `hasAtLeast`,
   nie über `===`. Unbekannte Rollenwerte fallen auf `user` zurück, nie nach oben.
+- **Sichtbarkeit verengt die Rolle, sie ersetzt sie nicht.** `/admin/settings/roles`
+  nimmt `user` und `agent` einzelne Formulare und Bereiche weg; Default ist alles
+  sichtbar, `admin` ist nicht einschränkbar (die Maske liegt selbst unter
+  `/admin`). Gespeichert wird das **Weggenommene**, damit ein neu angelegtes
+  Formular nicht still für alle unsichtbar ist. Auf einer Seite läuft
+  `requireArea` **zusätzlich** zu `requireUser`/`requireRole`, nie an ihrer
+  Stelle — die eine Frage ist „darf diese Rolle hier sein", die andere „bietet
+  die Instanz ihr das noch an". Details in `.claude/rules/visibility.md`.
 - **Standard-Admin (Seeding):** `instrumentation.ts` ruft beim Serverstart
   `ensureDefaultAdmin()`. Tut nichts, solange die Instanz **irgendeinen** Admin hat —
   die Bedingung ist „null Admins", nicht „schon mal gelaufen", damit ein

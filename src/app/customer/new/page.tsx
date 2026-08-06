@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ListIcon } from "lucide-react";
 
 import { AnnouncementBanner } from "@/components/dashboard/announcement-banner";
@@ -8,13 +9,17 @@ import { BackLink } from "@/components/layout/back-link";
 import { TriModalContainer } from "@/components/tickets/tri-modal-container";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { requireUser } from "@/lib/auth/session";
+import { CUSTOMER_HOME } from "@/lib/auth/roles";
+import { requireArea, requireUser } from "@/lib/auth/session";
 import { getFeatureFlags } from "@/lib/features";
 import { listCategoryTree } from "@/lib/ticket-categories";
 import { listTriageRules } from "@/lib/triage-rules";
-import { getFormSchema, listCatalogSchemas } from "@/lib/form-schemas";
+import {
+  listCatalogSchemasFor,
+  quickTicketSchemaFor,
+} from "@/lib/form-schemas";
 import { listActiveLocations } from "@/lib/locations";
-import { QUICK_TICKET_SCHEMA } from "@/lib/mock-schemas";
+import { canSeeArea } from "@/lib/role-visibility";
 import { getActiveAnnouncements, getPortalFaqs } from "@/lib/portal";
 import { getAISettings } from "@/lib/ai-settings";
 import { listUsers } from "@/lib/users";
@@ -33,6 +38,9 @@ export default async function NewTicketPage({
 }) {
   // Authoritative guard — the proxy only redirects early.
   const user = await requireUser("/customer/new");
+  // Zweiter Guard, andere Frage: nicht „angemeldet", sondern „gibt es diesen
+  // Bereich für diese Rolle". Leitet auf das Portal um, nicht auf /forbidden.
+  requireArea("customer_new", user.role);
 
   /*
    * Validated against the enum rather than cast: `?mode=` is user input, and an
@@ -46,11 +54,30 @@ export default async function NewTicketPage({
   const parsedMode = TicketSource.safeParse(mode).data;
   const initialMode = parsedMode === "email" ? undefined : parsedMode;
 
-  // Resolved on the server so builder-published schemas appear without a rebuild.
-  // The quick-ticket form may itself be overridden by a stored version.
-  const quickTicketSchema =
-    getFormSchema(QUICK_TICKET_SCHEMA.id) ?? QUICK_TICKET_SCHEMA;
-  const catalogSchemas = listCatalogSchemas();
+  /*
+   * Resolved on the server so builder-published schemas appear without a rebuild.
+   * The quick-ticket form may itself be overridden by a stored version.
+   *
+   * Beide gefiltert nach dem, was diese Rolle sehen darf. Serverseitig und nicht
+   * im Browser: was gar nicht erst ausgeliefert wird, kann kein Client wieder
+   * einblenden — und `POST /api/tickets` lehnt denselben Entwurf noch einmal ab.
+   */
+  const quickTicketSchema = quickTicketSchemaFor(user.role);
+  const catalogSchemas = listCatalogSchemasFor(user.role);
+  const aiChat = canSeeArea(user.role, "intake_ai");
+
+  /*
+   * Drei Schalter, die einzeln harmlos sind und zusammen die Seite leeren.
+   *
+   * Behandelt wie ein abgeschalteter Bereich, weil es einer ist: die Kacheln auf
+   * dem Portal führen dann ebenfalls nicht hierher. Eine Seite mit Überschrift
+   * und nichts darunter wäre die schlechtere Antwort — sie sieht kaputt aus,
+   * statt zu fehlen.
+   */
+  if (!quickTicketSchema && catalogSchemas.length === 0 && !aiChat) {
+    redirect(CUSTOMER_HOME);
+  }
+
   const announcements = getActiveAnnouncements();
   const flags = getFeatureFlags();
 
@@ -97,12 +124,17 @@ export default async function NewTicketPage({
                 fragen — gemeldet als {user.email}.
               </p>
             </div>
-            <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
-              <Link href="/customer/tickets">
-                <ListIcon />
-                Meine Tickets
-              </Link>
-            </Button>
+            {/* Derselbe Bereichsschalter wie im Benutzermenü — ein sichtbarer
+                Link, der in eine Umleitung läuft, ist eine schlechtere Antwort
+                als kein Link. */}
+            {canSeeArea(user.role, "customer_tickets") && (
+              <Button asChild size="sm" className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent">
+                <Link href="/customer/tickets">
+                  <ListIcon />
+                  Meine Tickets
+                </Link>
+              </Button>
+            )}
           </div>
 
           <Separator className="my-8 bg-border" />
@@ -110,6 +142,7 @@ export default async function NewTicketPage({
           <TriModalContainer
             quickTicketSchema={quickTicketSchema}
             catalogSchemas={catalogSchemas}
+            aiChat={aiChat}
             initialMode={initialMode}
             locations={activeLocations}
             fieldOptions={fieldOptions}

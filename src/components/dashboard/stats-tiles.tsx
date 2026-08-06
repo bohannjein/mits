@@ -21,6 +21,8 @@ export function StatsTiles({
   locations,
   counts,
   showHeatmap,
+  /** Bereich `mits_analytics`. Aus heißt: die Zahlen bleiben, der Weg dorthin nicht. */
+  showAnalyticsLink = true,
 }: {
   opened: number;
   closed: number;
@@ -28,6 +30,7 @@ export function StatsTiles({
   /** Ticket count keyed by location id. */
   counts: Record<string, number>;
   showHeatmap: boolean;
+  showAnalyticsLink?: boolean;
 }) {
   const ranked = locations
     .map((location) => ({ location, count: counts[location.id] ?? 0 }))
@@ -50,13 +53,15 @@ export function StatsTiles({
           look occasionally. Two controls of the same size and weight say the two
           things matter the same amount, and this one does not.
         */}
-        <Link
-          href="/mits/analytics"
-          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          Statistiken
-          <ArrowUpRightIcon className="size-3" strokeWidth={1.5} aria-hidden />
-        </Link>
+        {showAnalyticsLink && (
+          <Link
+            href="/mits/analytics"
+            className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            Statistiken
+            <ArrowUpRightIcon className="size-3" strokeWidth={1.5} aria-hidden />
+          </Link>
+        )}
       </div>
 
       {/* Both figures live in the pie's legend, so the counter tiles that used to

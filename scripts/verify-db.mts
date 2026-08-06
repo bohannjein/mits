@@ -49,6 +49,7 @@ try {
   const settings = await import("../src/lib/settings");
   const system = await import("../src/lib/system-settings");
   const features = await import("../src/lib/features");
+  const roleVisibility = await import("../src/lib/role-visibility");
   const notificationSettings = await import("../src/lib/notification-settings");
   const ticketDisplay = await import("../src/lib/ticket-display");
   const canned = await import("../src/lib/canned-responses");
@@ -179,6 +180,22 @@ try {
     }),
   );
   check("feature flags", () => features.setFeatureFlags(mits.DEFAULT_FEATURE_FLAGS));
+  check("role visibility", () => {
+    roleVisibility.setRoleVisibility(
+      mits.RoleVisibilitySchema.parse({
+        user: { hidden_forms: ["hardware-order"], hidden_areas: ["mits_cmdb"] },
+      }),
+    );
+    if (roleVisibility.canSeeForm("user", "hardware-order")) {
+      throw new Error("hidden form still visible");
+    }
+    if (!roleVisibility.canSeeForm("agent", "hardware-order")) {
+      throw new Error("agent lost a form it never had taken away");
+    }
+    // Zurück auf den Default, sonst prüft der Rest der Suite eine Instanz mit
+    // ausgeblendetem Formular — und der Katalog wäre dort um eines kürzer.
+    return roleVisibility.setRoleVisibility(mits.DEFAULT_ROLE_VISIBILITY);
+  });
   check("notifications", () =>
     notificationSettings.setNotificationSettings(mits.DEFAULT_NOTIFICATION_SETTINGS),
   );

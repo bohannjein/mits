@@ -2,6 +2,7 @@ import "server-only";
 
 import { db } from "@/lib/db/sqlite";
 import { BUILTIN_SCHEMAS, QUICK_TICKET_SCHEMA } from "@/lib/mock-schemas";
+import { canSeeForm } from "@/lib/role-visibility";
 import { parseFormSchema, type MITSFormSchema } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -98,6 +99,34 @@ export function getFormSchema(id: string | null | undefined): MITSFormSchema | u
 /** The guided catalogue: everything except the free-text fallback. */
 export function listCatalogSchemas(): MITSFormSchema[] {
   return listFormSchemas().filter((schema) => schema.id !== QUICK_TICKET_SCHEMA.id);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Was eine Rolle davon zu sehen bekommt.
+
+   Getrennte Funktionen statt eines Rollen-Parameters an den drei Lesern oben:
+   der Katalog wird auch dort gebraucht, wo es keine Rolle gibt (Verschlagwortung
+   im Hintergrund, Analytics-Beschriftung), und ein optionaler Parameter, dessen
+   Weglassen die Filterung abschaltet, ist die Art Grenze, die beim nächsten
+   Aufrufer verschwindet.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** Der geführte Katalog, ohne die für diese Rolle ausgeblendeten Formulare. */
+export function listCatalogSchemasFor(role: unknown): MITSFormSchema[] {
+  return listCatalogSchemas().filter((schema) => canSeeForm(role, schema.id));
+}
+
+/**
+ * Das Freitext-Formular, oder `undefined`, wenn diese Rolle es nicht sieht.
+ *
+ * Es ist nicht nur ein Formular unter vielen: der Reiter „Schnellerstellung"
+ * rendert es, und ohne es gibt es diesen Reiter nicht. Deshalb hat der Reiter
+ * keinen eigenen Schalter — zwei Wege, dieselbe Fläche abzuschalten, sind einer
+ * zu viel.
+ */
+export function quickTicketSchemaFor(role: unknown): MITSFormSchema | undefined {
+  if (!canSeeForm(role, QUICK_TICKET_SCHEMA.id)) return undefined;
+  return getFormSchema(QUICK_TICKET_SCHEMA.id) ?? QUICK_TICKET_SCHEMA;
 }
 
 export function saveFormSchema(schema: MITSFormSchema, userId: string): void {

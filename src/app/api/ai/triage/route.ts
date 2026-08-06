@@ -4,6 +4,7 @@ import { getEffectiveAISettings } from "@/lib/ai-settings";
 import { serviceToken } from "@/lib/auth/secret";
 import { requireApiUser } from "@/lib/auth/session";
 import { listFormSchemas } from "@/lib/form-schemas";
+import { canSeeForm } from "@/lib/role-visibility";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Session-checked gateway to the FastAPI triage service.
@@ -78,16 +79,25 @@ export async function POST(request: Request) {
   // effect immediately, without a restart or a redeploy.
   const ai = getEffectiveAISettings();
 
-  // Assembled here so the model can only ever be offered schemas this instance
-  // actually knows — built-ins plus whatever the admin builder has published.
-  const schemas = listFormSchemas().map((schema) => ({
-    id: schema.id,
-    title: schema.title,
-    category: schema.category,
-    description: schema.description ?? null,
-    ai_hint: schema.aiHint ?? null,
-    json_schema: schema.schema,
-  }));
+  /*
+   * Assembled here so the model can only ever be offered schemas this instance
+   * actually knows — built-ins plus whatever the admin builder has published.
+   *
+   * Gefiltert nach der Rolle des Fragenden. Nicht Kosmetik: was das Modell
+   * vorschlägt, öffnet sich als vorbefülltes Formular, und `POST /api/tickets`
+   * lehnt es dann ab — der Melder bekäme eine Empfehlung, der er nicht folgen
+   * kann, und keinen Hinweis, warum.
+   */
+  const schemas = listFormSchemas()
+    .filter((schema) => canSeeForm(user.role, schema.id))
+    .map((schema) => ({
+      id: schema.id,
+      title: schema.title,
+      category: schema.category,
+      description: schema.description ?? null,
+      ai_hint: schema.aiHint ?? null,
+      json_schema: schema.schema,
+    }));
 
   let upstream: Response;
   try {

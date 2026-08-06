@@ -40,15 +40,30 @@ import type { SessionUser } from "@/lib/auth/session";
  * round-trip. The client is only needed to end the session.
  *
  * This menu is the only place in MITS that offers a cross-area link, which makes
- * it the one place a reporter could be handed a way out of `/customer`. "Meine
- * Tickets" and "Einstellungen" are inside their own area and therefore ungated. Both
+ * it the one place a reporter could be handed a way out of `/customer`. Both
  * staff entries hang off `canViewBoard`/`canAdminister` — the same predicates the
  * server guard uses — so a `user` is offered nothing but their own tickets. Any
  * new entry here needs the same gate; an ungated one puts a dead-end link on the
  * customer portal, and the redirect that catches it is a worse answer than never
  * showing the link.
+ *
+ * Zwei Einträge hängen zusätzlich an der rollenbezogenen Sichtbarkeit
+ * (`/admin/settings/roles`). Sie kommen als Props herein und werden nicht hier
+ * ausgewertet: die Regel steht in der Datenbank, und eine Client-Komponente, die
+ * sie selbst liest, wäre eine zweite Stelle, an der sie gelten muss.
+ * „Einstellungen" bleibt ungated — das eigene Passwort ist kein Bereich.
  */
-export function UserMenu({ user }: { user: SessionUser }) {
+export function UserMenu({
+  user,
+  /** „Meine Tickets" — Bereich `customer_tickets`. */
+  showOwnTickets = true,
+  /** „Statistiken" — Bereich `mits_analytics`. */
+  showAnalytics = true,
+}: {
+  user: SessionUser;
+  showOwnTickets?: boolean;
+  showAnalytics?: boolean;
+}) {
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
 
@@ -109,12 +124,14 @@ export function UserMenu({ user }: { user: SessionUser }) {
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
 
-          <DropdownMenuItem asChild>
-            <Link href="/customer/tickets">
-              <TicketIcon />
-              Meine Tickets
-            </Link>
-          </DropdownMenuItem>
+          {showOwnTickets && (
+            <DropdownMenuItem asChild>
+              <Link href="/customer/tickets">
+                <TicketIcon />
+                Meine Tickets
+              </Link>
+            </DropdownMenuItem>
+          )}
 
           {/* For every role, not gated. Until now nothing linked here at all and
               the page was reachable only through the forced password redirect —
@@ -144,7 +161,7 @@ export function UserMenu({ user }: { user: SessionUser }) {
             in. Gated on the same predicate as the desk entry, which is the guard
             `/mits/analytics` itself uses.
           */}
-          {showBoard && (
+          {showBoard && showAnalytics && (
             <DropdownMenuItem asChild>
               <Link href="/mits/analytics">
                 <BarChart3Icon />

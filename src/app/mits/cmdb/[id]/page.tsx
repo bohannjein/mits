@@ -13,7 +13,7 @@ import { SidebarSections } from "@/components/layout/sidebar-section";
 import { SplitView } from "@/components/layout/split-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { requireRole } from "@/lib/auth/session";
+import { requireArea, requireRole } from "@/lib/auth/session";
 import {
   getConfigurationItem,
   listConfigurationItems,
@@ -61,6 +61,7 @@ export default async function CIDetailPage({
 }) {
   const { id } = await params;
   const user = await requireRole("agent", `/mits/cmdb/${id}`);
+  requireArea("mits_cmdb", user.role);
 
   if (!isFeatureEnabled("feature_cmdb")) notFound();
 

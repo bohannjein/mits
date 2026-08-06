@@ -24,6 +24,7 @@ import { listMacros, setMacros } from "@/lib/macros";
 import { setAnalyticsSettings } from "@/lib/analytics/settings";
 import { invalidateAnalytics } from "@/lib/services/analytics-cache";
 import { setNotificationSettings } from "@/lib/notification-settings";
+import { setRoleVisibility } from "@/lib/role-visibility";
 import { verifyUserPassword } from "@/lib/auth/verify-password";
 import { nothingSelected, purgeData, type PurgeScopes } from "@/lib/purge";
 import { setTicketDisplaySettings } from "@/lib/ticket-display";
@@ -102,6 +103,8 @@ import {
   resolveSmtpPassword,
   FEATURE_FLAG_META,
   FeatureFlagsSchema,
+  RESTRICTABLE_ROLES,
+  RoleVisibilitySchema,
   MITSLocationSchema,
   MITSOrganizationSchema,
   NO_LOCATION,
@@ -424,6 +427,49 @@ export async function saveFeatureFlagsAction(
         : `Gespeichert. Abgeschaltet: ${off
             .map((key) => FEATURE_FLAG_META[key].label)
             .join(", ")}.`,
+  };
+}
+
+/* ── Sichtbarkeit je Rolle ──────────────────────────────────────────────── */
+
+/**
+ * Was eine Rolle nicht mehr sieht.
+ *
+ * Ein Blob wie die Module, und aus demselben Grund: die Maske ist eine Liste
+ * von Schaltern, die gemeinsam abgeschickt wird — ein Endpunkt pro Schalter
+ * wäre eine halb gespeicherte Konfiguration, sobald einer davon scheitert.
+ *
+ * Revalidiert das Layout und nicht nur diese Seite: die Kopfzeile, das
+ * Benutzermenü und die Portalkacheln lesen die Regeln beim Rendern, und die
+ * stehen auf jeder Seite.
+ */
+export async function saveRoleVisibilityAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const payload = parsePayload(formData, "visibility", RoleVisibilitySchema);
+  if (!payload.ok) return { ok: false, error: payload.error };
+
+  const visibility = setRoleVisibility(payload.data);
+
+  const taken = RESTRICTABLE_ROLES.reduce(
+    (sum, role) =>
+      sum +
+      visibility[role].hidden_forms.length +
+      visibility[role].hidden_areas.length,
+    0,
+  );
+
+  revalidatePath("/", "layout");
+
+  return {
+    ok: true,
+    message:
+      taken === 0
+        ? "Gespeichert. Jede Rolle sieht alles."
+        : `Gespeichert. ${taken} Einschränkung${taken === 1 ? "" : "en"} aktiv.`,
   };
 }
 
