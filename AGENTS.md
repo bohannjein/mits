@@ -39,7 +39,7 @@ die die jeweilige Sitzung nie berührt.
 | `.claude/rules/notifications.md` | Toast-Kanäle, Darstellung, Sammelmeldung |
 | `.claude/rules/keyboard.md` | Kürzel, Formular-Isolation, Hilfe-Dialog |
 | `.claude/rules/portal.md` | portal_config, Widgets, FAQ, Status, Wartung |
-| `.claude/rules/visibility.md` | Was eine Rolle sieht: Formulare und Bereiche je Rolle |
+| `.claude/rules/visibility.md` | Was eine Rolle sieht: Formulare, Bereiche, Vorlagen |
 | `.claude/rules/deployment.md` | Images bauen, Registry, Portainer |
 | `.claude/rules/storage.md` | Dateiablage auf Platte oder S3, SigV4 |
 
@@ -594,7 +594,10 @@ Nachrichten; wer unten steht, scrollt automatisch mit.
   Formular nicht still für alle unsichtbar ist. Auf einer Seite läuft
   `requireArea` **zusätzlich** zu `requireUser`/`requireRole`, nie an ihrer
   Stelle — die eine Frage ist „darf diese Rolle hier sein", die andere „bietet
-  die Instanz ihr das noch an". Details in `.claude/rules/visibility.md`.
+  die Instanz ihr das noch an". Benannte **Vorlagen** (löschbar, drei
+  mitgeliefert) legen eine gespeicherte Zusammenstellung auf eine Rolle — sie
+  sind keine Rollen und gelten für jedes Konto darin. Details in
+  `.claude/rules/visibility.md`.
 - **Standard-Admin (Seeding):** `instrumentation.ts` ruft beim Serverstart
   `ensureDefaultAdmin()`. Tut nichts, solange die Instanz **irgendeinen** Admin hat —
   die Bedingung ist „null Admins", nicht „schon mal gelaufen", damit ein

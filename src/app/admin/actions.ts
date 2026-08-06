@@ -25,6 +25,7 @@ import { setAnalyticsSettings } from "@/lib/analytics/settings";
 import { invalidateAnalytics } from "@/lib/services/analytics-cache";
 import { setNotificationSettings } from "@/lib/notification-settings";
 import { setRoleVisibility } from "@/lib/role-visibility";
+import { setVisibilityPresets } from "@/lib/visibility-presets";
 import { verifyUserPassword } from "@/lib/auth/verify-password";
 import { nothingSelected, purgeData, type PurgeScopes } from "@/lib/purge";
 import { setTicketDisplaySettings } from "@/lib/ticket-display";
@@ -105,6 +106,7 @@ import {
   FeatureFlagsSchema,
   RESTRICTABLE_ROLES,
   RoleVisibilitySchema,
+  VisibilityPresetSchema,
   MITSLocationSchema,
   MITSOrganizationSchema,
   NO_LOCATION,
@@ -470,6 +472,50 @@ export async function saveRoleVisibilityAction(
       taken === 0
         ? "Gespeichert. Jede Rolle sieht alles."
         : `Gespeichert. ${taken} Einschränkung${taken === 1 ? "" : "en"} aktiv.`,
+  };
+}
+
+/**
+ * Die Vorlagenliste, ganz ersetzt.
+ *
+ * Eigene Action und eigener Setting-Key neben der Sichtbarkeit selbst: die
+ * beiden werden auf derselben Seite bearbeitet, aber nicht zusammen — eine
+ * Vorlage anzulegen darf nicht die Schalter mitschreiben, die daneben gerade
+ * halb gesetzt sind.
+ *
+ * Kein `revalidatePath("/", "layout")`: Vorlagen sind ein Werkzeug dieser Maske
+ * und ändern für sich genommen nichts an dem, was irgendjemand sieht.
+ */
+export async function saveVisibilityPresetsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const payload = parsePayload(
+    formData,
+    "presets",
+    z.array(VisibilityPresetSchema),
+  );
+  if (!payload.ok) return { ok: false, error: payload.error };
+
+  // Zwei Vorlagen mit einer Id teilen sich beim Anwenden den Eintrag, und
+  // „Löschen" träfe dann beide. Der Browser erzeugt eine UUID pro Zeile; ein
+  // handgebauter POST tut das nicht.
+  const ids = new Set(payload.data.map((preset) => preset.id));
+  if (ids.size !== payload.data.length) {
+    return { ok: false, error: "Zwei Vorlagen haben dieselbe Kennung." };
+  }
+
+  const presets = setVisibilityPresets(payload.data);
+  revalidatePath("/admin/settings/roles");
+
+  return {
+    ok: true,
+    message:
+      presets.length === 0
+        ? "Gespeichert. Keine Vorlagen mehr hinterlegt."
+        : `${presets.length} Vorlage${presets.length === 1 ? "" : "n"} gespeichert.`,
   };
 }
 

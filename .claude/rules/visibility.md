@@ -1,6 +1,7 @@
 ---
 paths:
   - "src/lib/role-visibility.ts"
+  - "src/lib/visibility-presets.ts"
   - "src/app/admin/settings/roles/**"
   - "src/components/admin/role-visibility-form.tsx"
   - "src/lib/form-schemas.ts"
@@ -77,6 +78,45 @@ Schnellerstellung — man kam über eine der beiden hinein und wechselte den
 Reiter. Bleibt für eine Rolle nur die Schnellerstellung, gäbe es ohne die dritte
 Kachel keinen Weg mehr ins Formular. Sie erscheint deshalb **nur**, wenn keine
 der beiden anderen erscheint.
+
+## Vorlagen
+
+Setting-Key `visibility_presets`, eine Liste wie Textbausteine oder Makros: ganz
+gelesen, ganz geschrieben, angelegt und gelöscht in derselben Maske.
+
+**Eine Vorlage ist keine Rolle.** Sie legt eine gespeicherte Zusammenstellung auf
+die Schalter *einer Rolle*, und die gilt für jedes Konto darin. „Personalabteilung"
+auf `user` anzuwenden heißt: die Anwender dieser Instanz sind die
+Personalabteilung. Solange es keine Zuordnung pro Konto gibt, ist das die ganze
+Funktion — die Karte sagt es, weil eine Vorlage, die aussieht wie eine Rolle und
+keine ist, still falsch angewendet wird.
+
+**Fehlt die Zeile, gelten die drei mitgelieferten** (`DEFAULT_VISIBILITY_PRESETS`:
+Anwender, Personalabteilung, Agent). Geschrieben wird erst beim ersten Speichern;
+danach steht dort, was der Admin stehen hat — auch eine leere Liste. Genau so ist
+„löschbar" gemeint: eine gelöschte Vorgabe kommt nicht beim nächsten Start
+zurück. **Eine kaputte Zeile fällt auf `[]` zurück, nicht auf die Vorgaben** —
+sonst erschienen gelöschte Einträge wieder, sobald jemand das JSON verunstaltet.
+
+**Die mitgelieferten sind Positivlisten, die eigenen Momentaufnahmen.**
+`PRESET_KEEP_FORMS` hält je Vorgabe die Ids, die **bleiben**; `presetRulesFor`
+rechnet die Streichliste beim Anwenden gegen den aktuellen Bestand aus. Ohne das
+wäre „HR sieht nur Eintritt" in dem Moment falsch, in dem jemand ein
+Bestellformular baut — und zwar in die gefährliche Richtung. Eine selbst
+gesicherte Vorlage speichert dagegen, was auf den Schaltern stand; alles andere
+hieße, dass „gesichert" etwas anderes bedeutet als das, was man gesehen hat.
+
+`npm test` prüft, dass jede Id in `PRESET_KEEP_FORMS` ein Formular trifft. Das
+Fehlerbild sonst: die Positivliste trifft nichts, und Anwenden blendet **alles**
+aus.
+
+**Zwei Speicherknöpfe auf einer Seite, und das ist Absicht.** Vorlagen und
+Sichtbarkeit liegen unter zwei Keys und werden getrennt geschrieben: eine Vorlage
+anzulegen darf nicht die halb gesetzten Schalter daneben mitschreiben, und
+„Anwenden" darf nicht sofort für alle gelten. Die Vorlagenliste ist State in
+`RoleVisibilityForm` und nicht in der Karte — gespeichert wird immer die **ganze**
+Liste, und zwei Karten mit eigenem State überschrieben sich gegenseitig die
+Vorlagen der anderen Rolle.
 
 ## Wo durchgesetzt wird
 

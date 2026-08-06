@@ -28,11 +28,15 @@ import {
 import { TriageRuleSchema } from "../src/types/mits";
 import {
   DEFAULT_ROLE_VISIBILITY,
+  DEFAULT_VISIBILITY_PRESETS,
   NAV_AREAS,
   NAV_AREA_META,
+  PRESET_KEEP_FORMS,
   RESTRICTABLE_ROLES,
   RoleVisibilitySchema,
+  VisibilityPresetSchema,
   areasForRole,
+  presetRulesFor,
   roleSeesArea,
   roleSeesForm,
 } from "../src/types/mits";
@@ -54,6 +58,7 @@ import {
   schemaToZod,
 } from "../src/lib/forms/schema-to-zod";
 import {
+  BUILTIN_SCHEMAS,
   HARDWARE_ORDER_SCHEMA,
   QUICK_TICKET_SCHEMA,
   SECURITY_INCIDENT_SCHEMA,
@@ -4422,6 +4427,101 @@ console.log("\nrole visibility");
     "es gibt keinen Schalter für /customer oder /mits",
     !(NAV_AREAS as readonly string[]).includes("customer_home") &&
       !(NAV_AREAS as readonly string[]).includes("mits_home"),
+  );
+}
+
+console.log("\nvisibility presets");
+{
+  const ids = BUILTIN_SCHEMAS.map((schema) => schema.id);
+
+  // Der eine Fehler, den man an der Oberfläche nicht sieht: eine Vorlage zeigt
+  // auf eine Formular-Id von gestern, die Positivliste trifft nichts, und das
+  // Anwenden blendet **alles** aus.
+  for (const [presetId, keep] of Object.entries(PRESET_KEEP_FORMS)) {
+    check(
+      `die Vorlage „${presetId}" zeigt nur auf existierende Formulare`,
+      keep.every((id) => ids.includes(id)),
+      JSON.stringify(keep.filter((id) => !ids.includes(id))),
+    );
+  }
+
+  check(
+    "die drei mitgelieferten Vorlagen sind da",
+    DEFAULT_VISIBILITY_PRESETS.length === 3 &&
+      DEFAULT_VISIBILITY_PRESETS.some((preset) => preset.role === "agent") &&
+      DEFAULT_VISIBILITY_PRESETS.some(
+        (preset) => preset.id === "personalabteilung",
+      ),
+  );
+  check(
+    "keine zwei Vorlagen teilen eine Kennung",
+    new Set(DEFAULT_VISIBILITY_PRESETS.map((preset) => preset.id)).size ===
+      DEFAULT_VISIBILITY_PRESETS.length,
+  );
+
+  const hr = DEFAULT_VISIBILITY_PRESETS.find(
+    (preset) => preset.id === "personalabteilung",
+  )!;
+
+  // Die Positivliste wird gegen den *aktuellen* Bestand aufgelöst — ein später
+  // gebautes Formular ist damit ebenfalls weg, statt still sichtbar zu bleiben.
+  const applied = presetRulesFor(hr, [...ids, "spaeter-gebautes-formular"]);
+  check(
+    "die HR-Vorlage lässt Eintritt und Freitext stehen",
+    !applied.hidden_forms.includes("user-onboarding") &&
+      !applied.hidden_forms.includes("quick-ticket"),
+  );
+  check(
+    "sie nimmt den übrigen Katalog weg",
+    applied.hidden_forms.includes("hardware-order") &&
+      applied.hidden_forms.includes("security-incident"),
+  );
+  check(
+    "und auch ein Formular, das es beim Anlegen der Vorlage nicht gab",
+    applied.hidden_forms.includes("spaeter-gebautes-formular"),
+  );
+  // Aufgelöst wird gegen den vollen Bestand, nicht gegen den bereits
+  // gefilterten — sonst nähme jedes Anwenden weiter weg, bis nichts mehr da ist.
+  check(
+    "die Streichliste enthält nur Formulare, die es gibt",
+    applied.hidden_forms.every((id) =>
+      [...ids, "spaeter-gebautes-formular"].includes(id),
+    ),
+  );
+
+  // Eine selbst gesicherte Vorlage ist eine Momentaufnahme und wird nicht gegen
+  // den Bestand nachgerechnet — sonst hieße „gesichert" etwas anderes als das,
+  // was auf den Schaltern stand.
+  const own = VisibilityPresetSchema.parse({
+    id: crypto.randomUUID(),
+    name: "Eigene",
+    role: "user",
+    hidden_forms: ["hardware-order"],
+    hidden_areas: ["intake_ai"],
+  });
+  const ownApplied = presetRulesFor(own, ids);
+  check(
+    "eine eigene Vorlage bleibt, was gesichert wurde",
+    ownApplied.hidden_forms.length === 1 &&
+      ownApplied.hidden_forms[0] === "hardware-order" &&
+      ownApplied.hidden_areas[0] === "intake_ai",
+  );
+
+  check(
+    "eine Vorlage ohne Namen wird abgelehnt",
+    !VisibilityPresetSchema.safeParse({
+      id: "x",
+      name: "",
+      role: "user",
+    }).success,
+  );
+  check(
+    "und eine für die Administration ebenfalls",
+    !VisibilityPresetSchema.safeParse({
+      id: "x",
+      name: "Alles",
+      role: "admin",
+    }).success,
   );
 }
 

@@ -3,12 +3,18 @@
 import {
   CheckCircle2Icon,
   Loader2Icon,
+  PlusIcon,
   SaveIcon,
+  Trash2Icon,
   TriangleAlertIcon,
+  WandSparklesIcon,
 } from "lucide-react";
 import { useActionState, useState } from "react";
 
-import { saveRoleVisibilityAction } from "@/app/admin/actions";
+import {
+  saveRoleVisibilityAction,
+  saveVisibilityPresetsAction,
+} from "@/app/admin/actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +25,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -29,9 +36,12 @@ import {
   NAV_AREA_META,
   RESTRICTABLE_ROLES,
   areasForRole,
+  presetRulesFor,
   type NavArea,
   type RestrictableRole,
+  type RoleRules,
   type RoleVisibility,
+  type VisibilityPreset,
 } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -55,9 +65,11 @@ export interface FormEntry {
 export function RoleVisibilityForm({
   visibility,
   forms,
+  presets: storedPresets,
 }: {
   visibility: RoleVisibility;
   forms: FormEntry[];
+  presets: VisibilityPreset[];
 }) {
   const [current, setCurrent] = useState(visibility);
   const [result, formAction, saving] = useActionState(
@@ -66,6 +78,21 @@ export function RoleVisibilityForm({
   );
 
   const changed = JSON.stringify(current) !== JSON.stringify(visibility);
+  const formIds = forms.map((form) => form.id);
+
+  /*
+   * Die Vorlagenliste liegt hier und nicht in der Karte, obwohl sie pro Reiter
+   * gerendert wird: gespeichert wird immer die **ganze** Liste, und zwei Karten
+   * mit je eigenem State würden sich beim Speichern gegenseitig die Vorlagen der
+   * anderen Rolle überschreiben.
+   */
+  const [presets, setPresets] = useState(storedPresets);
+  const [presetResult, presetAction, presetSaving] = useActionState(
+    saveVisibilityPresetsAction,
+    null,
+  );
+  const presetsChanged =
+    JSON.stringify(presets) !== JSON.stringify(storedPresets);
 
   const setForm = (role: RestrictableRole, id: string, visible: boolean) =>
     setCurrent((prev) => ({
@@ -121,6 +148,21 @@ export function RoleVisibilityForm({
         {RESTRICTABLE_ROLES.map((role) => (
           <TabsContent key={role} value={role} className="mt-6 grid gap-6">
             <IntakeWarning role={role} current={current} forms={forms} />
+
+            <PresetCard
+              role={role}
+              presets={presets}
+              onPresets={setPresets}
+              formIds={formIds}
+              rules={current[role]}
+              onApply={(rules) =>
+                setCurrent((prev) => ({ ...prev, [role]: rules }))
+              }
+              action={presetAction}
+              saving={presetSaving}
+              changed={presetsChanged}
+              result={presetResult}
+            />
 
             <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
               <CardHeader>
@@ -232,6 +274,215 @@ export function RoleVisibilityForm({
         </Alert>
       )}
     </div>
+  );
+}
+
+/**
+ * Vorlagen für eine Rolle: anwenden, umbenennen, löschen, neu sichern.
+ *
+ * „Anwenden" schreibt nur in die Schalter darunter — gespeichert wird die
+ * Sichtbarkeit mit ihrem eigenen Knopf am Seitenende. Zwei Knöpfe, weil es zwei
+ * Dinge sind: eine Vorlage anzulegen darf nicht die halb gesetzten Schalter
+ * daneben mitschreiben, und eine Vorlage anzuwenden darf nicht sofort für alle
+ * gelten.
+ */
+function PresetCard({
+  role,
+  presets,
+  onPresets,
+  formIds,
+  rules,
+  onApply,
+  action,
+  saving,
+  changed,
+  result,
+}: {
+  role: RestrictableRole;
+  presets: VisibilityPreset[];
+  onPresets: (next: VisibilityPreset[]) => void;
+  formIds: string[];
+  /** Die aktuell gesetzten Schalter dieser Rolle — Grundlage für „sichern". */
+  rules: RoleRules;
+  onApply: (rules: RoleRules) => void;
+  action: (formData: FormData) => void;
+  saving: boolean;
+  changed: boolean;
+  result: { ok: boolean; message?: string; error?: string } | null;
+}) {
+  const [name, setName] = useState("");
+  const mine = presets.filter((preset) => preset.role === role);
+
+  const rename = (id: string, next: string) =>
+    onPresets(
+      presets.map((preset) =>
+        preset.id === id ? { ...preset, name: next } : preset,
+      ),
+    );
+
+  const remove = (id: string) =>
+    onPresets(presets.filter((preset) => preset.id !== id));
+
+  const add = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+
+    onPresets([
+      ...presets,
+      {
+        id: crypto.randomUUID(),
+        name: trimmed,
+        role,
+        // Eine Momentaufnahme der Schalter. Anders als bei den mitgelieferten
+        // Vorlagen keine Positivliste — „gesichert" heißt: genau das hier.
+        hidden_forms: [...rules.hidden_forms],
+        hidden_areas: [...rules.hidden_areas],
+      },
+    ]);
+    setName("");
+  };
+
+  return (
+    <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
+      <CardHeader>
+        <CardTitle className="text-lg font-medium">Vorlagen</CardTitle>
+        <CardDescription className="mt-1 leading-relaxed">
+          Eine gespeicherte Zusammenstellung, mit einem Klick auf die Schalter
+          darunter gelegt. Sie gilt für jedes Konto mit dieser Rolle — es gibt
+          keine Zuordnung pro Person.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-2">
+        {mine.length === 0 && (
+          <p className="rounded-2xl border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+            Keine Vorlage für diese Rolle.
+          </p>
+        )}
+
+        {mine.map((preset) => {
+          const applied = presetRulesFor(preset, formIds);
+          const parts = [
+            applied.hidden_forms.length > 0
+              ? `${applied.hidden_forms.length} Formular${applied.hidden_forms.length === 1 ? "" : "e"} aus`
+              : null,
+            applied.hidden_areas.length > 0
+              ? `${applied.hidden_areas.length} Bereich${applied.hidden_areas.length === 1 ? "" : "e"} aus`
+              : null,
+          ].filter(Boolean);
+
+          return (
+            <div
+              key={preset.id}
+              className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-background px-4 py-3"
+            >
+              <div className="min-w-48 flex-1">
+                <Input
+                  value={preset.name}
+                  onChange={(event) => rename(preset.id, event.target.value)}
+                  disabled={saving}
+                  aria-label="Name der Vorlage"
+                  className="h-10 rounded-xl"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {parts.length > 0 ? parts.join(" · ") : "Nimmt nichts weg."}
+                </p>
+              </div>
+
+              <Button
+                type="button"
+                size="sm"
+                className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
+                disabled={saving}
+                onClick={() => onApply(applied)}
+              >
+                <WandSparklesIcon strokeWidth={1.5} />
+                Anwenden
+              </Button>
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-9 rounded-full text-muted-foreground hover:text-destructive"
+                disabled={saving}
+                aria-label={`Vorlage „${preset.name}“ löschen`}
+                onClick={() => remove(preset.id)}
+              >
+                <Trash2Icon strokeWidth={1.5} />
+              </Button>
+            </div>
+          );
+        })}
+
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <Input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              // Enter in einem Feld ohne umgebendes Formular tut sonst nichts,
+              // und ein Feld neben einem Knopf lädt genau dazu ein.
+              if (event.key === "Enter") {
+                event.preventDefault();
+                add();
+              }
+            }}
+            disabled={saving}
+            placeholder="Personalabteilung"
+            aria-label="Name der neuen Vorlage"
+            className="h-10 min-w-48 flex-1 rounded-xl"
+          />
+          <Button
+            type="button"
+            size="sm"
+            className="h-10 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
+            disabled={saving || name.trim() === ""}
+            onClick={add}
+          >
+            <PlusIcon strokeWidth={1.5} />
+            Aktuelle Auswahl sichern
+          </Button>
+        </div>
+
+        <form action={action} className="mt-2 flex flex-wrap items-center gap-3">
+          {/* Die ganze Liste, nicht nur die dieser Rolle — sonst nähme ein
+              Speichern im einen Reiter die Vorlagen des anderen mit. */}
+          <input type="hidden" name="presets" value={JSON.stringify(presets)} />
+          <Button
+            type="submit"
+            size="sm"
+            className="h-10 rounded-full bg-inverse-surface px-5 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+            disabled={saving || !changed}
+          >
+            {saving ? (
+              <Loader2Icon className="animate-spin" />
+            ) : (
+              <SaveIcon strokeWidth={1.5} />
+            )}
+            {saving
+              ? "Speichern …"
+              : changed
+                ? "Vorlagen speichern"
+                : "Vorlagen unverändert"}
+          </Button>
+        </form>
+
+        {result && (
+          <Alert
+            variant={result.ok ? "default" : "destructive"}
+            className="mt-1 rounded-2xl border-border px-4 py-3"
+          >
+            {result.ok ? (
+              <CheckCircle2Icon strokeWidth={1.5} />
+            ) : (
+              <TriangleAlertIcon strokeWidth={1.5} />
+            )}
+            <AlertDescription>
+              {result.ok ? result.message : result.error}
+            </AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

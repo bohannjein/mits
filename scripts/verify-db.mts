@@ -50,6 +50,7 @@ try {
   const system = await import("../src/lib/system-settings");
   const features = await import("../src/lib/features");
   const roleVisibility = await import("../src/lib/role-visibility");
+  const presets = await import("../src/lib/visibility-presets");
   const notificationSettings = await import("../src/lib/notification-settings");
   const ticketDisplay = await import("../src/lib/ticket-display");
   const canned = await import("../src/lib/canned-responses");
@@ -195,6 +196,18 @@ try {
     // Zurück auf den Default, sonst prüft der Rest der Suite eine Instanz mit
     // ausgeblendetem Formular — und der Katalog wäre dort um eines kürzer.
     return roleVisibility.setRoleVisibility(mits.DEFAULT_ROLE_VISIBILITY);
+  });
+  check("visibility presets", () => {
+    // Ohne Zeile gelten die mitgelieferten drei; erst ein Schreibvorgang macht
+    // die Liste zu dem, was der Admin stehen hat — auch wenn das nichts ist.
+    if (presets.listVisibilityPresets().length !== 3) {
+      throw new Error("a fresh instance should offer the three defaults");
+    }
+    presets.setVisibilityPresets([]);
+    if (presets.listVisibilityPresets().length !== 0) {
+      throw new Error("a deleted default came back");
+    }
+    return presets.setVisibilityPresets(mits.DEFAULT_VISIBILITY_PRESETS);
   });
   check("notifications", () =>
     notificationSettings.setNotificationSettings(mits.DEFAULT_NOTIFICATION_SETTINGS),

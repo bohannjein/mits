@@ -2380,6 +2380,136 @@ export function roleSeesForm(
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Vorlagen.
+
+   Eine benannte Zusammenstellung — „Personalabteilung sieht Eintritt und
+   Freitext" — die sich auf eine Rolle anwenden lässt. Angelegt, umbenannt und
+   gelöscht wie jede andere Liste in der Administration; die drei
+   mitgelieferten sind Inhalt und kein Code, also auch löschbar.
+
+   **Eine Vorlage ist keine Rolle.** Sie füllt die Schalter einer Rolle, und die
+   gilt für jedes Konto darin. Wer „Personalabteilung" auf `user` anwendet, sagt:
+   die Anwender dieser Instanz sind die Personalabteilung. Solange es keine
+   Zuordnung pro Konto gibt, ist das die ganze Wahrheit über diese Funktion, und
+   die Maske sagt es auch — eine Vorlage, die aussieht wie eine Rolle und keine
+   ist, wäre sonst eine still falsch angewendete Einschränkung.
+
+   **Angewendet wird im Browser, gespeichert wird getrennt.** Ein Klick auf
+   „Anwenden" setzt die Schalter; gespeichert wird erst mit dem Knopf darunter.
+   Sofort zu schreiben hieße, dass eine falsch getroffene Vorlage sofort für
+   alle gilt.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const VisibilityPresetSchema = z.object({
+  id: z.string().min(1).max(64),
+  name: z.string().min(1).max(80),
+  /** Für welche Rolle die Vorlage gedacht ist. Bestimmt, in welchem Reiter sie steht. */
+  role: z.enum(RESTRICTABLE_ROLES),
+  hidden_forms: z
+    .array(z.string())
+    .default([])
+    .transform((ids) => [...new Set(ids.map((id) => id.trim()).filter(Boolean))]),
+  // Gefiltert statt abgelehnt, aus demselben Grund wie in `RoleRulesSchema`:
+  // ein entfernter Bereichsschlüssel darf nicht die ganze Vorlagenliste
+  // mitnehmen.
+  hidden_areas: z
+    .array(z.string())
+    .default([])
+    .transform((keys) => [
+      ...new Set(
+        keys.filter((key): key is NavArea =>
+          (NAV_AREAS as readonly string[]).includes(key),
+        ),
+      ),
+    ]),
+});
+export type VisibilityPreset = z.infer<typeof VisibilityPresetSchema>;
+
+/**
+ * Die Formular-Ids, auf die die mitgelieferten Vorlagen zeigen.
+ *
+ * Als Literale und nicht aus `lib/mock-schemas.ts` importiert: die Datei
+ * importiert diese hier, und ein Zyklus zwischen Typmodell und Beispieldaten ist
+ * teurer als zwei Zeichenketten. `npm test` prüft, dass es beide Formulare gibt
+ * — eine Vorlage, die eine Id von gestern behält, blendet still alles aus.
+ */
+const QUICK_TICKET_ID = "quick-ticket";
+const ONBOARDING_ID = "user-onboarding";
+
+/**
+ * Was eine frische Instanz mitbringt.
+ *
+ * Nicht geschrieben, sondern zurückgegeben, solange niemand die Liste angefasst
+ * hat — dieselbe Mechanik wie bei den Modulen. Sobald eine davon gelöscht oder
+ * eine eigene angelegt wird, steht die Liste in der Datenbank und diese
+ * Vorgaben kommen nicht zurück. Genau das ist gemeint mit „löschbar".
+ */
+export const DEFAULT_VISIBILITY_PRESETS: VisibilityPreset[] = [
+  VisibilityPresetSchema.parse({
+    id: "anwender",
+    name: "Anwender",
+    role: "user",
+    hidden_forms: [],
+    hidden_areas: [],
+  }),
+  VisibilityPresetSchema.parse({
+    id: "personalabteilung",
+    name: "Personalabteilung",
+    role: "user",
+    // Eintritt und Freitext. Was hier steht, ist die Ausnahme — die Vorlage
+    // wird beim Anwenden gegen den *aktuellen* Formularbestand aufgelöst, ein
+    // später gebautes Bestellformular ist also ebenfalls weg.
+    hidden_forms: [],
+    hidden_areas: [],
+  }),
+  VisibilityPresetSchema.parse({
+    id: "agent",
+    name: "Agent",
+    role: "agent",
+    hidden_forms: [],
+    hidden_areas: [],
+  }),
+];
+
+/**
+ * Vorlagen, die eine Positivliste sind statt einer Streichliste.
+ *
+ * „Die Personalabteilung sieht Eintritt und Freitext" muss sich auf ein
+ * Formular beziehen, das es beim Anwenden noch gar nicht gab — sonst wäre die
+ * Vorlage in dem Moment falsch, in dem jemand ein Bestellformular baut, und
+ * zwar in die gefährliche Richtung: sichtbar. Deshalb hält
+ * `PRESET_KEEP_FORMS` die Ids, die **bleiben**, und `presetRulesFor` rechnet
+ * daraus beim Anwenden die Streichliste gegen den aktuellen Bestand aus.
+ *
+ * Nur für die mitgelieferten Vorlagen. Eine selbst angelegte speichert, was auf
+ * den Schaltern stand — sie ist eine Momentaufnahme, und das ist die ehrliche
+ * Bedeutung von „aus der aktuellen Auswahl gesichert".
+ */
+export const PRESET_KEEP_FORMS: Record<string, string[]> = {
+  personalabteilung: [QUICK_TICKET_ID, ONBOARDING_ID],
+};
+
+/**
+ * Die Regeln, die diese Vorlage auf den aktuellen Bestand ergibt.
+ *
+ * `formIds` ist der volle Formularbestand der Instanz, nicht der bereits
+ * gefilterte — sonst würde zweimaliges Anwenden immer weiter wegnehmen.
+ */
+export function presetRulesFor(
+  preset: VisibilityPreset,
+  formIds: string[],
+): RoleRules {
+  const keep = PRESET_KEEP_FORMS[preset.id];
+
+  return {
+    hidden_forms: keep
+      ? formIds.filter((id) => !keep.includes(id))
+      : preset.hidden_forms,
+    hidden_areas: preset.hidden_areas,
+  };
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
    SMTP.
 
    The password lives in `mits_setting` like every other admin-managed value.

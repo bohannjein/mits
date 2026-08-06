@@ -13,6 +13,7 @@ import { requireRole } from "@/lib/auth/session";
 import { listSchemaInfos } from "@/lib/form-schemas";
 import { QUICK_TICKET_SCHEMA } from "@/lib/mock-schemas";
 import { getRoleVisibility } from "@/lib/role-visibility";
+import { listVisibilityPresets } from "@/lib/visibility-presets";
 
 export const metadata: Metadata = {
   title: "Sichtbarkeit — MITS",
@@ -64,7 +65,11 @@ export default async function RoleVisibilitySettingsPage() {
             </AlertDescription>
           </Alert>
 
-          <RoleVisibilityForm visibility={getRoleVisibility()} forms={forms} />
+          <RoleVisibilityForm
+            visibility={getRoleVisibility()}
+            forms={forms}
+            presets={listVisibilityPresets()}
+          />
         </div>
       </main>
     </>
