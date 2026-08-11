@@ -23,6 +23,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { UPLOAD_ACCEPT } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Rich-text editor for replies and internal notes.
@@ -470,15 +471,18 @@ export function RichTextEditor({
         the file picker with it — the composer's paperclip opens this through
         `pickFile`, and attaching a file is not a formatting decision.
 
-        `accept` mirrors the server allow-list in `lib/storage.ts` rather than
-        narrowing it: a picker that hides the file type the server would have taken
-        is a refusal with no message. It stays a hint either way — the server checks
-        the extension again, and a drag-and-drop never consults this attribute.
+        `accept` **is** the server allow-list, not a copy of it: `UPLOAD_ACCEPT` is
+        derived from the same record `storeUpload` checks against. It used to be the
+        same fifteen extensions typed out here, which is two lists that have to stay
+        equal — and the failure mode is silent in the worst direction, a picker that
+        hides a file type the server would have taken. It stays a hint either way:
+        the server checks the extension again, and a drag-and-drop never consults
+        this attribute at all.
       */}
       <input
         ref={fileInput}
         type="file"
-        accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.pdf,.txt,.log,.csv,.zip,.eml,.msg,.docx,.xlsx"
+        accept={UPLOAD_ACCEPT}
         multiple
         className="hidden"
         onChange={(event) =>

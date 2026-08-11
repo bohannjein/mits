@@ -1819,6 +1819,49 @@ export function presenceStateFor(
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Was hochgeladen werden darf.
+
+   Steht hier und nicht in `lib/storage.ts`, obwohl dort geprüft wird: die Prüfung
+   ist Server-Sache, aber das `accept` des Dateiwählers ist Client-Sache, und ein
+   Wähler, der weniger anbietet als der Server annimmt, ist ein Knopf, mit dem sich
+   eine erlaubte Datei nicht auswählen lässt. Genau das war der Fall — der
+   Erstellungs-Chat bot `image/*,.pdf,.log,.txt` an, während der Server auch `.csv`,
+   `.zip`, `.eml`, `.msg`, `.docx` und `.xlsx` nimmt. Eine Liste, beide Seiten.
+
+   Eine Allow-List und keine Deny-List: die interessanten Anhänge an einem
+   IT-Ticket sind Screenshots, Logs und PDFs, und ausgeliefert wird ohnehin alles
+   als Download.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** Endung → Typ, unter dem die Datei ausgeliefert wird. */
+export const ALLOWED_UPLOAD_EXTENSIONS: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".log": "text/plain",
+  ".csv": "text/csv",
+  ".zip": "application/zip",
+  ".eml": "message/rfc822",
+  ".msg": "application/vnd.ms-outlook",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+
+/**
+ * Der `accept`-Wert für jeden Dateiwähler, der in diese Ablage schreibt.
+ *
+ * Endungen und keine MIME-Typen: `image/*` würde ein .heic vom iPhone anbieten,
+ * das der Server ablehnt — die Liste oben ist auf Endungen definiert, also ist die
+ * Auswahl es auch. Ein Wähler kann damit nichts anbieten, was hinterher scheitert.
+ */
+export const UPLOAD_ACCEPT = Object.keys(ALLOWED_UPLOAD_EXTENSIONS).join(",");
+
+/* ──────────────────────────────────────────────────────────────────────────
    Feature toggles.
 
    Every optional module is gated here so an instance can be reduced to the parts

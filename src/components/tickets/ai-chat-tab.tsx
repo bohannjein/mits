@@ -254,6 +254,21 @@ export function AiChatTab({
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
+        /*
+          Strg+V, weil ein Screenshot in der Zwischenablage entsteht und nicht auf
+          der Platte. `addFiles` filtert weiterhin auf Bilder und sagt es, wenn
+          etwas anderes dabei war — dieser Chat schickt die Anhänge an die
+          Bildanalyse, nicht in die Dateiablage.
+
+          Nur wenn Dateien dabei sind: bei kopiertem Text ist `files` leer, und
+          ohne die Prüfung verlöre jedes eingefügte Wort sein Standardverhalten.
+        */
+        onPaste={(event) => {
+          const pasted = Array.from(event.clipboardData?.files ?? []);
+          if (pasted.length === 0) return;
+          event.preventDefault();
+          addFiles(pasted);
+        }}
         className={cn(
           "grid gap-2 rounded-3xl border border-dashed p-3 transition-colors duration-300",
           dragging ? "border-primary bg-primary/5" : "border-border bg-card",

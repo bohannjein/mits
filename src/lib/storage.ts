@@ -14,7 +14,7 @@ import {
   removeObject,
   writeObject,
 } from "@/lib/services/storage";
-import type { StorageBackend } from "@/types/mits";
+import { ALLOWED_UPLOAD_EXTENSIONS, type StorageBackend } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Attachment storage — the rules half.
@@ -45,27 +45,12 @@ export const MAX_UPLOADS_PER_REQUEST = 5;
 /**
  * Extensions we are willing to store, mapped to the type we serve them as.
  *
- * An allow-list rather than a deny-list: the interesting attachments in an IT
- * ticket are screenshots, logs and PDFs, and everything is served as a download
- * anyway, so there is no reason to accept arbitrary types.
+ * Declared in `types/mits.ts` rather than here, because the file pickers need the
+ * same list for their `accept` attribute and this module is `server-only`. A picker
+ * that offers less than the server accepts is a button that cannot select a legal
+ * file — see the note there.
  */
-const ALLOWED_EXTENSIONS: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".bmp": "image/bmp",
-  ".pdf": "application/pdf",
-  ".txt": "text/plain",
-  ".log": "text/plain",
-  ".csv": "text/csv",
-  ".zip": "application/zip",
-  ".eml": "message/rfc822",
-  ".msg": "application/vnd.ms-outlook",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-};
+const ALLOWED_EXTENSIONS = ALLOWED_UPLOAD_EXTENSIONS;
 
 export class UploadError extends Error {}
 

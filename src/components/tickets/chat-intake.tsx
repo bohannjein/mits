@@ -26,6 +26,7 @@ import { formatFileSize } from "@/types/mits";
 import { cn } from "@/lib/utils";
 import {
   INTAKE_CATEGORIES,
+  UPLOAD_ACCEPT,
   type IntakeCategory,
   type MITSTicketDraft,
   type PortalFaq,
@@ -276,6 +277,25 @@ export function ChatIntake({
           setDragging(false);
           addFiles(Array.from(event.dataTransfer.files));
         }}
+        /*
+          Strg+V, auf derselben Karte wie das Ablegen.
+
+          Ein Screenshot entsteht in der Zwischenablage — „Ausschneiden und
+          skizzieren", Druck, ein Snipping-Werkzeug —, und der Weg von dort ins
+          Ticket war vorher: erst speichern, dann suchen, dann wählen. Die Karte
+          fängt das Ereignis, weil der Fokus dabei im Titel- oder im Textfeld
+          steht und beide Kinder davon sind.
+
+          **Nur wenn wirklich Dateien dabei sind.** `clipboardData.files` ist bei
+          kopiertem Text leer; ohne die Prüfung würde jedes eingefügte Wort das
+          Standardverhalten verlieren und im Feld nichts erscheinen.
+        */
+        onPaste={(event) => {
+          const pasted = Array.from(event.clipboardData?.files ?? []);
+          if (pasted.length === 0) return;
+          event.preventDefault();
+          addFiles(pasted);
+        }}
         className={cn(
           "grid gap-3 rounded-3xl border bg-card px-4 py-4 shadow-elev-1 transition-colors",
           dragging
@@ -364,7 +384,7 @@ export function ChatIntake({
               ref={filePicker}
               type="file"
               multiple
-              accept="image/*,.pdf,.log,.txt"
+              accept={UPLOAD_ACCEPT}
               className="hidden"
               aria-label="Anhang wählen"
               onChange={(event) => {

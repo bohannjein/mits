@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Attachments, larger.
@@ -103,13 +104,43 @@ export function AttachmentViewer({ children }: { children: ReactNode }) {
       >
         {viewed && (
           /*
-           * Wider and taller than a normal dialog: this one exists to make
-           * something legible, and `sm:max-w-sm` would show the image at roughly
-           * the size the bubble already did.
+           * A bounded box, and the bound is the whole fix.
+           *
+           * `DialogContent` positions itself with `top-1/2 -translate-y-1/2` and
+           * declares **no** max-height, so its height is whatever its children ask
+           * for. The viewer asked for `75vh` and sat below a header inside `p-4`
+           * with a `gap-4` — comfortably more than the viewport. The dialog then
+           * grew past both edges of the screen: the PDF appeared at a size nobody
+           * chose, and the close button was pushed into the download button beside
+           * it because the row it shares had lost the space it was reserving.
+           *
+           * So the height is declared here and the regions divide it: a `shrink-0`
+           * bar and a `min-h-0 flex-1` viewer. Same chain as `TicketFrame`, same
+           * reason — a flex child does not shrink below its content without
+           * `min-h-0`, and the viewer is the child that has to.
            */
-          <DialogContent className="w-full gap-3 sm:max-w-4xl">
-            {/* `pr-9` leaves the close button its corner. */}
-            <div className="flex items-center gap-3 pr-9">
+          <DialogContent
+            className={cn(
+              "flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl",
+              /*
+               * A PDF gets a fixed height, an image a ceiling.
+               *
+               * The two need opposite things. A PDF viewer has no intrinsic size —
+               * it fills whatever box it is given and scrolls inside it, so without
+               * a declared height the box collapses to nothing. An image *has* one,
+               * and a fixed height would frame a 300 px screenshot in a
+               * three-quarter-screen panel of empty card.
+               */
+              viewed.kind === "pdf" ? "h-[92vh]" : "max-h-[92vh]",
+            )}
+          >
+            {/*
+              `pr-14` and not `pr-9`: the close button sits at `right-2` and is
+              `size-8`, so it occupies the last 40 px of the row. The old reserve
+              was 36 px — four pixels short before any of this, and invisible only
+              because the title truncated first.
+            */}
+            <div className="flex shrink-0 items-center gap-3 border-b border-border p-3 pr-14">
               <DialogTitle className="min-w-0 flex-1 truncate">
                 {viewed.name}
               </DialogTitle>
@@ -132,27 +163,47 @@ export function AttachmentViewer({ children }: { children: ReactNode }) {
               </Button>
             </div>
 
-            {viewed.kind === "image" ? (
-              // Plain <img>: next/image would want a configured loader for an
-              // authenticated route, and these are already size-bounded uploads.
-              <img
-                src={`/api/uploads/${viewed.fileId}?inline=1`}
-                alt={viewed.name}
-                className="max-h-[75vh] w-full rounded-xl bg-card object-contain"
-              />
-            ) : (
-              /*
-               * The browser's own PDF viewer. Deliberately not a bundled one:
-               * pdf.js is a megabyte of JavaScript to reproduce something every
-               * target browser already ships, and it would still be reading the
-               * same route.
-               */
-              <iframe
-                src={`/api/uploads/${viewed.fileId}?inline=1#view=FitH`}
-                title={viewed.name}
-                className="h-[75vh] w-full rounded-xl border border-border bg-card"
-              />
-            )}
+            <div className="min-h-0 flex-1 overflow-auto bg-card p-3">
+              {viewed.kind === "image" ? (
+                /*
+                 * Plain <img>: next/image would want a configured loader for an
+                 * authenticated route, and these are already size-bounded uploads.
+                 *
+                 * Capped in viewport units rather than with `h-full`. A percentage
+                 * height resolves against a parent that has one, and this region
+                 * deliberately does not — for an image the dialog sizes itself to
+                 * the picture. `80vh` plus the bar and the padding stays under the
+                 * dialog's own `92vh` ceiling, and the region scrolls on the short
+                 * viewports where it does not.
+                 */
+                <img
+                  src={`/api/uploads/${viewed.fileId}?inline=1`}
+                  alt={viewed.name}
+                  className="mx-auto max-h-[80vh] w-auto max-w-full rounded-lg object-contain"
+                />
+              ) : (
+                /*
+                 * The browser's own PDF viewer. Deliberately not a bundled one:
+                 * pdf.js is a megabyte of JavaScript to reproduce something every
+                 * target browser already ships, and it would still be reading the
+                 * same route.
+                 *
+                 * **No `#view=` fragment.** It used to say `FitH`, which fits the
+                 * page to the *width* of the frame — in a 64rem-wide box an A4
+                 * portrait page becomes far taller than the frame, so what the
+                 * reader gets is the top third of page one and a scrollbar. Every
+                 * PDF these people open anywhere else uses their viewer's own
+                 * default zoom; matching it is what "correctly scaled" means, and
+                 * the fragment is interpreted differently by Chrome and by
+                 * Firefox's pdf.js anyway.
+                 */
+                <iframe
+                  src={`/api/uploads/${viewed.fileId}?inline=1`}
+                  title={viewed.name}
+                  className="size-full rounded-lg border border-border"
+                />
+              )}
+            </div>
           </DialogContent>
         )}
       </Dialog>

@@ -571,6 +571,52 @@ Größe, mit dem Download-Knopf daneben.
   zeigen. Begründung in AGENTS.md unter „Anhänge".
 - **Der Browser-Viewer statt pdf.js.** Ein Megabyte JavaScript, um etwas
   nachzubauen, das jedes Zielbrowser mitbringt — und es läse dieselbe Route.
+- **Der Dialog deklariert seine Höhe, und das ist der ganze Fehler von vorher.**
+  `DialogContent` positioniert sich mit `top-1/2 -translate-y-1/2` und hat **kein**
+  `max-height`; seine Höhe ist, was die Kinder verlangen. Der Viewer verlangte
+  `75vh` und saß unter einer Kopfzeile in `p-4` mit `gap-4` — zusammen mehr als der
+  Bildschirm. Der Dialog wuchs über beide Ränder hinaus: das PDF erschien in einer
+  Größe, die niemand gewählt hat, und der Schließen-Knopf rückte in den
+  Herunterladen-Knopf daneben, weil die Zeile ihren reservierten Platz verloren
+  hatte. Jetzt `shrink-0`-Leiste plus `min-h-0 flex-1`-Viewer, dieselbe Kette wie
+  in `TicketFrame`.
+- **PDF fix, Bild gedeckelt.** Ein PDF-Viewer hat keine eigene Größe und füllt,
+  was man ihm gibt — ohne deklarierte Höhe fällt der Kasten auf null zusammen. Ein
+  Bild hat eine, und eine feste Höhe rahmte einen 300-px-Screenshot in eine
+  dreiviertelbildschirmhohe Fläche aus leerer Karte.
+- **Kein `#view=`-Fragment mehr.** `FitH` passt die Seite auf die *Breite* des
+  Rahmens — in einem 64rem breiten Kasten wird eine A4-Hochkantseite weit höher als
+  der Rahmen, und was ankommt, ist das obere Drittel von Seite eins plus
+  Scrollbalken. Jedes PDF, das diese Leute sonst irgendwo öffnen, benutzt den
+  Standardzoom ihres Viewers; ihn zu treffen ist, was „richtig skaliert" heißt — und
+  Chrome und pdf.js lesen das Fragment ohnehin verschieden.
+- **`pr-14`, nicht `pr-9`.** Der Schließen-Knopf sitzt auf `right-2` und ist
+  `size-8`, belegt also die letzten 40 px der Zeile. Reserviert waren 36 — vier
+  Pixel zu wenig, und unsichtbar nur, weil der Titel vorher kürzte.
+
+### Anhängen: drei Wege, überall dieselben
+
+Klammer, Ablegen und **Strg+V** — im Antwortfeld beider Ansichten, im
+Erstellungs-Chat und im KI-Chat.
+
+- **Der Erstellungs-Chat hatte kein Paste.** Ablegen und Klammer gab es, aber ein
+  Screenshot entsteht in der Zwischenablage, nicht auf der Platte: der Weg ins
+  Ticket war erst speichern, dann suchen, dann wählen. `onPaste` sitzt auf der
+  Karte, weil der Fokus dabei im Titel- oder Textfeld steht und beide Kinder davon
+  sind.
+- **Nur wenn wirklich Dateien dabei sind.** `clipboardData.files` ist bei kopiertem
+  Text leer; ohne die Prüfung verlöre jedes eingefügte Wort sein
+  Standardverhalten und im Feld erschiene nichts.
+- **`UPLOAD_ACCEPT` ist die Allow-List, keine Kopie davon.** Sie steht in
+  `types/mits.ts`, weil `lib/storage.ts` `server-only` ist und die Wähler denselben
+  Wert brauchen. Vorher gab es drei Fassungen: der Editor tippte fünfzehn Endungen
+  aus, der Erstellungs-Chat bot `image/*,.pdf,.log,.txt` an — also **nicht**
+  `.csv`, `.zip`, `.eml`, `.msg`, `.docx`, `.xlsx`, die der Server nimmt. Ein
+  Wähler, der weniger anbietet als der Server annimmt, ist eine Ablehnung ohne
+  Meldung.
+- **Der KI-Chat bleibt bei `image/*`.** Seine Anhänge gehen in die Bildanalyse und
+  nicht in die Dateiablage; `addFiles` filtert weiter und sagt es, wenn etwas
+  anderes dabei war.
 
 ### Der Melder hängt genauso an
 
