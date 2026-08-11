@@ -194,8 +194,12 @@ export function DraftReceipt({
           <Badge variant="outline" className="rounded-full font-mono">
             schema: {draft.form_schema_id ?? "—"}
           </Badge>
+          {/* „—" statt eines Wertes, wenn der Entwurf keine Priorität nennt: das
+              Feld ist optional, und der Server setzt dann den für die Rolle
+              eingestellten Startwert. Ein hier hingeschriebenes „medium" wäre eine
+              Behauptung über eine Entscheidung, die noch nicht gefallen ist. */}
           <Badge className="rounded-full font-mono">
-            priority: {draft.priority}
+            priority: {draft.priority ?? "—"}
           </Badge>
         </div>
         {/* Mono stays: this is raw JSON, and a proportional font would misalign

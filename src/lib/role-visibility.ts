@@ -5,10 +5,12 @@ import {
   DEFAULT_ROLE_VISIBILITY,
   NAV_AREAS,
   RoleVisibilitySchema,
+  priorityForRole,
   roleSeesArea,
   roleSeesForm,
   type NavArea,
   type RoleVisibility,
+  type TicketPriority,
 } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -65,6 +67,17 @@ export function canSeeArea(role: unknown, area: NavArea): boolean {
 /** Darf diese Rolle dieses Formular sehen und absenden? Admin immer. */
 export function canSeeForm(role: unknown, formSchemaId: string): boolean {
   return roleSeesForm(getRoleVisibility(), role, formSchemaId);
+}
+
+/**
+ * Mit welcher Priorität ein Ticket dieser Rolle startet.
+ *
+ * Liegt hier und nicht in `lib/settings.ts`, obwohl es keine Sichtbarkeit ist: es
+ * steht in demselben Blob und wird in derselben Maske gepflegt, und ein zweiter
+ * Leser für dieselbe Zeile wäre ein zweiter Ort, an dem der Default steht.
+ */
+export function defaultPriorityFor(role: unknown): TicketPriority {
+  return priorityForRole(getRoleVisibility(), role);
 }
 
 /**

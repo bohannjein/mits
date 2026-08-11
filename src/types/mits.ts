@@ -129,6 +129,17 @@ export const isElevatedPriority = (priority: TicketPriority): boolean =>
  */
 export const DEFAULT_TICKET_PRIORITY: TicketPriority = "medium";
 
+/**
+ * A stored or submitted value, or the built-in default.
+ *
+ * Falls back rather than throwing, so an unknown value in a settings blob does not
+ * take the rest of that blob down with it — see `RoleRulesSchema`. The legacy names
+ * still resolve, because `TicketPriority` preprocesses them.
+ */
+export function toTicketPriority(value: unknown): TicketPriority {
+  return TicketPriority.safeParse(value).data ?? DEFAULT_TICKET_PRIORITY;
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
    Quick categories for the chat intake.
 
@@ -454,7 +465,18 @@ export const MITSTicketDraftSchema = MITSTicketSchema.omit({
    */
   cc_emails: true,
 }).extend({
-  priority: TicketPriority.default(DEFAULT_TICKET_PRIORITY),
+  /**
+   * Optional, **not** defaulted — and that is the load-bearing part.
+   *
+   * A default here would make "did not say" and "said medium" the same value, and
+   * `createTicket` needs to tell them apart: the priority a role's tickets start
+   * with is configurable per role now, so an absent field has to mean "use that"
+   * rather than "medium". With a default, the setting would be invisible to every
+   * client that simply omits the field — which is all of them.
+   *
+   * A reporter's value is still ignored either way; see the note in `createTicket`.
+   */
+  priority: TicketPriority.optional(),
   /** The reporter may state their site; everything else about them comes from the session. */
   location_id: z.string().nullable().default(null),
   /**
@@ -2362,12 +2384,38 @@ const RoleRulesSchema = z.object({
         ),
       ),
     ]),
+  /**
+   * Die Priorität, mit der ein Ticket dieser Rolle startet.
+   *
+   * Die einzige Angabe hier, die **nicht** etwas wegnimmt — und deshalb die
+   * einzige mit einem Wert statt einer Liste. Sie sitzt trotzdem in diesem Blob,
+   * weil es eine Angabe *pro Rolle* ist und die Maske dafür schon existiert; ein
+   * zweiter Setting-Key wäre eine zweite Maske für dieselbe Frage.
+   *
+   * Durch `toTicketPriority` geführt statt als `TicketPriority` deklariert,
+   * dieselbe Begründung wie bei `hidden_areas` daneben: ein unbekannter Wert
+   * würde den ganzen Parse ablehnen und damit die Formular- und Bereichsregeln
+   * mitnehmen.
+   */
+  default_priority: z.unknown().optional().transform(toTicketPriority),
 });
 export type RoleRules = z.infer<typeof RoleRulesSchema>;
 
+/** Die Sichtbarkeitsregeln allein — was eine Vorlage speichert. */
+export type RoleVisibilityRules = Pick<
+  RoleRules,
+  "hidden_forms" | "hidden_areas"
+>;
+
+const EMPTY_ROLE_RULES = {
+  hidden_forms: [],
+  hidden_areas: [],
+  default_priority: DEFAULT_TICKET_PRIORITY,
+};
+
 export const RoleVisibilitySchema = z.object({
-  user: RoleRulesSchema.default({ hidden_forms: [], hidden_areas: [] }),
-  agent: RoleRulesSchema.default({ hidden_forms: [], hidden_areas: [] }),
+  user: RoleRulesSchema.default(EMPTY_ROLE_RULES),
+  agent: RoleRulesSchema.default(EMPTY_ROLE_RULES),
 });
 export type RoleVisibility = z.infer<typeof RoleVisibilitySchema>;
 
@@ -2400,6 +2448,21 @@ export function roleSeesForm(
 ): boolean {
   if (!isRestrictableRole(role)) return true;
   return !visibility[role].hidden_forms.includes(formSchemaId);
+}
+
+/**
+ * Mit welcher Priorität ein Ticket dieser Rolle startet.
+ *
+ * Eine Rolle außerhalb von `RESTRICTABLE_ROLES` ist `admin` — die Maske führt sie
+ * nicht, also gilt der eingebaute Default. Kein Verlust: ein Admin ist Technik und
+ * setzt die Priorität im Entwurf, wenn er eine meint.
+ */
+export function priorityForRole(
+  visibility: RoleVisibility,
+  role: unknown,
+): TicketPriority {
+  if (!isRestrictableRole(role)) return DEFAULT_TICKET_PRIORITY;
+  return visibility[role].default_priority;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -2517,11 +2580,16 @@ export const PRESET_KEEP_FORMS: Record<string, string[]> = {
  *
  * `formIds` ist der volle Formularbestand der Instanz, nicht der bereits
  * gefilterte — sonst würde zweimaliges Anwenden immer weiter wegnehmen.
+ *
+ * **Ohne `default_priority`**, und der Rückgabetyp sagt das. Eine Vorlage ist eine
+ * Aussage über Sichtbarkeit; die Startpriorität ist eine Datenentscheidung, und
+ * „Personalabteilung anwenden" darf sie nicht mitverstellen. Die Aufrufstelle
+ * mischt deshalb, statt zu ersetzen.
  */
 export function presetRulesFor(
   preset: VisibilityPreset,
   formIds: string[],
-): RoleRules {
+): RoleVisibilityRules {
   const keep = PRESET_KEEP_FORMS[preset.id];
 
   return {

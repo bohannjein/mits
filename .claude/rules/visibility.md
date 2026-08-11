@@ -39,6 +39,45 @@ Daraus folgt der Rest:
   Konfiguration mit — inklusive der Formularregeln. Dieselbe Falle wie bei
   `widget_order` in `PortalConfigSchema`, und sie ist in `npm test` abgedeckt.
 
+## Die eine Angabe, die etwas setzt: `default_priority`
+
+Mit welcher Priorität ein Ticket dieser Rolle startet. Sie steht in demselben Blob
+und in derselben Maske, weil es eine Angabe **pro Rolle** ist und ein zweiter
+Setting-Key eine zweite Maske für dieselbe Frage wäre. Sie ist trotzdem der
+Ausreißer hier: ein Wert statt einer Liste, und sie nimmt nichts weg.
+
+**Für einen Melder ist der Wert die Obergrenze, für einen Agenten der Startwert.**
+Dieselbe Einstellung, zwei Bedeutungen — deshalb sagt die Karte auf jedem Reiter
+etwas anderes:
+
+| Rolle | Wirkung in `createTicket` |
+|---|---|
+| `user` | geklemmt, der Entwurf kann nichts anderes durchsetzen |
+| `agent` | genommen, wenn der Entwurf **keine** Priorität nennt |
+| `admin` | nicht in der Maske, also `DEFAULT_TICKET_PRIORITY` |
+
+**`MITSTicketDraftSchema.priority` ist deshalb `optional()` und nicht
+`default()`.** Mit einem Default wären „hat medium gesagt" und „hat nichts gesagt"
+derselbe Wert, und die Einstellung wäre für jeden Client unsichtbar, der das Feld
+weglässt — also für alle. Das ist die tragende Änderung, nicht der Select in der
+Maske.
+
+**Die Rolle ist die des Anlegenden.** Für Mail-Ingest und `/api/v1/tickets` ist
+das das Auffang-Konto, ein gemailtes Ticket startet also mit der Priorität *dessen*
+Rolle. Willkürlich, aber harmlos: ein Agent ändert sie mit einem Klick. Anders als
+beim Formular-Check (siehe unten) gibt es hier nichts abzulehnen, deshalb darf die
+Regel in `createTicket` stehen.
+
+**Eine Vorlage trägt sie nicht.** `presetRulesFor` gibt `RoleVisibilityRules`
+zurück — nur die beiden Listen —, und die Aufrufstelle **mischt** statt zu
+ersetzen. Eine Vorlage ist eine Aussage über Sichtbarkeit; „Personalabteilung
+anwenden" darf keine Datenentscheidung mitverstellen, die drei Karten weiter unten
+steht. Der Rückgabetyp ist das, was das erzwingt: ohne ihn hätte das Anwenden die
+Priorität still auf den Default gesetzt.
+
+**Der Zähler im Reiter zählt sie nicht.** Er zählt Einschränkungen, und eine
+Startpriorität ist keine.
+
 ## Admin ist nicht einschränkbar
 
 `RESTRICTABLE_ROLES` ist `["user", "agent"]`. Die Maske liegt selbst unter

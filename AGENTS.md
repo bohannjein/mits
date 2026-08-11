@@ -313,9 +313,14 @@ die dieser Leser **nicht** verursacht hat. Ein gespeichertes Boolean müsste jed
 Schreiber für jeden anderen Benutzer zurücksetzen, und der erste, der es vergisst,
 hinterlässt ein Ticket, das sich nie wieder meldet.
 
-**Priorität ist eine Agenten-Entscheidung.** `createTicket` klemmt den Entwurf einer
-melderseitigen Anfrage auf `medium` — das ist die Grenze, nicht das fehlende Feld im
-Formular. `QUICK_TICKET_SCHEMA` ist deshalb auf Version 2 und ohne
+**Priorität ist eine Agenten-Entscheidung, und der Startwert steht je Rolle.**
+`createTicket` klemmt den Entwurf einer melderseitigen Anfrage auf den Wert, der
+unter `/admin/settings/roles` für diese Rolle eingestellt ist (Default `medium`) —
+das ist die Grenze, nicht das fehlende Feld im Formular. Ein Agent behält, was er
+**nennt**, und erbt denselben Wert, wenn er nichts nennt. Deshalb ist
+`MITSTicketDraftSchema.priority` **`optional()` und nicht `default()`**: mit einem
+Default wären „hat medium gesagt" und „hat nichts gesagt" ein Wert, und die
+Einstellung bliebe für jeden Client unsichtbar, der das Feld weglässt. `QUICK_TICKET_SCHEMA` ist deshalb auf Version 2 und ohne
 `priority`-Feld; dessen `optionLabels` zeigten seit der Prioritäts-Umbenennung
 ohnehin die Rohwerte an.
 

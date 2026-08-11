@@ -1142,6 +1142,92 @@ try {
     throw new Error("a missing reminder was deleted");
   });
 
+  /*
+   * A minimal, valid draft, parsed through the real schema like every other
+   * fixture here. `priority` is passed in rather than defaulted, because the whole
+   * point of the checks below is the difference between stating one and not.
+   */
+  const priorityDraft = (priority?: (typeof mits.TicketPriorityValues)[number]) =>
+    mits.MITSTicketDraftSchema.parse({
+      source: "legacy",
+      form_schema_id: "quick-ticket",
+      payload: {
+        title: "Tastatur tot",
+        description: "Die Tastatur reagiert seit dem Neustart auf keine Taste.",
+      },
+      ...(priority ? { priority } : {}),
+    });
+
+  console.log("role default priority");
+  check("a reporter's ticket starts at the configured priority", () => {
+    roleVisibility.setRoleVisibility({
+      user: { hidden_forms: [], hidden_areas: [], default_priority: "high" },
+      agent: { hidden_forms: [], hidden_areas: [], default_priority: "low" },
+    });
+
+    /*
+     * No `priority` on the draft at all — which is the whole point of the field
+     * being optional rather than defaulted. With a default, "said nothing" and
+     * "said medium" would be the same value and the setting would be invisible to
+     * every client that omits it.
+     */
+    const filed = tickets.createTicket(
+      priorityDraft(),
+      reporter,
+    );
+    if (filed.priority !== "high") throw new Error(filed.priority);
+    return filed.priority;
+  });
+  check("a reporter cannot talk their way past it", () => {
+    const filed = tickets.createTicket(
+      priorityDraft("critical"),
+      reporter,
+    );
+    if (filed.priority !== "high") throw new Error(filed.priority);
+    return filed.priority;
+  });
+  check("an agent keeps what they state, and inherits what they do not", () => {
+    const stated = tickets.createTicket(
+      priorityDraft("critical"),
+      agent,
+    );
+    if (stated.priority !== "critical") throw new Error(stated.priority);
+
+    const silent = tickets.createTicket(
+      priorityDraft(),
+      agent,
+    );
+    if (silent.priority !== "low") throw new Error(silent.priority);
+
+    return `${stated.priority}/${silent.priority}`;
+  });
+  check("an unknown stored priority falls back without losing the rest", () => {
+    const saved = roleVisibility.setRoleVisibility({
+      user: {
+        hidden_forms: ["quick-ticket"],
+        hidden_areas: [],
+        // Not a value this build knows. It must not take the form rules with it.
+        default_priority: "panic" as never,
+      },
+      agent: { hidden_forms: [], hidden_areas: [], default_priority: "medium" },
+    });
+    if (saved.user.default_priority !== "medium") {
+      throw new Error(saved.user.default_priority);
+    }
+    if (saved.user.hidden_forms.length !== 1) {
+      throw new Error("the form rules were lost");
+    }
+    return saved.user.default_priority;
+  });
+  // Back to the default, so the checks after this one are not reading a queue
+  // shaped by this section.
+  check("reset", () =>
+    roleVisibility.setRoleVisibility({
+      user: { hidden_forms: [], hidden_areas: [], default_priority: "medium" },
+      agent: { hidden_forms: [], hidden_areas: [], default_priority: "medium" },
+    }),
+  );
+
   console.log("pins");
   check("pin", () => {
     const state = pins.togglePin(ticketId, agent);

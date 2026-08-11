@@ -27,10 +27,10 @@ import {
   type TicketSort,
 } from "@/lib/ticket-sort";
 import { TICKETS_PER_PAGE } from "@/lib/ticket-paging";
+import { defaultPriorityFor } from "@/lib/role-visibility";
 import { getUserOrganizationId, isOrgAdmin } from "@/lib/user-profile";
 import {
   AttachmentMetaSchema,
-  DEFAULT_TICKET_PRIORITY,
   MITSTicketSchema,
   normalizeCcEmails,
   OPEN_TICKET_STATUSES,
@@ -204,18 +204,26 @@ export function createTicket(
    * Priority is an agent's call, so a reporter's draft cannot set it.
    *
    * Enforced here rather than by leaving the control out of the intake form: the
-   * form is one client of `POST /api/tickets`, the draft schema has a `priority`
-   * field with a default, and "the UI does not offer it" is not a rule — anybody
-   * can post JSON. Clamped rather than rejected, because a stale cached form
-   * legitimately still submits the field and a 422 for it would block a ticket
-   * over a value the reporter never chose.
+   * form is one client of `POST /api/tickets`, and "the UI does not offer it" is
+   * not a rule — anybody can post JSON. Clamped rather than rejected, because a
+   * stale cached form legitimately still submits the field and a 422 for it would
+   * block a ticket over a value the reporter never chose.
    *
-   * Staff keep whatever they set: an agent filing on somebody's behalf has already
-   * made the judgement this rule exists to protect.
+   * Staff keep whatever they *state*: an agent filing on somebody's behalf has
+   * already made the judgement this rule exists to protect. What they do not state
+   * falls to the same per-role value — which is why `priority` on the draft schema
+   * is optional rather than defaulted. With a default, "said medium" and "said
+   * nothing" would be one value, and the configured start priority would be
+   * invisible to every client that simply omits the field.
+   *
+   * The role is whoever files. For the mail ingest and `/api/v1/tickets` that is
+   * the fallback account, so a mailed ticket starts at the priority configured for
+   * *its* role — arbitrary but harmless, and an agent overrides it in one click.
    */
+  const roleDefault = defaultPriorityFor(user.role);
   const priority = canViewBoard(user.role)
-    ? draft.priority
-    : DEFAULT_TICKET_PRIORITY;
+    ? (draft.priority ?? roleDefault)
+    : roleDefault;
 
   /*
    * `email` is the ingest's to claim, nobody else's.

@@ -27,6 +27,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ROLE_LABELS_PLURAL } from "@/lib/auth/roles";
@@ -35,12 +42,16 @@ import {
   DEFAULT_ROLE_VISIBILITY,
   NAV_AREA_META,
   RESTRICTABLE_ROLES,
+  TICKET_PRIORITY_LABELS,
+  TicketPriorityValues,
   areasForRole,
   presetRulesFor,
+  toTicketPriority,
   type NavArea,
   type RestrictableRole,
   type RoleRules,
   type RoleVisibility,
+  type RoleVisibilityRules,
   type VisibilityPreset,
 } from "@/types/mits";
 
@@ -105,6 +116,18 @@ export function RoleVisibilityForm({
       },
     }));
 
+  /*
+   * Durch `toTicketPriority`, obwohl der Wert aus einer gerade gerenderten Liste
+   * kommt: der Blob geht als JSON in ein verstecktes Feld, und was am Ende zaehlt,
+   * ist ohnehin die Pruefung in der Action. Hier kostet sie nichts und haelt den
+   * State auf einem Wert, den das Select auch anzeigen kann.
+   */
+  const setPriority = (role: RestrictableRole, value: string) =>
+    setCurrent((prev) => ({
+      ...prev,
+      [role]: { ...prev[role], default_priority: toTicketPriority(value) },
+    }));
+
   const setArea = (role: RestrictableRole, area: NavArea, visible: boolean) =>
     setCurrent((prev) => ({
       ...prev,
@@ -156,13 +179,61 @@ export function RoleVisibilityForm({
               formIds={formIds}
               rules={current[role]}
               onApply={(rules) =>
-                setCurrent((prev) => ({ ...prev, [role]: rules }))
+                setCurrent((prev) => ({
+                  ...prev,
+                  // Gemischt, nicht ersetzt — siehe `onApply` an `PresetCard`.
+                  [role]: { ...prev[role], ...rules },
+                }))
               }
               action={presetAction}
               saving={presetSaving}
               changed={presetsChanged}
               result={presetResult}
             />
+
+            {/*
+              Die einzige Karte hier, die etwas *setzt* statt etwas wegzunehmen.
+
+              Für einen Melder ist der Wert die Obergrenze: sein Entwurf kann keine
+              Priorität mitbringen, `createTicket` klemmt ihn auf diesen Wert. Für
+              einen Agenten ist es der Startwert, den er im Ticket überschreibt.
+              Beides steht in der Beschreibung, weil dieselbe Einstellung für die
+              beiden Reiter zwei verschiedene Dinge bedeutet.
+            */}
+            <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
+              <CardHeader>
+                <CardTitle className="text-lg font-medium">Neue Tickets</CardTitle>
+                <CardDescription className="mt-1 leading-relaxed">
+                  {role === "user"
+                    ? "Mit dieser Priorität startet jedes Ticket dieser Rolle. Ein Melder kann sie nicht selbst setzen."
+                    : "Startwert, wenn beim Erstellen keine Priorität angegeben wird. Am Ticket weiter änderbar."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-2">
+                  <Label htmlFor={`${role}-default-priority`}>Priorität</Label>
+                  <Select
+                    value={current[role].default_priority}
+                    onValueChange={(next) => setPriority(role, next)}
+                    disabled={saving}
+                  >
+                    <SelectTrigger
+                      id={`${role}-default-priority`}
+                      className="h-10 rounded-xl sm:w-64"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TicketPriorityValues.map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {TICKET_PRIORITY_LABELS[value]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardContent>
+            </Card>
 
             <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
               <CardHeader>
@@ -304,7 +375,14 @@ function PresetCard({
   formIds: string[];
   /** Die aktuell gesetzten Schalter dieser Rolle — Grundlage für „sichern". */
   rules: RoleRules;
-  onApply: (rules: RoleRules) => void;
+  /**
+   * Bekommt nur die Sichtbarkeitshälfte.
+   *
+   * Die Startpriorität bleibt stehen: eine Vorlage ist eine Aussage über
+   * Sichtbarkeit, und „Personalabteilung anwenden" darf keine Datenentscheidung
+   * mitverstellen, die drei Karten weiter unten steht.
+   */
+  onApply: (rules: RoleVisibilityRules) => void;
   action: (formData: FormData) => void;
   saving: boolean;
   changed: boolean;
