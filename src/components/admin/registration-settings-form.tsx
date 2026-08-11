@@ -15,9 +15,20 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import type { AuthSettings } from "@/types/mits";
+import {
+  SESSION_LIFETIME_DAYS,
+  SESSION_LIFETIME_LABELS,
+  type AuthSettings,
+} from "@/types/mits";
 
 /**
  * Registration policy editor.
@@ -39,10 +50,10 @@ export function RegistrationSettingsForm({
     <form action={formAction}>
       <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-2">
         <CardHeader>
-          <CardTitle className="text-lg font-medium">Registrierung</CardTitle>
+          <CardTitle className="text-lg font-medium">Anmeldung</CardTitle>
           <CardDescription>
-            Steuert, ob sich neue Nutzer selbst anlegen dürfen und aus welchen
-            E-Mail-Domains.
+            Wer sich selbst anlegen darf, aus welchen E-Mail-Domains, und wie lange
+            eine Anmeldung gilt.
           </CardDescription>
         </CardHeader>
 
@@ -70,6 +81,35 @@ export function RegistrationSettingsForm({
               placeholder={"firma.de\ntochtergesellschaft.de"}
               className="rounded-xl font-mono"
             />
+          </div>
+
+          {/*
+            Die Obergrenze für „Angemeldet bleiben".
+
+            Ein `<select>` und kein Zahlenfeld: der Wert wird zur Lebensdauer eines
+            Cookies, und eine frei getippte Zahl ist eine Instanz, auf der niemand
+            erklären kann, warum er stündlich fliegt. Ohne Haken endet die Sitzung
+            weiterhin mit dem Browser — das entscheidet die Person, nicht diese
+            Maske.
+          */}
+          <div className="grid gap-2">
+            <Label htmlFor="sessionLifetimeDays">Angemeldet bleiben</Label>
+            <Select
+              name="sessionLifetimeDays"
+              defaultValue={String(settings.sessionLifetimeDays)}
+              disabled={pending}
+            >
+              <SelectTrigger id="sessionLifetimeDays" className="h-10 rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SESSION_LIFETIME_DAYS.map((days) => (
+                  <SelectItem key={days} value={String(days)}>
+                    {SESSION_LIFETIME_LABELS[days]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {result && (

@@ -19,6 +19,7 @@ import { CUSTOMER_HOME } from "@/lib/auth/roles";
 import { ensureDefaultAdmin } from "@/lib/auth/seed-admin";
 import { getSessionUser } from "@/lib/auth/session";
 import { getActiveAnnouncements, getPortalConfig } from "@/lib/portal";
+import { getAuthSettings } from "@/lib/settings";
 import { fillPortalText } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -99,7 +100,10 @@ export default async function Home() {
               </CardHeader>
               <CardContent>
                 {/* Empty `next` lets the form route by role after sign-in. */}
-                <LoginForm next="" />
+                <LoginForm
+                  next=""
+                  sessionLifetimeDays={getAuthSettings().sessionLifetimeDays}
+                />
               </CardContent>
             </Card>
           </div>

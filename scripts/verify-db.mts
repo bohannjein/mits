@@ -172,8 +172,38 @@ try {
 
   console.log("settings");
   check("registration policy", () =>
-    settings.setAuthSettings({ registrationEnabled: true, allowedEmailDomains: ["firma.de"] }),
+    settings.setAuthSettings({
+      registrationEnabled: true,
+      allowedEmailDomains: ["firma.de"],
+      sessionLifetimeDays: 14,
+    }),
   );
+  // The session lifetime survives the round trip. It decides how long a cookie
+  // lives, so a value that silently fell back to the default would mean an
+  // instance logging people out on a schedule nobody configured.
+  check("session lifetime round-trips", () => {
+    const stored = settings.getAuthSettings();
+    if (stored.sessionLifetimeDays !== 14) {
+      throw new Error(String(stored.sessionLifetimeDays));
+    }
+    return stored.sessionLifetimeDays;
+  });
+  check("an unknown lifetime falls back instead of throwing", () => {
+    const saved = settings.setAuthSettings({
+      registrationEnabled: true,
+      allowedEmailDomains: ["firma.de"],
+      // Not one of the offered values — the mask cannot produce it, a hand-edited
+      // row can. It must not take the whole auth blob down with it.
+      sessionLifetimeDays: 3 as never,
+    });
+    if (saved.sessionLifetimeDays !== 30) {
+      throw new Error(String(saved.sessionLifetimeDays));
+    }
+    if (saved.allowedEmailDomains.length !== 1) {
+      throw new Error("the domain whitelist was lost");
+    }
+    return saved.sessionLifetimeDays;
+  });
   check("system", () =>
     system.setSystemSettings({
       timezone: "Europe/Berlin",

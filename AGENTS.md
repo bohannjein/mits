@@ -626,6 +626,31 @@ Nachrichten; wer unten steht, scrollt automatisch mit.
   Das Seeding ist auf `NEXT_PHASE !== phase-production-build` beschränkt. `next build`
   versucht `/` zu prerendern und bricht erst beim Cookie-Zugriff ab — bis dahin ist
   Modul-Code schon gelaufen. Ohne den Guard läge eine geseedete `mits.db` im Image-Layer.
+- **Sitzungsdauer: der Admin setzt die Grenze, die Person nimmt sie in Anspruch.**
+  Unter „Anmeldung" in `/admin` steht `sessionLifetimeDays` — *Immer aktiv*, 30, 14,
+  7 oder 1 Tag. Am Anmeldeformular steht der Haken **„Angemeldet bleiben"**, der die
+  Dauer im Label nennt und **nicht vorbelegt** ist: Better Auths eigener Default ist
+  `rememberMe: true`, hier ist er `false`, weil der ungünstige Fall ein geteilter
+  Rechner ist. Ohne Haken bekommt die Sitzung ein Browser-Cookie ohne `Max-Age` und
+  endet mit dem Fenster.
+
+  **`auth` ist deshalb keine Konstante mehr, sondern `getAuth()`.**
+  `session.expiresIn` liest Better Auth **einmal**, wenn `betterAuth(options)` den
+  Kontext baut; ein Wert aus `mits_setting` wäre bis zum nächsten Serverstart
+  wirkungslos, und ein Admin, der „7 Tage" einstellt und nichts passieren sieht,
+  hält die Einstellung für kaputt. `getAuth()` merkt die Instanz am *Wert* und baut
+  bei einer Änderung neu.
+
+  Der naheliegende Weg — `expiresIn` groß lassen und `expiresAt` in
+  `databaseHooks.session.create.before` kürzen — ist geprüft und falsch: Better Auth
+  entscheidet über die Verlängerung mit `expiresAt - expiresIn + updateAge <= now`.
+  Passen die beiden nicht zusammen, ist die Bedingung *immer* wahr und **jede
+  Anfrage schreibt die Sitzungszeile neu** — auf einem Desk, dessen Queue im
+  Sekundentakt nachfragt, ein Schreibvorgang pro Poll.
+
+  `sessionLifetimeDays` läuft durch `toSessionLifetimeDays` statt als `z.enum`: ein
+  abgelehnter Parse nähme die **ganze** Auth-Konfiguration mit, inklusive der
+  Domain-Whitelist. Dieselbe Falle wie bei `hidden_areas` und `widget_order`.
 - **Trusted Origins:** `trustedOrigins` ist eine **Funktion des Requests**, kein statisches
   Array. Better Auth vertraut sonst nur der `baseURL` plus `localhost` — für ein
   selbstgehostetes MITS unbrauchbar, weil der Hostname erst beim Deploy entsteht

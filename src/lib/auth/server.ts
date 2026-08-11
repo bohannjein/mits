@@ -9,6 +9,10 @@ import { DEFAULT_ROLE } from "@/lib/auth/roles";
 import { authSecret } from "@/lib/auth/secret";
 import { db } from "@/lib/db/sqlite";
 import { getAuthSettings, isEmailDomainAllowed } from "@/lib/settings";
+import {
+  DEFAULT_SESSION_LIFETIME_DAYS,
+  sessionLifetimeSeconds,
+} from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Better Auth server instance.
@@ -83,7 +87,43 @@ function isFirstUser(): boolean {
   return (row?.count ?? 0) === 0;
 }
 
-export const authOptions = {
+/* ──────────────────────────────────────────────────────────────────────────
+   Sitzungsdauer: eine Einstellung, kein Neustart.
+
+   `session.expiresIn` ist in Better Auth ein statischer Wert. Er wird **einmal**
+   gelesen, wenn `betterAuth(options)` den Kontext aufbaut, und daraus entstehen
+   zwei Dinge: das `expiresAt` der Sitzungszeile und das `Max-Age` des Cookies.
+   Eine Zahl, die aus `mits_setting` kommt, wäre damit bis zum nächsten
+   Serverstart wirkungslos — ein Admin stellt „7 Tage" ein, nichts passiert, und
+   das Naheliegende ist, die Einstellung für kaputt zu halten.
+
+   Deshalb ist die Instanz an den *Wert* gebunden und nicht an den Prozess:
+   `getAuth()` liest die Einstellung und baut neu, wenn sie sich geändert hat.
+   Kostet einen indizierten Read pro Aufruf und einen Neuaufbau pro Änderung.
+
+   Der naheliegende Weg — `expiresIn` groß lassen und `expiresAt` in
+   `databaseHooks.session.create.before` kürzen — ist ausprobiert und falsch:
+   Better Auth entscheidet über die Verlängerung mit
+   `expiresAt - expiresIn + updateAge <= now`. Stimmen die beiden nicht zusammen,
+   ist diese Bedingung *immer* wahr, und jede Anfrage schreibt die Sitzungszeile
+   neu. Auf einem Desk, dessen Queue im Sekundentakt nachfragt, ist das ein
+   Schreibvorgang pro Poll.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** Die Obergrenze, die dieser Instanz gerade eingestellt ist. */
+function configuredSessionSeconds(): number {
+  return sessionLifetimeSeconds(getAuthSettings().sessionLifetimeDays);
+}
+
+/**
+ * Alles außer der Sitzungsdauer.
+ *
+ * Getrennt, damit `authOptionsFor` nur den einen Schlüssel ergänzt und nicht die
+ * ganze Konfiguration zweimal existiert. Die Reihenfolge der Objekt-Schlüssel ist
+ * dabei bedeutungslos — „muss zuletzt stehen" gilt für `nextCookies()` innerhalb
+ * des `plugins`-Arrays, nicht für die Position des Arrays.
+ */
+const baseAuthOptions = {
   appName: "MITS",
   secret: authSecret(),
   database: db,
@@ -128,18 +168,6 @@ export const authOptions = {
         input: false,
         fieldName: "must_change_password",
       },
-    },
-  },
-
-  session: {
-    expiresIn: 60 * 60 * 24 * 7,
-    updateAge: 60 * 60 * 24,
-    cookieCache: {
-      enabled: true,
-      // Short on purpose: the proxy reads the role from this signed cookie, so
-      // a demotion must not stay effective for long. Authoritative checks in
-      // the route guards hit the database regardless.
-      maxAge: 60,
     },
   },
 
@@ -192,7 +220,64 @@ export const authOptions = {
   plugins: [nextCookies()],
 } satisfies BetterAuthOptions;
 
-export const auth = betterAuth(authOptions);
+export function authOptionsFor(sessionSeconds: number) {
+  return {
+    ...baseAuthOptions,
+    session: {
+      expiresIn: sessionSeconds,
+      /*
+       * Wie oft eine lebende Sitzung verlängert wird. **Nicht** an `expiresIn`
+       * gekoppelt: bei „1 Tag" wäre eine tägliche Verlängerung dieselbe Zahl wie
+       * der Ablauf, und die Sitzung würde bei jeder Anfrage neu geschrieben.
+       * Einmal am Tag ist der Kompromiss zwischen „läuft mitten in der Arbeit ab"
+       * und „ein Schreibvorgang pro Poll".
+       */
+      updateAge: 60 * 60 * 24,
+      cookieCache: {
+        enabled: true,
+        // Short on purpose: the proxy reads the role from this signed cookie, so
+        // a demotion must not stay effective for long. Authoritative checks in
+        // the route guards hit the database regardless.
+        maxAge: 60,
+      },
+    },
+  } satisfies BetterAuthOptions;
+}
+
+/**
+ * Die Instanz für die aktuell eingestellte Sitzungsdauer.
+ *
+ * Gemerkt am Wert und nicht am Prozess: derselbe Wert gibt dieselbe Instanz
+ * zurück, ein geänderter baut neu. Eine Funktion und keine Konstante, weil eine
+ * Konstante genau das nicht kann — und weil die fünf Aufrufstellen dadurch
+ * sichtbar machen, dass hier etwas nachgelesen wird.
+ */
+function buildAuth(sessionSeconds: number) {
+  return betterAuth(authOptionsFor(sessionSeconds));
+}
+
+/*
+ * Inferred from `buildAuth`, not written as `Auth<BetterAuthOptions>`.
+ *
+ * The generic parameter is what carries `additionalFields` — annotating the cache
+ * with the wide type erases `role` and `mustChangePassword` from
+ * `api.getSession`, and every guard that reads them then fails to compile for a
+ * reason that looks like it is about sessions.
+ */
+type MITSAuth = ReturnType<typeof buildAuth>;
+
+let cachedAuth: { seconds: number; instance: MITSAuth } | null = null;
+
+export function getAuth(): MITSAuth {
+  const seconds = configuredSessionSeconds();
+
+  const current = cachedAuth;
+  if (current && current.seconds === seconds) return current.instance;
+
+  const instance = buildAuth(seconds);
+  cachedAuth = { seconds, instance };
+  return instance;
+}
 
 /* ──────────────────────────────────────────────────────────────────────────
    Schema bootstrap.
@@ -207,8 +292,11 @@ let schemaReady: Promise<void> | null = null;
 export function ensureAuthSchema(): Promise<void> {
   schemaReady ??= (async () => {
     const { getMigrations } = await import("better-auth/db/migration");
-    const { toBeCreated, toBeAdded, runMigrations } =
-      await getMigrations(authOptions);
+    // The default lifetime, because the schema does not depend on it: `expiresIn`
+    // decides what goes *into* `expires_at`, not that the column exists.
+    const { toBeCreated, toBeAdded, runMigrations } = await getMigrations(
+      authOptionsFor(sessionLifetimeSeconds(DEFAULT_SESSION_LIFETIME_DAYS)),
+    );
     if (toBeCreated.length > 0 || toBeAdded.length > 0) {
       await runMigrations();
     }

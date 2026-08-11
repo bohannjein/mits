@@ -163,21 +163,32 @@ export function TicketComposer({
    */
   const plainRef = useRef<HTMLTextAreaElement>(null);
 
+  /**
+   * Put the caret back in the field.
+   *
+   * One function, three callers: the `r` shortcut, the composer handle the page
+   * hands out, and the send path below. Two of those existed already and the
+   * third is the reason it is extracted — the variants focus differently (a
+   * textarea takes `.focus()`, tiptap needs a command), and a second copy of that
+   * branch is how one of them stops working without anything looking wrong.
+   */
+  const focusComposer = useCallback(() => {
+    if (rich) editor?.focus();
+    else plainRef.current?.focus();
+  }, [rich, editor]);
+
   const handle = useComposerHandle();
 
   useEffect(() => {
     if (!handle) return;
 
-    handle.focus.current = () => {
-      if (rich) editor?.focus();
-      else plainRef.current?.focus();
-    };
+    handle.focus.current = focusComposer;
     // Only an agent has the switch; for a reporter the shortcut does nothing
     // rather than toggling a control that is not on their screen.
     handle.toggleInternal.current = isAgent
       ? () => setInternal((on) => !on)
       : null;
-  }, [handle, rich, editor, isAgent]);
+  }, [handle, focusComposer, isAgent]);
 
   const dispatchMacro = (fields: { ticketId: string; macroId: string }) => {
     const data = new FormData();
@@ -221,12 +232,24 @@ export function TicketComposer({
   const result = replyResult ?? closeResult;
   const busy = replying || closing || runningMacro;
 
-  // Clear on confirmation, keyed on the result object's identity so it fires once
-  // per submission. A `result?.ok ? "" : body` shortcut would swallow an inserted
-  // snippet after the first successful reply.
+  /*
+   * Clear on confirmation, and put the caret straight back in the field.
+   *
+   * Keyed on the result object's identity so it fires once per submission. A
+   * `result?.ok ? "" : body` shortcut would swallow an inserted snippet after the
+   * first successful reply.
+   *
+   * The focus is the second half of the same thought: a conversation is a
+   * sequence of messages, and a chat box that drops the caret after every send
+   * makes the second message cost a click that the first one did not. Only on
+   * success — a refused reply leaves the text where it is, and moving the caret
+   * there would fight whoever is already fixing it.
+   */
   useEffect(() => {
-    if (result?.ok) setBody("");
-  }, [result]);
+    if (!result?.ok) return;
+    setBody("");
+    focusComposer();
+  }, [result, focusComposer]);
 
   /*
    * A refused reply is a toast, and the text stays in the field.
@@ -766,7 +789,7 @@ export function TicketComposer({
                   ? () => setSnippetsOpen(true)
                   : undefined
               }
-              placeholder={placeholderFor(internal)}
+              placeholder={COMPOSER_PLACEHOLDER}
               showToolbar={formatting}
               compact
               // The border and the ring belong to the row above, or there would be
@@ -849,7 +872,7 @@ export function TicketComposer({
             onChange={(event) => setBody(event.target.value)}
             rows={1}
             disabled={busy}
-            placeholder={placeholderFor(internal)}
+            placeholder={COMPOSER_PLACEHOLDER}
             /*
              * `resize-none` and `field-sizing-content`: the box grows with the
              * text and cannot be dragged taller than the frame, which would push
@@ -941,10 +964,18 @@ export function TicketComposer({
   );
 }
 
-const placeholderFor = (internal: boolean): string =>
-  internal
-    ? "Nur für Agenten sichtbar."
-    : "Geht an den Melder und löst eine Benachrichtigung aus.";
+/**
+ * Derselbe Platzhalter für jede Rolle und beide Sichtbarkeiten.
+ *
+ * Vorher standen dort zwei Sätze, die erklärten, was das Absenden bewirkt („Geht
+ * an den Melder und löst eine Benachrichtigung aus", „Nur für Agenten sichtbar").
+ * Beides steht schon daneben: das Label über dem Feld nennt „Öffentliche
+ * Antwort" oder „Interne Notiz", und die Notiz färbt das ganze Feld amber und
+ * gestrichelt. Ein Platzhalter ist die Aufforderung zu tippen, nicht die dritte
+ * Kopie derselben Auskunft — und in einem Chatfeld heißt diese Aufforderung
+ * überall gleich.
+ */
+const COMPOSER_PLACEHOLDER = "Nachricht eingeben";
 
 /**
  * Turn a plain-text canned response into paragraphs.

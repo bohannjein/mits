@@ -1,6 +1,6 @@
 import "server-only";
 
-import { auth } from "@/lib/auth/server";
+import { getAuth } from "@/lib/auth/server";
 
 /* ──────────────────────────────────────────────────────────────────────────
    "Prove it is you", without signing in again.
@@ -10,7 +10,7 @@ import { auth } from "@/lib/auth/server";
    here — the cookie may be a forgotten laptop in a meeting room, and the password
    is the thing only the person is supposed to have.
 
-   **Verified against the stored hash, not by signing in.** `auth.api.signInEmail`
+   **Verified against the stored hash, not by signing in.** `signInEmail`
    would answer the same question and mint a second session as a side effect, which
    on a destructive path is exactly the kind of extra state nobody wants to explain
    afterwards. `ctx.password.verify` is what the sign-in route itself calls once it
@@ -29,7 +29,7 @@ export async function verifyUserPassword(
   // an empty submit cannot depend on how the hasher treats an empty string.
   if (password === "") return false;
 
-  const ctx = await auth.$context;
+  const ctx = await getAuth().$context;
   const accounts = await ctx.internalAdapter.findAccounts(userId);
   const credential = accounts.find(
     (account) => account.providerId === "credential",

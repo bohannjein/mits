@@ -3,7 +3,7 @@ import "server-only";
 import { PHASE_PRODUCTION_BUILD } from "next/constants";
 
 import { withAdminBootstrap } from "@/lib/auth/bootstrap";
-import { auth, ensureAuthSchema } from "@/lib/auth/server";
+import { ensureAuthSchema, getAuth } from "@/lib/auth/server";
 import { db } from "@/lib/db/sqlite";
 import { countAdmins } from "@/lib/users";
 
@@ -128,7 +128,7 @@ async function seed(): Promise<SeedOutcome> {
     return { action: "promoted", email };
   }
 
-  const ctx = await auth.$context;
+  const ctx = await getAuth().$context;
   const hash = await ctx.password.hash(password);
 
   await withAdminBootstrap(email, async () => {

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { CUSTOMER_HOME } from "@/lib/auth/roles";
 import { getSessionUser } from "@/lib/auth/session";
+import { getAuthSettings } from "@/lib/settings";
 
 export const metadata: Metadata = {
   title: "Anmelden — MITS",
@@ -40,7 +41,12 @@ export default async function LoginPage({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <LoginForm next={safeNext(next)} />
+        {/* Die Dauer kommt vom Server, weil sie eine Instanz-Einstellung ist —
+            der Haken benennt sie, statt eine Zusage ohne Frist zu machen. */}
+        <LoginForm
+          next={safeNext(next)}
+          sessionLifetimeDays={getAuthSettings().sessionLifetimeDays}
+        />
       </CardContent>
     </Card>
   );

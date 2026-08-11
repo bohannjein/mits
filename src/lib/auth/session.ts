@@ -11,7 +11,7 @@ import {
   toRole,
   type MITSRole,
 } from "@/lib/auth/roles";
-import { auth, ensureAuthSchema } from "@/lib/auth/server";
+import { ensureAuthSchema, getAuth } from "@/lib/auth/server";
 import { canSeeArea } from "@/lib/role-visibility";
 import { mustChangePassword } from "@/lib/users";
 import type { NavArea } from "@/types/mits";
@@ -82,7 +82,9 @@ function toSessionUser(user: {
 export const getSessionUser = cache(
   async (): Promise<SessionUser | null> => {
     await ensureAuthSchema();
-    const session = await auth.api.getSession({ headers: await headers() });
+    const session = await getAuth().api.getSession({
+      headers: await headers(),
+    });
     return session?.user ? toSessionUser(session.user) : null;
   },
 );
@@ -92,7 +94,7 @@ export async function getSessionUserFor(
   request: Request,
 ): Promise<SessionUser | null> {
   await ensureAuthSchema();
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await getAuth().api.getSession({ headers: request.headers });
   return session?.user ? toSessionUser(session.user) : null;
 }
 

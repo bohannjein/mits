@@ -412,6 +412,23 @@ damit das Vier-Pakete-Limit.
 
 ## Nachrichten korrigieren und zurückziehen
 
+**Nach dem Senden steht der Cursor wieder im Feld.** Ein Gespräch ist eine Folge
+von Nachrichten; ein Chatfeld, das den Fokus nach jedem Senden fallen lässt, macht
+die zweite Nachricht einen Klick teurer als die erste. `focusComposer` ist die
+eine Stelle, die weiß, wie die beiden Varianten fokussiert werden — die Textarea
+über `.focus()`, tiptap über ein Kommando —, und wird von drei Aufrufern benutzt:
+dem `r`-Kürzel, dem `ComposerHandle` der Seite und dem Erfolgspfad. **Nur bei
+Erfolg**: eine abgelehnte Antwort lässt den Text stehen, und den Cursor dorthin zu
+setzen kämpft mit dem, der ihn gerade korrigiert.
+
+**Der Platzhalter heißt überall „Nachricht eingeben".** Vorher standen dort zwei
+Sätze, die erklärten, was das Absenden bewirkt („Geht an den Melder und löst eine
+Benachrichtigung aus", „Nur für Agenten sichtbar") — beim Melder war der erste
+davon sogar falsch, er *ist* der Melder. Beides steht ohnehin daneben: das Label
+über dem Feld nennt „Öffentliche Antwort" oder „Interne Notiz", und eine Notiz
+färbt das ganze Feld amber und gestrichelt. Ein Platzhalter ist die Aufforderung
+zu tippen, nicht die dritte Kopie derselben Auskunft.
+
 **Strg+Enter sendet, Enter nicht.** Auf dem Formular statt auf jedem Editor, also
 aus Textarea und Rich-Text gleichermaßen. Blankes Enter absichtlich nicht: hier
 stehen mehrzeilige Antworten mit Schritten drin, und ein Enter, das absendet,

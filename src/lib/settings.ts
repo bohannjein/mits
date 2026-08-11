@@ -30,9 +30,14 @@ export function getAuthSettings(): AuthSettings {
 }
 
 export function setAuthSettings(next: AuthSettings): AuthSettings {
+  // Field by field rather than a spread, so a value the mask does not own cannot
+  // arrive here — and so adding a field forces this line to be touched. The cost
+  // is that forgetting one drops it silently; the schema's defaults make that
+  // visible as "the setting went back to 30 days", not as a corrupt row.
   const settings = AuthSettingsSchema.parse({
     registrationEnabled: next.registrationEnabled,
     allowedEmailDomains: normaliseDomains(next.allowedEmailDomains),
+    sessionLifetimeDays: next.sessionLifetimeDays,
   });
 
   db.prepare(

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
 import { canViewBoard } from "@/lib/auth/roles";
-import { auth } from "@/lib/auth/server";
+import { getAuth } from "@/lib/auth/server";
 import { clearMustChangePassword } from "@/lib/auth/seed-admin";
 import { requireUser, requireUserForPasswordChange } from "@/lib/auth/session";
 import { getLocation } from "@/lib/locations";
@@ -65,7 +65,7 @@ export async function changeOwnPassword(
   }
 
   try {
-    await auth.api.changePassword({
+    await getAuth().api.changePassword({
       body: {
         currentPassword,
         newPassword,

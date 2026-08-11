@@ -2848,15 +2848,86 @@ export type MITSUser = z.infer<typeof MITSUserSchema>;
  * without a leading `@`; matching is exact on the part after the last `@`, so
  * `company.com` does not admit `evil-company.com`.
  */
+/* ──────────────────────────────────────────────────────────────────────────
+   Wie lange eine Anmeldung hält.
+
+   Der Admin setzt die Obergrenze, die Person am Anmeldeformular entscheidet, ob
+   sie sie in Anspruch nimmt. Zwei verschiedene Fragen: „wie lange darf eine
+   Sitzung auf diesem Desk leben" ist eine Richtlinie, „will ich auf diesem Gerät
+   angemeldet bleiben" ist eine Aussage über das Gerät — und ein gemeinsamer
+   Rechner beantwortet die zweite anders als ein Diensthandy.
+
+   Eine feste Liste und kein freies Feld: der Wert wird zur Lebensdauer eines
+   Cookies, und „3600" in ein Zahlenfeld getippt ist eine Instanz, auf der sich
+   niemand erklären kann, warum er stündlich fliegt.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** Tage. `0` heißt „immer aktiv" und ist deshalb der erste Eintrag, nicht der letzte. */
+export const SESSION_LIFETIME_DAYS = [0, 1, 7, 14, 30] as const;
+export type SessionLifetimeDays = (typeof SESSION_LIFETIME_DAYS)[number];
+
+export const SESSION_LIFETIME_LABELS: Record<SessionLifetimeDays, string> = {
+  0: "Immer aktiv",
+  1: "1 Tag",
+  7: "7 Tage",
+  14: "14 Tage",
+  30: "30 Tage",
+};
+
+export const DEFAULT_SESSION_LIFETIME_DAYS: SessionLifetimeDays = 30;
+
+/**
+ * „Immer aktiv" als Zahl: zehn Jahre.
+ *
+ * Es gibt kein unendlich — Better Auth rechnet `expiresIn` in ein Ablaufdatum und
+ * in ein `Max-Age` um, und beides braucht einen Wert. Zehn Jahre sind länger als
+ * jede Installation, die diese Frage stellt, und bleiben weit unterhalb der
+ * Grenze, ab der ein Browser ein Cookie-Datum zurückstutzt.
+ */
+export const SESSION_LIFETIME_FOREVER_SECONDS = 60 * 60 * 24 * 365 * 10;
+
+/**
+ * Ein gespeicherter oder abgeschickter Wert, oder der Default.
+ *
+ * Fällt zurück statt zu werfen: das hier entscheidet über die Anmeldung, und
+ * eine von Hand editierte Zeile darf nicht dazu führen, dass sich niemand mehr
+ * anmelden kann.
+ */
+export function toSessionLifetimeDays(value: unknown): SessionLifetimeDays {
+  const days = Number(value);
+  return (SESSION_LIFETIME_DAYS as readonly number[]).includes(days)
+    ? (days as SessionLifetimeDays)
+    : DEFAULT_SESSION_LIFETIME_DAYS;
+}
+
+/** Die Zahl, die Better Auth als `session.expiresIn` bekommt. */
+export function sessionLifetimeSeconds(days: SessionLifetimeDays): number {
+  return days === 0 ? SESSION_LIFETIME_FOREVER_SECONDS : days * 60 * 60 * 24;
+}
+
 export const AuthSettingsSchema = z.object({
   registrationEnabled: z.boolean().default(true),
   allowedEmailDomains: z.array(z.string()).default([]),
+  /*
+   * Durch `toSessionLifetimeDays` geführt statt als `z.enum` deklariert.
+   *
+   * Zod lehnt einen unbekannten Enum-Wert ab, und ein abgelehnter Parse nimmt
+   * hier die **ganze** Auth-Konfiguration mit — inklusive der Domain-Whitelist,
+   * um die es eigentlich geht. Dieselbe Falle wie bei `hidden_areas` und bei
+   * `widget_order`. Ein Wert, den dieser Build nicht kennt, wird zum Default,
+   * nicht zum Ausfall der Registrierungsrichtlinie.
+   */
+  sessionLifetimeDays: z
+    .unknown()
+    .optional()
+    .transform(toSessionLifetimeDays),
 });
 export type AuthSettings = z.infer<typeof AuthSettingsSchema>;
 
 export const DEFAULT_AUTH_SETTINGS: AuthSettings = {
   registrationEnabled: true,
   allowedEmailDomains: [],
+  sessionLifetimeDays: DEFAULT_SESSION_LIFETIME_DAYS,
 };
 
 /* ──────────────────────────────────────────────────────────────────────────

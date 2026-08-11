@@ -106,6 +106,8 @@ import {
   FeatureFlagsSchema,
   RESTRICTABLE_ROLES,
   RoleVisibilitySchema,
+  SESSION_LIFETIME_LABELS,
+  toSessionLifetimeDays,
   VisibilityPresetSchema,
   MITSLocationSchema,
   MITSOrganizationSchema,
@@ -167,17 +169,39 @@ export async function updateAuthSettingsAction(
     };
   }
 
-  setAuthSettings({ registrationEnabled, allowedEmailDomains: domains });
+  /*
+   * Die Sitzungsdauer kommt durch `toSessionLifetimeDays`, also nie ungeprüft aus
+   * dem Formular. Sie wird zur Lebensdauer eines Cookies; ein getippter Wert, den
+   * dieser Build nicht kennt, fällt auf den Default und nicht auf „unbegrenzt".
+   */
+  const sessionLifetimeDays = toSessionLifetimeDays(
+    formData.get("sessionLifetimeDays"),
+  );
+
+  setAuthSettings({
+    registrationEnabled,
+    allowedEmailDomains: domains,
+    sessionLifetimeDays,
+  });
   revalidatePath("/admin");
   revalidatePath("/register");
+  // Die Anmeldemaske nennt die Dauer neben dem Haken „Angemeldet bleiben".
+  revalidatePath("/login");
 
+  const policy = registrationEnabled
+    ? domains.length > 0
+      ? `Registrierung offen für ${domains.map((d) => `@${d}`).join(", ")}.`
+      : "Registrierung offen für alle Domains."
+    : "Selbstregistrierung deaktiviert.";
+
+  /*
+   * Die Dauer wird mitgemeldet, weil sie ab dem nächsten Anmelden gilt und nicht
+   * für die Sitzung, in der man das gerade eingestellt hat — ohne den Satz sieht
+   * es aus, als hätte der Wechsel nichts getan.
+   */
   return {
     ok: true,
-    message: registrationEnabled
-      ? domains.length > 0
-        ? `Registrierung offen für ${domains.map((d) => `@${d}`).join(", ")}.`
-        : "Registrierung offen für alle Domains."
-      : "Selbstregistrierung deaktiviert.",
+    message: `${policy} Angemeldet bleiben: ${SESSION_LIFETIME_LABELS[sessionLifetimeDays].toLowerCase()}, ab der nächsten Anmeldung.`,
   };
 }
 

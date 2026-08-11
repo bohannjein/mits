@@ -18,13 +18,19 @@ import {
 } from "@/components/forms/form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { signIn } from "@/lib/auth/client";
 import { CUSTOMER_HOME } from "@/lib/auth/roles";
+import {
+  SESSION_LIFETIME_LABELS,
+  type SessionLifetimeDays,
+} from "@/types/mits";
 
 const LoginSchema = z.object({
   email: z.email("Bitte eine gültige E-Mail-Adresse angeben."),
   password: z.string().min(1, "Passwort erforderlich."),
+  rememberMe: z.boolean(),
 });
 
 /**
@@ -62,13 +68,34 @@ function describeSignInError(status: number): string {
  *   A caller that came from a guarded page passes that page instead, so the redirect
  *   returns people where they were headed.
  */
-export function LoginForm({ next }: { next: string }) {
+export function LoginForm({
+  next,
+  /**
+   * Die Obergrenze, die der Admin eingestellt hat — in Tagen, `0` heißt immer.
+   *
+   * Sie steht **im Label** und nicht in einer Zeile darunter: „Angemeldet bleiben
+   * (30 Tage)" ist dieselbe Auskunft in der Zeile, die man ohnehin liest, und ein
+   * Haken, dessen Dauer man nicht kennt, ist eine Zusage ohne Frist.
+   */
+  sessionLifetimeDays,
+}: {
+  next: string;
+  sessionLifetimeDays: SessionLifetimeDays;
+}) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   const form = useForm({
     resolver: zodResolver(LoginSchema),
-    defaultValues: { email: "", password: "" },
+    /*
+     * Nicht vorbelegt.
+     *
+     * Better Auths eigener Default ist `true`; hier ist er `false`, weil der Haken
+     * eine Aussage über *dieses Gerät* ist und der ungünstige Fall ein geteilter
+     * Rechner ist, an dem niemand die Vorbelegung bemerkt. Ohne Haken endet die
+     * Sitzung mit dem Browser.
+     */
+    defaultValues: { email: "", password: "", rememberMe: false },
   });
 
   const submit = form.handleSubmit(async (values) => {
@@ -76,6 +103,7 @@ export function LoginForm({ next }: { next: string }) {
     const { error: signInError } = await signIn.email({
       email: values.email,
       password: values.password,
+      rememberMe: values.rememberMe,
     });
 
     if (signInError) {
@@ -146,6 +174,27 @@ export function LoginForm({ next }: { next: string }) {
                 />
               </FormControl>
               <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          name="rememberMe"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-center gap-3">
+              <FormControl>
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={(checked) => field.onChange(checked === true)}
+                  disabled={busy}
+                  id="rememberMe"
+                />
+              </FormControl>
+              <FormLabel htmlFor="rememberMe" className="font-normal">
+                {sessionLifetimeDays === 0
+                  ? "Angemeldet bleiben"
+                  : `Angemeldet bleiben (${SESSION_LIFETIME_LABELS[sessionLifetimeDays]})`}
+              </FormLabel>
             </FormItem>
           )}
         />
