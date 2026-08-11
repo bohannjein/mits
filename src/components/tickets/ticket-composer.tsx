@@ -54,7 +54,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -66,8 +65,10 @@ import { cn } from "@/lib/utils";
    and had two implementations, which is how one of them ends up with a fix the
    other never gets.
 
-   What actually differs between an agent and a reporter is the *editor* and which
-   controls exist, so that is the prop: `variant`. Everything below it is shared.
+   What differs between an agent and a reporter is **which controls exist**, not
+   the field: `variant` withholds the formatting bar and the full-size window and
+   nothing else. It used to swap in a `<textarea>` for the reporter, which is why
+   a customer could not drop or paste a file — see the note on the prop.
 
    Two submit buttons on one form, each bound to its own action. "Antworten &
    Schließen" is a single server action rather than two client calls: replying and
@@ -79,9 +80,19 @@ export function TicketComposer({
   ticketId,
   isAgent,
   /**
-   * `rich` gives the tiptap editor and posts HTML; `plain` a textarea posting
-   * text. The reporter's view is deliberately the plain one — a formatting
-   * toolbar is furniture on a page whose whole point is to be minimal.
+   * Which controls exist around the field — **not** which field.
+   *
+   * Both variants are the same tiptap editor and both post HTML. `plain` used to
+   * be a `<textarea>`, and that was the whole reason a reporter could not attach
+   * anything: a textarea has no drop target, no paste handler and no way to carry
+   * an inline image, so a screenshot pasted into it was silently nothing. The
+   * upload path, the allow-list refusals and `uploadIdsInHtml` — which is what
+   * binds a file to the ticket so its own author can open it again — all live on
+   * the editor side.
+   *
+   * What `plain` still means: no formatting bar and no toggle for one, and no
+   * full-size window. The reporter's page is minimal because it has fewer
+   * controls, not because it has a weaker field.
    */
   variant = "rich",
   /** Placeholder-filled server-side. Empty when the module is off. */
@@ -155,27 +166,23 @@ export function TicketComposer({
    * pending flag that disables the controls never turns on.
    */
   /*
-   * Hand the page two callbacks rather than two DOM nodes.
+   * Hand the page two callbacks rather than a DOM node.
    *
-   * Focusing differs by variant — the textarea takes `.focus()`, the rich editor
-   * needs a tiptap command — and the internal switch is React state with no
-   * element to click. A ref to a node would make the page know both of those.
+   * Focusing goes through tiptap's command chain, and the internal switch is React
+   * state with no element to click. A ref to a node would make the page know both.
    */
-  const plainRef = useRef<HTMLTextAreaElement>(null);
-
   /**
    * Put the caret back in the field.
    *
    * One function, three callers: the `r` shortcut, the composer handle the page
-   * hands out, and the send path below. Two of those existed already and the
-   * third is the reason it is extracted — the variants focus differently (a
-   * textarea takes `.focus()`, tiptap needs a command), and a second copy of that
-   * branch is how one of them stops working without anything looking wrong.
+   * hands out, and the send path below. It goes through tiptap's command chain
+   * rather than a ref to a DOM node, because a contenteditable is not focusable
+   * through an input ref — the caret would land nowhere and the next keystroke
+   * would go to the page.
    */
   const focusComposer = useCallback(() => {
-    if (rich) editor?.focus();
-    else plainRef.current?.focus();
-  }, [rich, editor]);
+    editor?.focus();
+  }, [editor]);
 
   const handle = useComposerHandle();
 
@@ -271,19 +278,13 @@ export function TicketComposer({
   /*
    * Insert a snippet where the cursor is.
    *
-   * In the rich variant the body travels as HTML and a canned response is stored
-   * as plain text: concatenating the two would hand the sanitiser text whose
-   * newlines collapse into one paragraph, so the template arrives as a wall.
-   * `toParagraphs` escapes and wraps it, and the editor knows where the cursor is.
-   * The plain variant needs none of that — it is already text.
+   * The body travels as HTML and a canned response is stored as plain text:
+   * concatenating the two would hand the sanitiser text whose newlines collapse
+   * into one paragraph, so the template arrives as a wall. `toParagraphs` escapes
+   * and wraps it, and the editor knows where the cursor is.
    */
   const insertText = useCallback(
     (text: string) => {
-      if (!rich) {
-        setBody((current) => (current.trim() ? `${current.trimEnd()}\n\n${text}` : text));
-        return;
-      }
-
       const html = toParagraphs(text);
       if (editor) {
         editor.insert(html);
@@ -293,7 +294,7 @@ export function TicketComposer({
       // to the value keeps the snippet rather than dropping it silently.
       setBody((current) => (current ? `${current}${html}` : html));
     },
-    [editor, rich],
+    [editor],
   );
 
   /*
@@ -416,7 +417,7 @@ export function TicketComposer({
     const data = new FormData();
     data.set("ticketId", ticketId);
     data.set("body", body);
-    data.set("bodyFormat", rich ? "html" : "text");
+    data.set("bodyFormat", "html");
     data.set("visibility", internal ? "internal" : "public");
     startTransition(() => replyAction(data));
     setPopout(false);
@@ -426,7 +427,7 @@ export function TicketComposer({
     const data = new FormData();
     data.set("ticketId", ticketId);
     data.set("body", body);
-    data.set("bodyFormat", rich ? "html" : "text");
+    data.set("bodyFormat", "html");
     // Not read by the action — it closes publicly by definition — but sent so
     // the payload matches the form's, and a future reader is not left wondering
     // which of the two paths omits it.
@@ -534,11 +535,12 @@ export function TicketComposer({
       the page. The wrapper catches the whole area and hands the files to the
       same upload path.
 
-      Only the rich variant: the reporter's plain textarea posts through the
-      form's own file field and has nowhere to put an inline image.
+      Both variants. The reporter's field used to be a textarea, which is why
+      dropping a screenshot on the customer page did nothing at all — see the note
+      on `variant`.
     */
     <FileDropzone
-      disabled={!rich || busy || !editor}
+      disabled={busy || !editor}
       onFiles={(files) => editor?.addFiles(files)}
       className="rounded-2xl"
     >
@@ -568,7 +570,10 @@ export function TicketComposer({
       />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Label htmlFor="composer-body" className="text-xs text-muted-foreground">
+        {/* No `htmlFor`: the id it pointed at was the reporter's textarea, and a
+            contenteditable is not the kind of element a label can be bound to.
+            This is the caption of the box, and the box says what it is. */}
+        <Label className="text-xs text-muted-foreground">
           {internal ? "Interne Notiz" : "Öffentliche Antwort"}
         </Label>
 
@@ -750,56 +755,63 @@ export function TicketComposer({
       {/* The body travels as a hidden field either way: the rich editor keeps its
           value in React state, and a Server Action reads FormData. */}
       <input type="hidden" name="body" value={body} />
-      <input type="hidden" name="bodyFormat" value={rich ? "html" : "text"} />
+      <input type="hidden" name="bodyFormat" value="html" />
 
-      {rich ? (
-        /*
-         * One row: the field, and the three things you do to it.
-         *
-         * The actions sit *inside* the field's border rather than under it, which
-         * is what makes the whole thing read as a single chat input instead of a
-         * form. `items-end` so they stay on the last line as the text grows.
-         */
-        <div
-          className={cn(
-            "flex items-end gap-1 rounded-xl border bg-background transition-colors focus-within:ring-1",
-            internal
-              ? "border-warning/50 focus-within:ring-warning/40"
-              : "border-border focus-within:ring-ring/40",
-          )}
-        >
-          <div className="min-w-0 flex-1">
-            <RichTextEditor
-              value={body}
-              onChange={setBody}
-              disabled={busy}
-              tone={internal ? "warning" : "default"}
-              onReady={setEditor}
-              /*
-                Only when there is something to offer: a shortcut that opens an
-                empty menu is a swallowed keystroke.
+      {/*
+        One row: the field, and the things you do to it.
 
-                Macros count. The condition used to name only the canned
-                responses, so on an instance that had macros and no snippets the
-                key did nothing at all — and the menu it would have opened was
-                sitting right above the field.
-              */
-              onSlash={
-                isAgent && (cannedResponses.length > 0 || macros.length > 0)
-                  ? () => setSnippetsOpen(true)
-                  : undefined
-              }
-              placeholder={COMPOSER_PLACEHOLDER}
-              showToolbar={formatting}
-              compact
-              // The border and the ring belong to the row above, or there would be
-              // two outlines a pixel apart around one field.
-              bare
-            />
-          </div>
+        The actions sit *inside* the field's border rather than under it, which is
+        what makes the whole thing read as a single chat input instead of a form.
+        `items-end` so they stay on the last line as the text grows.
 
-          <div className="flex shrink-0 items-center gap-0.5 p-1.5">
-            {/* The escape hatch for a long answer — see `ReplyPopout`. */}
+        **One row for both variants.** The reporter's used to be a separate branch
+        with a `<textarea>` in it, and that branch was the reason a customer could
+        neither drop nor paste a file. What the variant still decides is which of
+        the buttons on the right exist.
+      */}
+      <div
+        className={cn(
+          "flex items-end gap-1 rounded-xl border bg-background transition-colors focus-within:ring-1",
+          internal
+            ? "border-warning/50 focus-within:ring-warning/40"
+            : "border-border focus-within:ring-ring/40",
+        )}
+      >
+        <div className="min-w-0 flex-1">
+          <RichTextEditor
+            value={body}
+            onChange={setBody}
+            disabled={busy}
+            tone={internal ? "warning" : "default"}
+            onReady={setEditor}
+            /*
+              Only when there is something to offer: a shortcut that opens an
+              empty menu is a swallowed keystroke.
+
+              Macros count. The condition used to name only the canned
+              responses, so on an instance that had macros and no snippets the
+              key did nothing at all — and the menu it would have opened was
+              sitting right above the field.
+            */
+            onSlash={
+              isAgent && (cannedResponses.length > 0 || macros.length > 0)
+                ? () => setSnippetsOpen(true)
+                : undefined
+            }
+            placeholder={COMPOSER_PLACEHOLDER}
+            // Never for a reporter: the bar is the one thing `plain` withholds,
+            // and a toggle they cannot reach must not be able to open it either.
+            showToolbar={rich && formatting}
+            compact
+            // The border and the ring belong to the row above, or there would be
+            // two outlines a pixel apart around one field.
+            bare
+          />
+        </div>
+
+        <div className="flex shrink-0 items-center gap-0.5 p-1.5">
+          {/* The escape hatch for a long answer — see `ReplyPopout`. */}
+          {rich && (
             <Button
               type="button"
               variant="ghost"
@@ -812,7 +824,9 @@ export function TicketComposer({
               <Maximize2Icon strokeWidth={1.5} />
               <span className="sr-only">Im großen Fenster schreiben</span>
             </Button>
+          )}
 
+          {rich && (
             <Button
               type="button"
               variant="ghost"
@@ -829,64 +843,33 @@ export function TicketComposer({
               <TypeIcon strokeWidth={1.5} />
               <span className="sr-only">Formatierung ein- oder ausblenden</span>
             </Button>
-
-            {/* Not behind the formatting toggle: attaching a file is not a
-                formatting decision, and burying it there is how people conclude
-                the reply box cannot take attachments. */}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => editor?.pickFile()}
-              disabled={busy || !editor}
-              title="Datei anhängen"
-              className="rounded-lg text-muted-foreground"
-            >
-              <PaperclipIcon strokeWidth={1.5} />
-              <span className="sr-only">Datei anhängen</span>
-            </Button>
-
-            <CloseButton />
-            <SendButton />
-          </div>
-        </div>
-      ) : (
-        /*
-         * The reporter's field, in the same shape.
-         *
-         * The plain variant gets the identical action row — minus the two
-         * controls that only mean something for rich text. It briefly did not,
-         * because the send button had been moved *inside* the rich branch, and a
-         * reply box with no way to send is as broken as a page that will not load.
-         */
-        <div
-          className={cn(
-            "flex items-end gap-1 rounded-xl border bg-background transition-colors focus-within:ring-1",
-            "border-border focus-within:ring-ring/40",
           )}
-        >
-          <Textarea
-            ref={plainRef}
-            id="composer-body"
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            rows={1}
-            disabled={busy}
-            placeholder={COMPOSER_PLACEHOLDER}
-            /*
-             * `resize-none` and `field-sizing-content`: the box grows with the
-             * text and cannot be dragged taller than the frame, which would push
-             * the send button out of a fixed-height column.
-             */
-            className="max-h-64 min-h-9 resize-none border-0 bg-transparent px-3 py-2 shadow-none focus-visible:ring-0 field-sizing-content"
-          />
 
-          <div className="flex shrink-0 items-center gap-0.5 p-1.5">
-            <CloseButton />
-            <SendButton />
-          </div>
+          {/*
+            The paperclip is **not** rich-only.
+
+            Attaching a file is not a formatting decision, so it is not behind the
+            formatting toggle — and it is not behind the variant either. A reporter
+            answering „schick mir mal einen Screenshot" needs exactly this button,
+            and its absence was the whole defect.
+          */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => editor?.pickFile()}
+            disabled={busy || !editor}
+            title="Datei anhängen"
+            className="rounded-lg text-muted-foreground"
+          >
+            <PaperclipIcon strokeWidth={1.5} />
+            <span className="sr-only">Datei anhängen</span>
+          </Button>
+
+          <CloseButton />
+          <SendButton />
         </div>
-      )}
+      </div>
 
       {/*
         One thin line under the field, and only what cannot live inside it.
@@ -948,6 +931,10 @@ export function TicketComposer({
       )}
     </form>
 
+    {/* Rich only. Nothing in the reporter's row can open it, and mounting a
+        dialog that has no trigger is a second editor over the same string for
+        nobody. */}
+    {rich && (
     <ReplyPopout
       open={popout}
       onOpenChange={closePopout}
@@ -960,6 +947,7 @@ export function TicketComposer({
       canSend={canSend}
       internal={internal}
     />
+    )}
     </FileDropzone>
   );
 }

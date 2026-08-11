@@ -518,6 +518,37 @@ Größe, mit dem Download-Knopf daneben.
 - **Der Browser-Viewer statt pdf.js.** Ein Megabyte JavaScript, um etwas
   nachzubauen, das jedes Zielbrowser mitbringt — und es läse dieselbe Route.
 
+### Der Melder hängt genauso an
+
+**`variant` entscheidet, welche Bedienelemente es gibt — nicht, welches Feld.**
+Beide Varianten sind derselbe tiptap-Editor und schicken beide HTML. `plain` war
+vorher ein `<textarea>`, und *das* war der Grund, warum ein Melder nichts
+anhängen konnte: eine Textarea hat kein Drop-Ziel, keinen Paste-Handler und keinen
+Ort für ein eingebettetes Bild. Ein hineinkopierter Screenshot war lautlos nichts.
+
+Was `plain` weiter bedeutet: keine Formatierungsleiste, kein Schalter dafür, kein
+großes Fenster. Die Melderseite ist schlank, weil sie weniger Bedienelemente hat,
+nicht weil sie ein schwächeres Feld hat.
+
+- **Die Büroklammer ist nicht rich-only.** Anhängen ist keine
+  Formatierungsentscheidung — deshalb liegt sie nicht hinter dem Schalter — und
+  auch keine Rollenentscheidung. Wer auf „schick mir mal einen Screenshot"
+  antwortet, braucht genau diesen Knopf.
+- **`showToolbar={rich && formatting}`.** Ein Schalter, den der Melder nicht
+  erreicht, darf die Leiste auch nicht öffnen können.
+- **Die Bindung ans Ticket kam gratis mit.** `uploadIdsInHtml` liest die Ids aus
+  dem gespeicherten Markup, und `linkUploadsToTicket` prüft, dass jede dem
+  Aufrufer gehört. Ein Textkörper hätte diesen Weg nicht: die Datei bliebe
+  ungebunden, und `openUploadFor` antwortete dem Melder in seinem *eigenen*
+  Ticket mit 404. Ein zweiter Parser für Upload-Pfade in Klartext wäre die zweite
+  Stelle mit derselben Regel.
+- **`ReplyPopout` ist rich-only gemountet.** In der Melderzeile gibt es keinen
+  Auslöser, und ein Dialog ohne Auslöser ist ein zweiter Editor über demselben
+  String für niemanden.
+- **HTML von einem Melder ist nicht neu.** Der Mail-Ingest legt eingehende
+  Nachrichten längst als bereinigtes HTML ab; `sanitizeRichText` ist dieselbe
+  Tür.
+
 **Die Büroklammer nahm nur Bilder.** `uploadAndInsert` filterte alles andere
 lautlos weg: eine ausgewählte PDF war weg, ohne Meldung, und die Antwort ging ohne
 das Dokument raus, um das es ging. Jetzt geht hoch, was gewählt wurde — Bilder als
