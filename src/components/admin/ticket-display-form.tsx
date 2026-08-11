@@ -20,7 +20,10 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Switch } from "@/components/ui/switch";
 import {
+  CUSTOMER_META_FIELDS,
+  CUSTOMER_META_FIELD_LABELS,
   TICKET_FORM_DISPLAYS,
   TICKET_FORM_DISPLAY_META,
   type TicketDisplaySettings,
@@ -47,6 +50,14 @@ export function TicketDisplayForm({
     null,
   );
   const [choice, setChoice] = useState<TicketFormDisplay>(settings.formDisplay);
+  /*
+   * Nur, um die Feldschalter auszugrauen.
+   *
+   * Der abgeschickte Wert kommt weiter vom Schalter selbst — dieser State
+   * entscheidet nichts, er beschreibt. Ein zweiter Wahrheitsort für „ist die
+   * rechte Spalte an" wäre einer zu viel.
+   */
+  const [meta, setMeta] = useState(settings.customerMetaPanel);
 
   return (
     <form action={action} className="grid gap-6">
@@ -101,6 +112,64 @@ export function TicketDisplayForm({
             Tickets, die per E-Mail hereinkommen, behalten die Liste — ihre erste
             Nachricht ist die Mail selbst.
           </p>
+        </CardContent>
+      </Card>
+
+      {/*
+        Die Melderansicht als drei Spalten.
+
+        Zwei Schalter für die Randspalten und einer je Feld rechts. Alles in
+        *diesem* Formular und nicht in einem zweiten daneben: es ist ein Blob und
+        ein Speichern-Knopf, und zwei Masken über einem Blob überschreiben sich
+        gegenseitig die Abschnitte.
+      */}
+      <Card className="rounded-3xl border-border bg-card shadow-elev-1">
+        <CardHeader>
+          <CardTitle className="text-base font-medium">
+            Melderansicht
+          </CardTitle>
+          <CardDescription>
+            Gilt nur für die Ticketseite eines Anwenders. Die Agentenansicht
+            bleibt, wie sie ist.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <SwitchRow
+            name="customerTicketList"
+            label="Linke Spalte: meine Tickets"
+            defaultChecked={settings.customerTicketList}
+            disabled={saving}
+          />
+          <SwitchRow
+            name="customerMetaPanel"
+            label="Rechte Spalte: Ticket-Details"
+            defaultChecked={settings.customerMetaPanel}
+            disabled={saving}
+            onChange={setMeta}
+          />
+
+          {/*
+            Eingerückt unter ihrem Schalter, und mitsamt ihm ausgegraut: die Felder
+            sind Teile der rechten Spalte, und Schalter, die nichts tun, weil ihr
+            Elternteil aus ist, sind die Art Maske, in der jemand zehn Minuten
+            sucht. Sie werden trotzdem gerendert und abgeschickt — der gespeicherte
+            Stand überlebt das Abschalten der Spalte.
+          */}
+          <fieldset
+            disabled={!meta || saving}
+            className="grid gap-2 border-l border-border pl-4 disabled:opacity-50"
+          >
+            {CUSTOMER_META_FIELDS.map((field) => (
+              <SwitchRow
+                key={field}
+                name={`meta-${field}`}
+                label={CUSTOMER_META_FIELD_LABELS[field]}
+                defaultChecked={settings.customerMetaFields[field]}
+                disabled={!meta || saving}
+                compact
+              />
+            ))}
+          </fieldset>
         </CardContent>
       </Card>
 
@@ -189,6 +258,51 @@ function Preview({ mode }: { mode: TicketFormDisplay }) {
           <span className="text-[11px] text-muted-foreground">—</span>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Ein Schalter mit Beschriftung, in der Höhe der Zeilen darüber.
+ *
+ * `defaultChecked` und kein `checked`: der Wert lebt im DOM und wird als
+ * `FormData` abgeschickt, wie im Registrierungs-Formular. Der einzige Grund für
+ * `onChange` ist das Ausgrauen der Felder darunter, und das ist Darstellung.
+ */
+function SwitchRow({
+  name,
+  label,
+  defaultChecked,
+  disabled,
+  compact = false,
+  onChange,
+}: {
+  name: string;
+  label: string;
+  defaultChecked: boolean;
+  disabled: boolean;
+  compact?: boolean;
+  onChange?: (next: boolean) => void;
+}) {
+  return (
+    <div
+      className={
+        compact
+          ? "flex items-center gap-3"
+          : "flex items-center gap-3 rounded-2xl border border-border px-4 py-3"
+      }
+    >
+      <Switch
+        id={name}
+        name={name}
+        defaultChecked={defaultChecked}
+        disabled={disabled}
+        onCheckedChange={onChange}
+        className={compact ? "scale-90" : undefined}
+      />
+      <Label htmlFor={name} className="text-sm font-normal">
+        {label}
+      </Label>
     </div>
   );
 }

@@ -123,6 +123,60 @@ andere Maske. Es gibt keinen zweiten Weg in die Ticket-Tabelle.
 - **Die ganze Karte ist die Drop-Zone**, nicht ein gestricheltes Rechteck daneben.
   Der `dragDepth`-Zähler ist nötig, weil `dragleave` auch beim Wechsel auf ein
   Kindelement feuert.
+### Die Melderansicht als drei Spalten
+
+`ticket_display` trägt neben `formDisplay` jetzt auch das Layout der Melderseite —
+derselbe Key, dieselbe Maske (`/admin/settings/tickets`), ein Speichern-Knopf.
+
+| Schalter | Wirkung |
+|---|---|
+| `customerTicketList` | linke Spalte: die eigenen Tickets, offene zuerst, `RAIL_LIMIT = 30` |
+| `customerMetaPanel` | rechte Spalte als Ganzes |
+| `customerMetaFields` | je Feld: Typ, Alter, Erstellt, Status, Kategorie, Bearbeiter |
+
+- **Die linke Spalte ist der Grund für das Ganze.** Von einem Ticket zum nächsten
+  kam man vorher nur über die Übersicht zurück. `listOwnTickets` und nicht
+  `searchTickets`: es ist Navigation, keine Liste mit Filter, Sortierung und
+  Ungelesen-Rechnung.
+- **`order-last lg:order-first` statt zwei Elementen.** Auf einem Telefon würde
+  eine Liste mit dreißig Tickets über dem Gespräch genau das wegschieben, weswegen
+  jemand die Seite geöffnet hat; zweimal gerendert wären es zwei Listen, die
+  gleich bleiben müssen.
+- **Kein Suchfeld in der linken Spalte.** Gedeckelt, und die Kopfzeile hat schon
+  eine Suche, die per Nummer direkt ins Ticket springt. Der Knopf „Alle Tickets"
+  steht immer da, nicht erst wenn der Deckel greift — ein Weg, der bei
+  einunddreißig Tickets erscheint, ist einer, den niemand findet.
+- **Die Werte rechts sind fertig formatiert, wenn sie ankommen.** Zeitzone und
+  relative Zeit sind Server-Entscheidungen; ein zweiter Formatierer im Browser
+  wäre auf einer Maschine mit falscher Uhr eine zweite Antwort auf „wie alt ist
+  das".
+- **Steht der Status rechts, fällt sein Badge aus dem Kopf.** Zweimal derselbe
+  Wert zwanzig Zentimeter auseinander ist keine Betonung.
+- **Alle sechs Felder aus heißt: keine Karte.** Eine Überschrift ohne Inhalt sieht
+  kaputt aus, statt zu fehlen.
+- **`max-w-7xl` nur mit Randspalten, sonst weiter `max-w-3xl`.** Drei Spalten in
+  48rem lassen dem Gespräch nichts, eine Spalte in 80rem ist eine Textzeile über
+  den halben Schirm.
+- **`customerMetaFields` ist ein `partialRecord` mit Merge.** Ein fehlender
+  Schlüssel füllt sich auf, statt den Parse abzulehnen — und ein abgelehnter Parse
+  nähme `formDisplay` mit, also die Anordnung der Formularantworten auf **beiden**
+  Ticketseiten. Dieselbe Falle wie bei `widget_order`.
+- **`getTicketDisplaySettings` liest nicht mehr von Hand.** Es pickte `formDisplay`
+  aus dem geparsten JSON; mit dem Layout im selben Blob hätte das jeden Schalter
+  still verworfen. `setTicketDisplaySettings` parst aus demselben Grund das ganze
+  Objekt statt Feld für Feld.
+
+**„Bearbeiter" kehrt eine frühere Entscheidung um.** Die einspaltige Fassung ließ
+Priorität *und* Bearbeiter weg, weil alles neben „hat jemand geantwortet" Lärm ist.
+Für die Priorität gilt das weiter — sie ist kein Feld hier. Ein Name und ein Datum
+sind dagegen die zwei Dinge, nach denen jemand fragt, der anruft statt zu warten;
+und wer sie nicht zeigen will, schaltet sie ab.
+
+**„Kategorie", nicht „Queue".** Ein Melder hat keine Queue, und das Wort lädt zum
+Raten am Organigramm ein — dieselbe Regel, aus der die Intent-Kacheln keine
+Kategoriepfade anzeigen. Wo ein Ticket *gelandet* ist, ist eine andere Auskunft als
+die Frage, wohin man es legen soll.
+
 - **Die Kunden-Detailansicht teilt sich `TicketDetail` nicht mehr** mit der
   Agentenseite. Eine mittige Spalte, schlanker Kopf, Verlauf — keine Priorität
   (die kann ein Melder nicht setzen, und „Niedrig“ am eigenen Problem liest sich

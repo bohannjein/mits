@@ -51,9 +51,18 @@ export function TicketFrame({
   header,
   messages,
   composer,
-  /** Omitted on the reporter's view, which has no metadata column at all. */
+  /** Omitted where there is no metadata column at all. */
   sidebar,
   sidebarLabel = "Details",
+  /**
+   * A narrow rail left of the conversation.
+   *
+   * Only the reporter's page uses it, for their own ticket list — the point being
+   * that switching tickets does not mean going back to an overview first. It has
+   * no toggle: an agent's sidebar holds controls that have to be reachable on a
+   * phone, this holds navigation that the page already has a link to.
+   */
+  rail,
   detachableId,
 }: {
   header: ReactNode;
@@ -61,6 +70,7 @@ export function TicketFrame({
   composer: ReactNode;
   sidebar?: ReactNode;
   sidebarLabel?: string;
+  rail?: ReactNode;
   /**
    * When set, the conversation is replaced by the cutout card while this ticket
    * is open in a pop-out or a pinned panel.
@@ -85,6 +95,19 @@ export function TicketFrame({
 
   return (
     <div className="flex w-full flex-1 flex-col gap-6 lg:min-h-0 lg:flex-row">
+      {/*
+        The rail, first from `lg` up and last below it.
+
+        `order-last lg:order-first` rather than two elements: on a phone a list of
+        thirty tickets above the conversation would push the thing somebody opened
+        this page for off the screen, and rendering it twice would be two lists to
+        keep identical. One element, two positions.
+      */}
+      {rail !== undefined && (
+        <nav className="order-last lg:order-first lg:min-h-0 lg:w-[15rem] lg:shrink-0 lg:overflow-y-auto lg:pr-1 scrollbar-thin">
+          {rail}
+        </nav>
+      )}
       {/*
         The chat column. `lg:min-w-0` as well as `lg:min-h-0`: a wide code block
         or a mailed-in table inside a bubble would otherwise stretch the column

@@ -40,7 +40,7 @@ import {
   listCommentsFor,
   ticketActivityFingerprint,
 } from "@/lib/ticket-comments";
-import { getTicketFormDisplay } from "@/lib/ticket-display";
+import { getTicketDisplaySettings } from "@/lib/ticket-display";
 import {
   openingFieldName,
   openingMessageFor,
@@ -49,10 +49,23 @@ import {
 import {
   getTicketFor,
   getTicketSeenAt,
+  listOwnTickets,
   markTicketRead,
 } from "@/lib/tickets";
+import { categoryLabel } from "@/lib/ticket-categories";
+import { formatRelativeTime } from "@/lib/format";
+import {
+  CustomerTicketRail,
+  RAIL_LIMIT,
+} from "@/components/tickets/customer-ticket-rail";
+import { CustomerTicketMeta } from "@/components/tickets/customer-ticket-meta";
 import { findUser } from "@/lib/users";
-import { TICKET_STATUS_LABELS, formatTicketNumber } from "@/types/mits";
+import { cn } from "@/lib/utils";
+import {
+  TICKET_STATUS_LABELS,
+  formatTicketNumber,
+  isOpenStatus,
+} from "@/types/mits";
 
 export const metadata: Metadata = {
   title: "Ticket — MITS",
@@ -143,7 +156,8 @@ export default async function CustomerTicketPage({
    * submission, so they ride in the opening bubble unless an admin decided
    * otherwise — or unless there is no bubble to ride in, which is the mail case.
    */
-  const formDisplay = getTicketFormDisplay();
+  const display = getTicketDisplaySettings();
+  const formDisplay = display.formDisplay;
   const fieldsInBubble = formDisplay !== "panel" && opening !== null;
   const fieldsInPanel = !fieldsInBubble || formDisplay === "both";
 
@@ -157,6 +171,50 @@ export default async function CustomerTicketPage({
     links: collectLinks([...(opening ? [opening] : []), ...comments]),
   };
 
+  /*
+   * Die linke Spalte: die eigenen Tickets.
+   *
+   * `listOwnTickets` und nicht `searchTickets`: das hier ist Navigation, keine
+   * Liste mit Filter, Sortierung und Ungelesen-Rechnung. Offene zuerst, damit der
+   * Deckel das Erledigte abschneidet und nicht das Wartende.
+   */
+  const rail = display.customerTicketList
+    ? [...listOwnTickets(user.id)]
+        .sort((left, right) => {
+          const byState =
+            Number(isOpenStatus(right.status)) - Number(isOpenStatus(left.status));
+          if (byState !== 0) return byState;
+          return right.created_at.getTime() - left.created_at.getTime();
+        })
+        .slice(0, RAIL_LIMIT)
+    : null;
+
+  /*
+   * Die rechte Spalte: fertig formatierte Werte.
+   *
+   * Zeitzone und relative Zeit sind Server-Entscheidungen — ein zweiter
+   * Formatierer im Browser wäre eine zweite Antwort auf „wie alt ist das", und auf
+   * einem Laptop mit falscher Uhr eine andere.
+   */
+  const meta = display.customerMetaPanel
+    ? {
+        type: schema?.title ?? "",
+        age: formatRelativeTime(ticket.created_at, nowMs),
+        created: formatDateTime(ticket.created_at, timezone),
+        category: categoryLabel(ticket.category_id),
+        assignee: ticket.assigned_to_name ?? "",
+      }
+    : null;
+
+  /*
+   * Steht der Status rechts, fällt sein Badge aus dem Kopf.
+   *
+   * Zweimal derselbe Wert, zwanzig Zentimeter auseinander, ist keine Betonung
+   * sondern ein Renderfehler-Verdacht. Der Standort bleibt oben: er hat rechts
+   * keine Zeile.
+   */
+  const statusInHead = !(meta && display.customerMetaFields.status);
+
   return (
     <>
       <AppHeader />
@@ -167,7 +225,20 @@ export default async function CustomerTicketPage({
         shape, so "scroll up to the third message" means the same thing in both.
       */}
       <main className="flex flex-1 flex-col items-center px-6 py-8 lg:min-h-0 lg:overflow-hidden">
-        <div className="flex w-full max-w-3xl flex-1 flex-col lg:min-h-0">
+        {/*
+          `max-w-7xl` sobald es Randspalten gibt, sonst weiter `max-w-3xl`.
+
+          Eine feste Breite für beide Fälle wäre in einem der beiden falsch: drei
+          Spalten in 48rem lassen dem Gespräch nichts, und eine einzelne Spalte in
+          80rem ist eine Textzeile, die über den halben Schirm läuft. Dieselbe
+          Breite wie die Queue, damit die Kopfzeile darüber nicht eingerückt sitzt.
+        */}
+        <div
+          className={cn(
+            "flex w-full flex-1 flex-col lg:min-h-0",
+            rail || meta ? "max-w-7xl" : "max-w-3xl",
+          )}
+        >
           {/* The reporter's half of the live loop. An answer from the desk lands
               in the thread within seconds instead of on the next page load — the
               one thing somebody watching their own ticket is waiting for. */}
@@ -197,12 +268,14 @@ export default async function CustomerTicketPage({
                   verdict rather than as scheduling.
                 */}
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <Badge
-                    variant="secondary"
-                    className="h-auto rounded-full px-3 py-1"
-                  >
-                    {TICKET_STATUS_LABELS[ticket.status]}
-                  </Badge>
+                  {statusInHead && (
+                    <Badge
+                      variant="secondary"
+                      className="h-auto rounded-full px-3 py-1"
+                    >
+                      {TICKET_STATUS_LABELS[ticket.status]}
+                    </Badge>
+                  )}
                   {location && (
                     <Badge
                       variant="outline"
@@ -324,14 +397,30 @@ export default async function CustomerTicketPage({
               />
             }
             composer={
-              // `plain`, not the rich editor: a formatting toolbar is furniture on
-              // a page whose whole point is to be minimal.
+              // `plain`: no formatting bar and no full-size window. It is the same
+              // editor as the agent's, so dropping and pasting a file works — see
+              // the note on `variant`.
               <TicketComposer
                 ticketId={ticket.id}
                 isAgent={false}
                 variant="plain"
               />
             }
+            rail={
+              rail ? (
+                <CustomerTicketRail tickets={rail} activeId={ticket.id} />
+              ) : undefined
+            }
+            sidebar={
+              meta ? (
+                <CustomerTicketMeta
+                  ticket={ticket}
+                  values={meta}
+                  fields={display.customerMetaFields}
+                />
+              ) : undefined
+            }
+            sidebarLabel="Ticket"
           />
         </div>
       </main>

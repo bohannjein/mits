@@ -376,7 +376,7 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /admin/settings/storage Dateispeicher (Platte oder S3)
 /admin/settings/api-keys API-Keys je System, Token nur einmal sichtbar
 /admin/status           Systemzustand: was eingerichtet ist, plus Live-Verbindung
-/admin/settings/tickets  Wo die Antworten eines Formulars stehen (Verlauf, daneben, beides)
+/admin/settings/tickets  Wo die Antworten eines Formulars stehen, plus die drei Spalten der Melderansicht
 /admin/settings/analytics Widget-Schalter und Default-Intervall
 /admin/settings/notifications Kanäle, Darstellung, Sammelmeldung
 /admin/mail             Postfach-Abruf + Defender-Regel

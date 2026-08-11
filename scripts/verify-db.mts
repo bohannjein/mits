@@ -244,9 +244,45 @@ try {
     notificationSettings.setNotificationSettings(mits.DEFAULT_NOTIFICATION_SETTINGS),
   );
   check("ticket display", () => {
-    ticketDisplay.setTicketDisplaySettings({ formDisplay: "panel" });
+    ticketDisplay.setTicketDisplaySettings({
+      ...mits.DEFAULT_TICKET_DISPLAY_SETTINGS,
+      formDisplay: "panel",
+    });
     const back = ticketDisplay.getTicketFormDisplay();
     if (back !== "panel") throw new Error(`read back ${back}`);
+    /*
+     * The customer layout lives in the same blob, and that is the interesting
+     * part: the reader used to hand-pick `formDisplay` out of the parsed JSON,
+     * which would have dropped every switch below silently. A partial record is
+     * also the shape that broke `widget_order` once — an absent key must fill in,
+     * not fail the parse and take `formDisplay` with it.
+     */
+    const stored = ticketDisplay.getTicketDisplaySettings();
+    if (stored.customerTicketList !== true) throw new Error("rail default lost");
+    if (stored.customerMetaFields.assignee !== true) {
+      throw new Error("meta field default lost");
+    }
+
+    const narrowed = ticketDisplay.setTicketDisplaySettings({
+      ...mits.DEFAULT_TICKET_DISPLAY_SETTINGS,
+      formDisplay: "panel",
+      customerTicketList: false,
+      customerMetaFields: {
+        ...mits.DEFAULT_TICKET_DISPLAY_SETTINGS.customerMetaFields,
+        assignee: false,
+      },
+    });
+    if (narrowed.customerTicketList !== false) throw new Error("rail did not save");
+    if (narrowed.customerMetaFields.assignee !== false) {
+      throw new Error("meta field did not save");
+    }
+    // The keys that were not touched are still there, which is what the merge in
+    // the transform is for.
+    if (narrowed.customerMetaFields.status !== true) {
+      throw new Error("an untouched meta field was dropped");
+    }
+    if (narrowed.formDisplay !== "panel") throw new Error("formDisplay was lost");
+
     // Left on the default, so the rest of the suite sees a fresh instance's value.
     return ticketDisplay.setTicketDisplaySettings(
       mits.DEFAULT_TICKET_DISPLAY_SETTINGS,

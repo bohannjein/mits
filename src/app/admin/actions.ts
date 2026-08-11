@@ -104,6 +104,7 @@ import {
   resolveSmtpPassword,
   FEATURE_FLAG_META,
   FeatureFlagsSchema,
+  CUSTOMER_META_FIELDS,
   RESTRICTABLE_ROLES,
   RoleVisibilitySchema,
   SESSION_LIFETIME_LABELS,
@@ -1145,9 +1146,25 @@ export async function saveTicketDisplaySettingsAction(
 ): Promise<ActionResult> {
   await requireRole("admin");
 
+  /*
+   * Ein fehlender Schalter heißt „aus".
+   *
+   * Ein nicht angehaktes `<input type="checkbox">` schickt der Browser gar nicht
+   * mit — `formData.get(...)` ist dann `null`, und `null === "on"` ist genau die
+   * gewünschte Antwort. Deshalb steht hier keine Sonderbehandlung für „fehlt": im
+   * Formular ist jeder Schalter gerendert, ein fehlender Wert ist also immer ein
+   * abgeschalteter und niemals ein unbekannter.
+   */
+  const on = (name: string) => formData.get(name) === "on";
+
   const saved = setTicketDisplaySettings(
     TicketDisplaySettingsSchema.parse({
       formDisplay: formData.get("formDisplay"),
+      customerTicketList: on("customerTicketList"),
+      customerMetaPanel: on("customerMetaPanel"),
+      customerMetaFields: Object.fromEntries(
+        CUSTOMER_META_FIELDS.map((field) => [field, on(`meta-${field}`)]),
+      ),
     }),
   );
 
@@ -1158,10 +1175,27 @@ export async function saveTicketDisplaySettingsAction(
   revalidatePath("/mits/tickets/[id]/popout", "page");
   revalidatePath("/customer/tickets/[id]", "page");
 
+  /*
+   * Die Spalten werden mitgemeldet, weil sie das Auffälligste an der Seite sind
+   * und die Meldung sonst über sie schweigt — ein Admin, der beide abschaltet und
+   * „Angaben erscheinen: Im Verlauf" liest, prüft als Erstes, ob das Speichern
+   * funktioniert hat.
+   */
+  const columns = [
+    saved.customerTicketList ? "links meine Tickets" : null,
+    saved.customerMetaPanel
+      ? `rechts ${CUSTOMER_META_FIELDS.filter(
+          (field) => saved.customerMetaFields[field],
+        ).length} Felder`
+      : null,
+  ].filter(Boolean);
+
   return {
     ok: true,
     message: `Gespeichert. Angaben erscheinen: ${
       TICKET_FORM_DISPLAY_META[saved.formDisplay].label
+    }. Melderansicht: ${
+      columns.length > 0 ? columns.join(", ") : "nur das Gespräch"
     }.`,
   };
 }

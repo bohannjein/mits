@@ -2079,8 +2079,73 @@ export const TICKET_FORM_DISPLAY_META: Record<
   },
 };
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Die Melder-Ticketseite als drei Spalten.
+
+   Links die eigenen Tickets, in der Mitte das Gespräch, rechts die Kennzahlen des
+   Tickets. Beide Randspalten und jedes einzelne Feld rechts sind abschaltbar,
+   weil sie verschiedene Instanzen verschieden viel kosten: ein Desk mit drei
+   Tickets pro Person braucht links keine Liste, und ein Haus, das seine
+   Zuständigkeiten nicht nach außen zeigt, will „Bearbeiter" nicht darin haben.
+
+   **Das kehrt eine frühere Entscheidung um, und zwar bewusst.** Die Melderansicht
+   war eine Spalte, „kein Bearbeiter, keine Priorität" — die Begründung war, dass
+   alles neben der Frage „hat jemand geantwortet" Lärm ist. Das gilt weiterhin für
+   die *Priorität*, die hier auch nicht auftaucht. Ein Name und ein Datum sind
+   dagegen die zwei Dinge, nach denen jemand fragt, der anruft, statt zu warten.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const CUSTOMER_META_FIELDS = [
+  "type",
+  "age",
+  "created",
+  "status",
+  "category",
+  "assignee",
+] as const;
+export const CustomerMetaField = z.enum(CUSTOMER_META_FIELDS);
+export type CustomerMetaField = (typeof CUSTOMER_META_FIELDS)[number];
+
+export const CUSTOMER_META_FIELD_LABELS: Record<CustomerMetaField, string> = {
+  type: "Typ",
+  age: "Alter",
+  created: "Erstellt",
+  status: "Status",
+  // „Kategorie", nicht „Queue". Ein Melder hat keine Queue, und das Wort lädt zum
+  // Raten am Organigramm ein — dieselbe Regel wie bei den Intent-Kacheln.
+  category: "Kategorie",
+  assignee: "Bearbeiter",
+};
+
+const allCustomerMetaEnabled = (): Record<CustomerMetaField, boolean> =>
+  Object.fromEntries(CUSTOMER_META_FIELDS.map((key) => [key, true])) as Record<
+    CustomerMetaField,
+    boolean
+  >;
+
 export const TicketDisplaySettingsSchema = z.object({
   formDisplay: z.enum(TICKET_FORM_DISPLAYS).default("chat"),
+  /** Die linke Spalte: die eigenen Tickets des Melders. */
+  customerTicketList: z.boolean().default(true),
+  /** Die rechte Spalte als Ganzes. Aus heißt: kein Feld, keine Karte. */
+  customerMetaPanel: z.boolean().default(true),
+  /*
+   * Welche Felder rechts stehen.
+   *
+   * `partialRecord` plus Transform, nicht `record`: Zod 4 verlangt bei einem
+   * Enum-Schlüssel jeden Schlüssel und lehnt ein Objekt ab, dem einer fehlt — und
+   * ein abgelehnter Parse nähme hier `formDisplay` mit, also die Anordnung der
+   * Formularantworten auf **beiden** Ticketseiten. Dieselbe Falle und dieselbe
+   * Lösung wie bei `enabled_widgets`.
+   *
+   * Ein später ergänztes Feld ist damit per Default an, weil der Merge die Lücke
+   * füllt. Das ist die richtige Richtung: ein neues Feld, das auf jeder
+   * bestehenden Instanz still fehlt, ist ein Feld, das niemand findet.
+   */
+  customerMetaFields: z
+    .partialRecord(CustomerMetaField, z.boolean())
+    .default(allCustomerMetaEnabled)
+    .transform((value) => ({ ...allCustomerMetaEnabled(), ...value })),
 });
 export type TicketDisplaySettings = z.infer<typeof TicketDisplaySettingsSchema>;
 

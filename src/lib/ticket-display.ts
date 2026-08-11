@@ -3,7 +3,7 @@ import "server-only";
 import { db } from "@/lib/db/sqlite";
 import {
   DEFAULT_TICKET_DISPLAY_SETTINGS,
-  toTicketFormDisplay,
+  TicketDisplaySettingsSchema,
   type TicketDisplaySettings,
   type TicketFormDisplay,
 } from "@/types/mits";
@@ -31,12 +31,27 @@ export function getTicketDisplaySettings(): TicketDisplaySettings {
 
   if (!row) return DEFAULT_TICKET_DISPLAY_SETTINGS;
 
+  /*
+   * Through the schema, not a hand-read of one key.
+   *
+   * It used to pick `formDisplay` out of the parsed JSON by hand, which was fine
+   * while that was the only field. With the customer layout in the same blob, a
+   * hand-read would drop every switch an admin set — and the schema already knows
+   * how to degrade field by field: the partial record fills its own gaps, so a row
+   * written before those keys existed reads as "everything on".
+   */
+  const parsed = TicketDisplaySettingsSchema.safeParse(
+    safeJsonParse(row.value) ?? {},
+  );
+  // A layout decision must not be able to break the page it lays out.
+  return parsed.success ? parsed.data : DEFAULT_TICKET_DISPLAY_SETTINGS;
+}
+
+function safeJsonParse(value: string): unknown {
   try {
-    const parsed = JSON.parse(row.value) as { formDisplay?: unknown };
-    return { formDisplay: toTicketFormDisplay(parsed.formDisplay) };
+    return JSON.parse(value);
   } catch {
-    // A layout decision must not be able to break the page it lays out.
-    return DEFAULT_TICKET_DISPLAY_SETTINGS;
+    return null;
   }
 }
 
@@ -47,9 +62,10 @@ export const getTicketFormDisplay = (): TicketFormDisplay =>
 export function setTicketDisplaySettings(
   next: TicketDisplaySettings,
 ): TicketDisplaySettings {
-  const settings: TicketDisplaySettings = {
-    formDisplay: toTicketFormDisplay(next.formDisplay),
-  };
+  // Re-parsed rather than field-picked, so a field added to the schema is stored
+  // without this function having to be remembered — the failure the hand-built
+  // object had was silent, and it was "the admin's switches did not save".
+  const settings = TicketDisplaySettingsSchema.parse(next);
 
   db.prepare(
     `INSERT INTO mits_setting (key, value) VALUES (?, ?)
