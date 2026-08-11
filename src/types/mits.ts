@@ -371,6 +371,15 @@ export const MITSTicketSchema = z.object({
   last_activity_at: z.coerce.date().nullable().default(null),
   /** True when `last_activity_at` is newer than this reader's last visit. */
   unread: z.boolean().default(false),
+  /**
+   * Whether *this reader* has the ticket pinned to the top of their queue.
+   *
+   * Per user like `unread` beside it, and computed in the same one place
+   * (`searchTickets`). Everywhere else the field is absent and this default is the
+   * honest answer — a detail page that reported `pinned: false` from a query that
+   * never asked would be stating something it did not check.
+   */
+  pinned: z.boolean().default(false),
   /** Minutes of work logged against this ticket. Summed on read, never stored. */
   logged_minutes: z.number().int().nonnegative().default(0),
   /**
@@ -422,7 +431,7 @@ export const MITSTicketDraftSchema = MITSTicketSchema.omit({
   assigned_to: true,
   title: true,
   /*
-   * The four read-time fields. Omitted rather than made optional for the same
+   * The read-time fields. Omitted rather than made optional for the same
    * reason `created_by` is: a client that sends `unread: false` or its own
    * `logged_minutes` should be ignored, and a schema that accepts the key invites
    * exactly one future call site to trust it.
@@ -430,6 +439,7 @@ export const MITSTicketDraftSchema = MITSTicketSchema.omit({
   assigned_to_name: true,
   last_activity_at: true,
   unread: true,
+  pinned: true,
   logged_minutes: true,
   // Written by the routing service after the ticket exists, and declared by an
   // agent respectively. Neither is a client's to state.
@@ -1817,6 +1827,14 @@ export const FeatureFlagsSchema = z.object({
   feature_ticket_reminders: z.boolean().default(true),
   feature_ticket_categories: z.boolean().default(true),
   /**
+   * On, for the same reason as the two above and unlike the one below.
+   *
+   * A pin is inert until somebody sets one: no pins means no block above the
+   * queue and no column in the table. Nothing about it writes to an incoming
+   * ticket, and nothing about it is visible to a reporter.
+   */
+  feature_ticket_pins: z.boolean().default(true),
+  /**
    * Off by default, unlike the two above.
    *
    * The other two are inert until somebody uses them — an instance with no
@@ -2174,6 +2192,11 @@ export const FEATURE_FLAG_META: Record<
     label: "Ticket-Erinnerungen",
     description:
       "Ein Ticket auf später legen: Knopf am Ticket, Einblendung bei Fälligkeit, Liste der anstehenden Erinnerungen im Portal.",
+  },
+  feature_ticket_pins: {
+    label: "Tickets anheften",
+    description:
+      "Agenten heften Tickets an; die angehefteten stehen in einem eigenen Block über der Queue. Jede Person heftet für sich.",
   },
   feature_ticket_categories: {
     label: "Kategorien",

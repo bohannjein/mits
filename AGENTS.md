@@ -30,6 +30,7 @@ die die jeweilige Sitzung nie berührt.
 |---|---|
 | `.claude/rules/tickets.md` | Ticketseite, Chatverlauf, Antwortzeile, Textbausteine |
 | `.claude/rules/reminders.md` | Snooze, Fälligkeit, Cron-Nudge, Widget |
+| `.claude/rules/pins.md` | Tickets anheften, der Block über der Queue |
 | `.claude/rules/categories.md` | Kategoriebaum, Queue-Filter, Smart-Routing, Intent-Kacheln |
 | `.claude/rules/realtime.md` | SSE, Signale, Coalescing, Pop-out und Floating-Fenster |
 | `.claude/rules/cmdb.md` | Objekte, Lizenzen, Firmen, Import, REST |
@@ -256,6 +257,7 @@ mit Dateien, Entscheidungen und Stolperfallen steht in **[ROADMAP.md](ROADMAP.md
 | — | CMDB: Firmen, Objekte, Beziehungen, Lizenzen, Import, REST (12. Flag) | ✅ |
 | — | Dual-Theme, Rollen-Rename, Bubbles, Toasts, Queue, Zeit, Makros, S3, Mail-Abruf | ✅ |
 | — | Erinnerungen, Kategoriebaum + kaskadierender Filter, Smart-Routing (3 Flags) | ✅ |
+| — | Tickets anheften: eigener Block über der Queue, pro Person (16. Flag) | ✅ |
 
 ## Drei Kern-Features nach der CMDB
 

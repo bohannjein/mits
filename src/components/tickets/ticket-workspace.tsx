@@ -12,6 +12,7 @@ import {
 import { useState, type ReactNode } from "react";
 
 import { DispatchDialog } from "@/components/tickets/dispatch-dialog";
+import { PinButton } from "@/components/tickets/pin-button";
 import { ReRouteModal } from "@/components/tickets/re-route-modal";
 import {
   ReminderPopover,
@@ -70,6 +71,7 @@ export function TicketWorkspace({
   links,
   reminders,
   routing,
+  pinned,
   children,
 }: {
   ticketId: string;
@@ -90,6 +92,8 @@ export function TicketWorkspace({
     currentCategoryId: string | null;
     suggestion: { id: string; path: string[] } | null;
   } | null;
+  /** Null when pinning is switched off — the button is then absent, not disabled. */
+  pinned: boolean | null;
   /** The conversation, server-rendered. */
   children: ReactNode;
 }) {
@@ -139,6 +143,20 @@ export function TicketWorkspace({
             label="Re-Route"
             onClick={() => setRerouting(true)}
           />
+        )}
+
+        {/*
+          Anheften neben Re-Route und Erinnerung, weil die drei dieselbe Frage
+          beantworten: was passiert als Nächstes mit diesem Ticket. Re-Route gibt
+          es weg, die Erinnerung legt es auf einen Zeitpunkt, der Pin behält es im
+          Blick — und nur der Pin verlangt nichts weiter als den Klick.
+
+          Eigene Komponente statt `BarButton`, weil sie ihren Zustand selbst hält
+          (optimistisch für die Dauer der Server-Antwort). Gleiche Höhe, gleicher
+          Radius, gleiches Hover-Verhalten — siehe die Notiz an `BarButton`.
+        */}
+        {pinned !== null && (
+          <PinButton ticketId={ticketId} pinned={pinned} variant="bar" />
         )}
 
         {/*

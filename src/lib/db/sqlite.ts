@@ -440,6 +440,29 @@ function migrateAppTables(database: Database.Database): void {
       ON mits_ticket_reminder (user_id, is_done, due_at);
     CREATE INDEX IF NOT EXISTS idx_mits_reminder_ticket
       ON mits_ticket_reminder (ticket_id, user_id);
+
+    -- Tickets an agent wants to keep at the top of their queue.
+    --
+    -- The pair is the key, like mits_ticket_read above: pinning twice is the same
+    -- state as pinning once, so the second write overwrites instead of appending.
+    -- There is nothing else on the row — a pin has no attributes, it either is or
+    -- is not. (No backticks in here — this whole block is a template literal.)
+    --
+    -- Per user, and that is the whole design. A shared pin would be one agent
+    -- rearranging everybody else's queue, which is the difference between a
+    -- bookmark and an escalation; the escalation already exists and is called
+    -- priority.
+    CREATE TABLE IF NOT EXISTS mits_ticket_pin (
+      user_id    TEXT NOT NULL,
+      ticket_id  TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, ticket_id)
+    );
+
+    -- Every read is "is this row pinned for me", which the primary key serves.
+    -- This one is for the delete path when a ticket goes.
+    CREATE INDEX IF NOT EXISTS idx_mits_ticket_pin_ticket
+      ON mits_ticket_pin (ticket_id);
   `);
 
   addColumns(database);

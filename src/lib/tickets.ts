@@ -83,6 +83,7 @@ interface TicketRow {
    */
   last_activity_at?: string | null;
   unread?: number;
+  pinned?: number;
   logged_minutes?: number | null;
 }
 
@@ -117,6 +118,9 @@ function rowToTicket(row: TicketRow): MITSTicket {
     // produce an Invalid Date, which renders as "NaN" rather than as nothing.
     last_activity_at: row.last_activity_at ? row.last_activity_at : null,
     unread: row.unread === 1,
+    // Same shape as `unread`: absent everywhere except `searchTickets`, and the
+    // schema's default is then the honest answer rather than a claim.
+    pinned: row.pinned === 1,
     logged_minutes: row.logged_minutes ?? 0,
     created_at: row.created_at,
   });
@@ -584,6 +588,23 @@ export interface TicketFilter {
   priorityIn?: TicketPriority[];
   unassignedOnly?: boolean;
 
+  /*
+   * The two halves of the queue's pinned block, as a user id.
+   *
+   * They are complements over the *same* filter: the block above the table asks
+   * for `pinnedOnlyFor`, the table below for `excludePinnedFor`, and together
+   * they partition exactly what the filter alone would have returned. That is
+   * what keeps a pinned ticket from appearing twice on one screen, and it is
+   * also what keeps the pager honest — the total is counted with the same
+   * exclusion the list uses.
+   *
+   * Both narrow, like everything else here. Neither is ever parsed from the
+   * query string: they carry a user id, and an id from a URL would be one
+   * reader looking at another reader's pins.
+   */
+  pinnedOnlyFor?: string;
+  excludePinnedFor?: string;
+
   /**
    * Column and direction. Defaults to newest first.
    *
@@ -828,6 +849,30 @@ function ticketWhere(
     );
     whereParams.push(...filter.priorityIn);
   }
+  /*
+   * The pinned split. Two clauses that are each other's negation, so a caller
+   * that sets both gets an empty list — which is the correct answer to "pinned
+   * and not pinned" and better than one of them silently winning.
+   *
+   * `EXISTS` rather than a JOIN: a join against a per-user table would multiply
+   * rows if the key ever stopped being unique, and `countSearchTickets` builds
+   * its statement with no joins at all.
+   */
+  if (filter.pinnedOnlyFor) {
+    clauses.push(
+      `EXISTS (SELECT 1 FROM mits_ticket_pin p
+                WHERE p.ticket_id = mits_ticket.id AND p.user_id = ?)`,
+    );
+    whereParams.push(filter.pinnedOnlyFor);
+  }
+  if (filter.excludePinnedFor) {
+    clauses.push(
+      `NOT EXISTS (SELECT 1 FROM mits_ticket_pin p
+                    WHERE p.ticket_id = mits_ticket.id AND p.user_id = ?)`,
+    );
+    whereParams.push(filter.excludePinnedFor);
+  }
+
   // `created_at` is an ISO string, so a date prefix comparison sorts correctly.
   // `to` gets a time suffix rather than `<=` on the bare date, which would
   // exclude everything that happened during the chosen day.
@@ -922,6 +967,23 @@ export function searchTickets(
      WHERE w.ticket_id = mits_ticket.id
   ), 0)`;
 
+  /*
+   * Whether this reader has the row pinned. Read as a column rather than looked
+   * up per row, for the reason every other per-user expression here is: the table
+   * draws fifty of these, and fifty round trips to answer a yes/no would cost more
+   * than the query returning them.
+   *
+   * **Last in the list, and its parameter is last in the bind array.** Everything
+   * in this SELECT binds positionally, so an expression inserted in the middle
+   * shifts every parameter after it — and the result is valid SQL that answers a
+   * different question. That is the failure `npm run test:db` exists for; the
+   * partition test there is what catches it.
+   */
+  const pinned = `EXISTS (
+    SELECT 1 FROM mits_ticket_pin p
+     WHERE p.ticket_id = mits_ticket.id AND p.user_id = ?
+  )`;
+
   const extraColumns = `,
          ${activity} AS last_activity_at,
          CASE
@@ -930,7 +992,8 @@ export function searchTickets(
            WHEN ${readAt} < ${activity} THEN 1
            ELSE 0
          END AS unread,
-         ${logged} AS logged_minutes`;
+         ${logged} AS logged_minutes,
+         ${pinned} AS pinned`;
 
   // `activity` and `readAt` are each interpolated more than once above, so their
   // placeholders repeat in the same order. Bound by repeating the values rather
@@ -942,6 +1005,7 @@ export function searchTickets(
     selectParams[2], // readAt, second branch
     selectParams[2], // readAt, third branch
     ...selectParams.slice(0, 2), // activity, third branch
+    user.id, // pinned, last column in the list
   ];
 
   const { where, params: whereParams } = ticketWhere(filter, user);

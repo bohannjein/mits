@@ -42,6 +42,7 @@ import {
   categoryPath,
   listCategoryTree,
 } from "@/lib/ticket-categories";
+import { isPinned } from "@/lib/ticket-pins";
 import { listRemindersForTicket } from "@/lib/ticket-reminders";
 import { triage } from "@/lib/services/auto-triage";
 import { listTriageRules } from "@/lib/triage-rules";
@@ -296,6 +297,16 @@ export default async function AgentTicketPage({
     : null;
 
   /*
+   * Angeheftet, oder das Feature ist aus.
+   *
+   * Eine Einzelabfrage und nicht die Spalte aus `searchTickets`: diese Seite lädt
+   * ein Ticket über `getTicketFor`, und `MITSTicket.pinned` ist dort per Default
+   * `false` — was eine Behauptung wäre, keine Antwort. Deshalb ist der Wert hier
+   * ein eigener Read und nicht `ticket.pinned`.
+   */
+  const pinned = flags.feature_ticket_pins ? isPinned(id, user.id) : null;
+
+  /*
    * Everything the re-route dialog needs, or null.
    *
    * The suggestion comes from the **triage rules**, not from the model's routing
@@ -492,6 +503,7 @@ export default async function AgentTicketPage({
                 links={links}
                 reminders={reminders}
                 routing={routing}
+                pinned={pinned}
               >
               <TicketMessages
                 // Prepended, not merged by timestamp: the opening message *is* the

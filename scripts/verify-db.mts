@@ -66,6 +66,7 @@ try {
   const ticketCategories = await import("../src/lib/ticket-categories");
   const triageRules = await import("../src/lib/triage-rules");
   const reminders = await import("../src/lib/ticket-reminders");
+  const pins = await import("../src/lib/ticket-pins");
   const notifications = await import("../src/lib/notifications");
   const cmdbExport = await import("../src/lib/cmdb-export");
   const cmdbImport = await import("../src/lib/cmdb-import");
@@ -1109,6 +1110,86 @@ try {
       throw error;
     }
     throw new Error("a missing reminder was deleted");
+  });
+
+  console.log("pins");
+  check("pin", () => {
+    const state = pins.togglePin(ticketId, agent);
+    if (state !== true) throw new Error(`expected pinned, got ${state}`);
+    if (!pins.isPinned(ticketId, agentId)) throw new Error("not pinned");
+    return state;
+  });
+  check("somebody else has not pinned it", () => {
+    if (pins.isPinned(ticketId, reporterId)) throw new Error("shared pin");
+    return "own only";
+  });
+  check("a pin on a ticket that does not exist is refused", () => {
+    try {
+      pins.togglePin(randomUUID(), agent);
+    } catch (error) {
+      if (error instanceof pins.PinError) return "refused";
+      throw error;
+    }
+    throw new Error("a pin was written for a ticket that does not exist");
+  });
+
+  /*
+   * The partition, and the reason this section exists.
+   *
+   * `pinnedOnlyFor` and `excludePinnedFor` are complements over the same filter —
+   * that is what keeps a pinned ticket from appearing twice on the queue and what
+   * keeps the pager's total honest. It is also the test that catches a shifted
+   * bind: `pinned` is the last expression in the SELECT list of `searchTickets`,
+   * and every parameter there is positional, so an expression inserted above it
+   * produces valid SQL that answers a different question. Neither `typecheck` nor
+   * `build` executes a statement.
+   */
+  check("the two halves partition the same filter", () => {
+    const all = tickets.countSearchTickets({}, agent);
+    const onlyPinned = tickets.countSearchTickets(
+      { pinnedOnlyFor: agentId },
+      agent,
+    );
+    const withoutPinned = tickets.countSearchTickets(
+      { excludePinnedFor: agentId },
+      agent,
+    );
+
+    if (onlyPinned < 1) throw new Error("the pinned half is empty");
+    if (onlyPinned + withoutPinned !== all) {
+      throw new Error(`${onlyPinned} + ${withoutPinned} !== ${all}`);
+    }
+    return `${onlyPinned}/${all}`;
+  });
+  check("the pinned column reports the reader, not the row", () => {
+    const mine = tickets
+      .searchTickets({ pinnedOnlyFor: agentId }, agent)
+      .find((row) => row.id === ticketId);
+    if (!mine?.pinned) throw new Error("pinned column is false for a pinned row");
+
+    // The same row read by somebody else is not pinned — the column carries a
+    // bound user id, and a wrong bind order would report the writer's state here.
+    const theirs = tickets
+      .searchTickets({}, reporter)
+      .find((row) => row.id === ticketId);
+    if (theirs?.pinned) throw new Error("pinned column leaked across readers");
+
+    return "per reader";
+  });
+  check("both halves at once match nothing", () => {
+    const n = tickets.countSearchTickets(
+      { pinnedOnlyFor: agentId, excludePinnedFor: agentId },
+      agent,
+    );
+    if (n !== 0) throw new Error(`expected 0, got ${n}`);
+    return n;
+  });
+  check("unpin", () => {
+    const state = pins.togglePin(ticketId, agent);
+    if (state !== false) throw new Error(`expected unpinned, got ${state}`);
+    if (pins.isPinned(ticketId, agentId)) throw new Error("still pinned");
+    if (pins.countPins(agentId) !== 0) throw new Error("count did not drop");
+    return state;
   });
 
   console.log("purge");

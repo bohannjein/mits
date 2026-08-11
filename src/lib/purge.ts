@@ -145,6 +145,10 @@ export async function purgeData(scopes: PurgeScopes): Promise<PurgeReport> {
        * system it used".
        */
       run("DELETE FROM mits_ticket_reminder");
+      // Pins, for the same reason as the reminders above: every read of the table
+      // joins the ticket, so a leftover row is invisible rather than broken — and
+      // an invisible row is one nothing will ever clean up.
+      run("DELETE FROM mits_ticket_pin");
       // The history of the tickets that are going. Nothing in it refers to anything
       // that survives, and a log about rows nobody can open is not a record.
       run("DELETE FROM mits_audit_log");

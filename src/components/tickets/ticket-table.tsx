@@ -6,6 +6,7 @@ import {
   ClockIcon,
 } from "lucide-react";
 
+import { PinButton } from "@/components/tickets/pin-button";
 import { Badge } from "@/components/ui/badge";
 import {
   formatDateTime,
@@ -93,6 +94,22 @@ export function TicketTable({
   searchParams = {},
   /** Shows the logged-time column. Off where the module is not in play. */
   showTime = false,
+  /**
+   * Shows the pin toggle as a leading column.
+   *
+   * Off by default, so the reporter's listing is unchanged — a pin is an agent's
+   * bookmark on their own queue, and `MITSTicket.pinned` is only computed by
+   * `searchTickets` anyway.
+   */
+  showPin = false,
+  /**
+   * Draws the card's outline in the accent colour instead of the hairline.
+   *
+   * For the pinned block above the queue. A prop rather than a wrapper with its
+   * own border: two borders twelve pixels apart read as a render error, which is
+   * the same reason the composer lost its own outline inside `TicketFrame`.
+   */
+  accent = false,
 }: {
   tickets: MITSTicket[];
   showOwner?: boolean;
@@ -102,6 +119,8 @@ export function TicketTable({
   sortBasePath?: string;
   searchParams?: Record<string, string | string[] | undefined>;
   showTime?: boolean;
+  showPin?: boolean;
+  accent?: boolean;
 }) {
   const timezone = getSystemTimezone();
   // One clock for every row, read once. Calling Date.now() per row would let a
@@ -131,7 +150,12 @@ export function TicketTable({
   );
 
   return (
-    <div className="rounded-2xl border border-border bg-card shadow-elev-1">
+    <div
+      className={cn(
+        "rounded-2xl border bg-card shadow-elev-1",
+        accent ? "border-primary/30" : "border-border",
+      )}
+    >
       {/*
         Automatic layout, **not** `table-fixed`.
 
@@ -172,6 +196,18 @@ export function TicketTable({
               width is number, title, status and age: enough to find a ticket and
               know whether it needs attention.
             */}
+            {/*
+              The pin column has no heading text, only a screen-reader one: a word
+              above a column of toggles would be the widest thing in it and would
+              take that width out of the title. It is also not sortable — the
+              pinned rows have their own block above the table, so a sort on
+              "pinned" would be a second way to do the same thing.
+            */}
+            {showPin && (
+              <TableHead className="w-px">
+                <span className="sr-only">Anheften</span>
+              </TableHead>
+            )}
             {header("number", "w-px whitespace-nowrap")}
             {header("title", "w-full")}
             {showLocation && (
@@ -211,6 +247,11 @@ export function TicketTable({
                 data-ticket-row=""
                 data-ticket-href={`${detailBase}/${ticket.id}`}
               >
+                {showPin && (
+                  <TableCell className="w-px pr-0">
+                    <PinButton ticketId={ticket.id} pinned={ticket.pinned} />
+                  </TableCell>
+                )}
                 <TableCell
                   className={cn(
                     "w-px font-mono text-xs whitespace-nowrap text-muted-foreground",

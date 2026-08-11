@@ -3,6 +3,7 @@ import Link from "next/link";
 import {
   FilterIcon,
   FilterXIcon,
+  PinIcon,
   ServerIcon,
 } from "lucide-react";
 
@@ -39,6 +40,7 @@ import { listPresence } from "@/lib/presence";
 import { visibleAreas } from "@/lib/role-visibility";
 import { detectClusters } from "@/lib/services/ai/clustering";
 import { categoryLabel, listCategoryTree } from "@/lib/ticket-categories";
+import { MAX_PINS } from "@/lib/ticket-pins";
 import { listUpcomingReminders } from "@/lib/ticket-reminders";
 import { getSystemTimezone } from "@/lib/system-settings";
 import { formatDateTime } from "@/lib/format";
@@ -128,10 +130,35 @@ export default async function AgentQueuePage({
    * pages gets the last page that exists rather than an empty table. `pageOffset`
    * clamps; `page` stays what the URL said so the pager can highlight it.
    */
-  const total = countSearchTickets(active, user);
+  /*
+   * The pinned block, and the list it was taken out of.
+   *
+   * Both run the *same* filter — the block is this queue section pulled to the
+   * top, not a second queue. A pin in „Wartend" is therefore not shown while
+   * „Eingang" is the active tab: a row above the table that contradicts the
+   * filter below it is worse than a row one click away.
+   *
+   * `excludePinnedFor` on the list is what keeps a pinned ticket from appearing
+   * twice on one screen, and the count below uses the same filter — a pager
+   * whose total included rows the list no longer shows would be off by however
+   * many pins somebody happens to have.
+   *
+   * No paging on the block: it is capped at `MAX_PINS`, and a pin somebody can
+   * page away from is not a pin. It renders on every page for the same reason.
+   */
+  const pinning = flags.feature_ticket_pins;
+  const pinnedTickets = pinning
+    ? searchTickets({ ...active, pinnedOnlyFor: user.id, limit: MAX_PINS }, user)
+    : [];
+
+  const listFilter = pinning
+    ? { ...active, excludePinnedFor: user.id }
+    : active;
+
+  const total = countSearchTickets(listFilter, user);
   const page = Math.min(toPage(params.page), pageCount(total));
   const tickets = searchTickets(
-    { ...active, limit: TICKETS_PER_PAGE, offset: pageOffset(page, total) },
+    { ...listFilter, limit: TICKETS_PER_PAGE, offset: pageOffset(page, total) },
     user,
   );
 
@@ -325,15 +352,63 @@ export default async function AgentQueuePage({
                 />
               )}
 
+              {/*
+                Angeheftet, oben, mit Akzentrahmen.
+
+                Kein Block, wenn nichts angeheftet ist — keine Überschrift und
+                keine Karte mit „keine angehefteten Tickets". Dieselbe Regel, die
+                das Erinnerungs-Widget bei leerer Liste `null` rendern lässt: eine
+                Dauererinnerung an ein Feature ist auf der Fläche, um die am
+                meisten konkurriert wird, teurer als das Feature wert ist.
+
+                Ohne `sortBasePath`, also mit stummer Kopfzeile: zwei Zeilen mit
+                Sortierlinks übereinander wären zwei Steuerungen für eine
+                Sortierung. Die Reihenfolge ist dieselbe wie unten.
+              */}
+              {pinnedTickets.length > 0 && (
+                <section className="grid gap-2">
+                  <h2 className="label-industrial flex items-center gap-2">
+                    <PinIcon className="size-3.5" strokeWidth={1.5} aria-hidden />
+                    Angeheftet
+                    <span className="tabular-nums text-muted-foreground">
+                      {pinnedTickets.length}
+                    </span>
+                  </h2>
+                  <TicketTable
+                    tickets={pinnedTickets}
+                    showOwner
+                    showPin
+                    accent
+                    showTime={flags.feature_time_tracking}
+                    locations={locations}
+                    detailBase="/mits/tickets"
+                    sort={sort}
+                  />
+                </section>
+              )}
+
               {tickets.length === 0 ? (
-                <p className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground">
-                  Keine Tickets in dieser Ansicht.
-                </p>
+                /*
+                 * „Keine Tickets" nur, wenn auch oben nichts steht. Sonst wäre es
+                 * ein Satz über einer Tabelle mit Zeilen darin.
+                 */
+                pinnedTickets.length === 0 && (
+                  <p className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground">
+                    Keine Tickets in dieser Ansicht.
+                  </p>
+                )
               ) : (
-                <>
+                <section className="grid gap-2">
+                  {/* Die Überschrift gibt es nur, wenn es zwei Blöcke zu
+                      unterscheiden gibt. Über der einzigen Tabelle der Seite wäre
+                      „Alle Tickets" eine Beschriftung für das Offensichtliche. */}
+                  {pinnedTickets.length > 0 && (
+                    <h2 className="label-industrial">Alle Tickets</h2>
+                  )}
                   <TicketTable
                     tickets={tickets}
                     showOwner
+                    showPin={pinning}
                     showTime={flags.feature_time_tracking}
                     locations={locations}
                     detailBase="/mits/tickets"
@@ -351,7 +426,7 @@ export default async function AgentQueuePage({
                     total={total}
                     perPage={TICKETS_PER_PAGE}
                   />
-                </>
+                </section>
               )}
             </div>
 
