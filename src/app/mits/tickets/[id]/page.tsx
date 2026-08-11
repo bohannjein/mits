@@ -74,8 +74,10 @@ import { getTicketFormDisplay } from "@/lib/ticket-display";
 import {
   openingFieldName,
   openingMessageFor,
+  payloadAttachments,
   payloadFields,
 } from "@/lib/ticket-opening";
+import { OpeningAttachments } from "@/components/tickets/opening-attachments";
 import {
   type MITSConfigurationItem,
   TICKET_PRIORITY_LABELS,
@@ -167,6 +169,15 @@ export default async function AgentTicketPage({
     // field, because its opening bubble is the stored comment rather than this.
     opening ? openingField : null,
   );
+
+  /*
+   * Die Anhänge der Erstmeldung, aus der Payload.
+   *
+   * Nicht aus `listUploadsForTicket`: das liefert *alle* Dateien am Ticket, also
+   * auch die aus späteren Antworten — und die sind in ihrer eigenen Bubble schon
+   * eingebettet.
+   */
+  const openingAttachments = payloadAttachments(ticket.payload);
 
   /*
    * Where the answers go, per the admin setting.
@@ -518,9 +529,21 @@ export default async function AgentTicketPage({
                 canRetract={flags.feature_message_retract}
                 seenAt={seenAt}
                 emptyText="Noch keine Beiträge. Die erste Antwort geht an den Melder."
+                /*
+                  Anhänge **immer**, Antworten nach der Einstellung.
+                  `formDisplay` entscheidet, wo die Formularantworten stehen; ein
+                  mitgeschickter Screenshot ist keine Antwort auf ein Feld, sondern
+                  Teil der Nachricht. Ihn an dieselbe Einstellung zu hängen hieße,
+                  dass „daneben" ein Bild in eine Liste aus Dateinamen verwandelt.
+                */
                 openingDetails={
-                  fieldsInBubble ? (
-                    <PayloadFields fields={fields} variant="bubble" />
+                  openingAttachments.length > 0 || fieldsInBubble ? (
+                    <>
+                      <OpeningAttachments attachments={openingAttachments} />
+                      {fieldsInBubble && (
+                        <PayloadFields fields={fields} variant="bubble" />
+                      )}
+                    </>
                   ) : undefined
                 }
               />

@@ -82,11 +82,22 @@ export function AttachmentViewer({ children }: { children: ReactNode }) {
     }
 
     /*
-     * A link's file type comes from its text, which is the file name the composer
-     * wrote there. Checked rather than assumed: everything that is not a PDF stays
-     * an ordinary download, so a wrong guess here costs nothing.
+     * A link's file type comes from its name, and the name is `title` when the
+     * anchor carries one.
+     *
+     * `textContent` alone was wrong the moment an anchor held more than the file
+     * name: the attachment strip in the opening bubble puts the size beside it, so
+     * the text reads "bericht.pdf1,2 MB" and the `.pdf` test failed at the end of a
+     * string that no longer ended there. The composer's own links carry no `title`
+     * and keep falling through to the text, which is exactly the file name.
+     *
+     * Checked rather than assumed either way: everything that is not a PDF stays an
+     * ordinary download, so a wrong guess here costs nothing.
      */
-    const name = element.textContent?.trim() || "Datei";
+    const name =
+      element.getAttribute("title")?.trim() ||
+      element.textContent?.trim() ||
+      "Datei";
     if (!/\.pdf$/i.test(name)) return;
     event.preventDefault();
     setViewed({ fileId, name, kind: "pdf" });

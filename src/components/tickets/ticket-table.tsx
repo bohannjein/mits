@@ -260,7 +260,32 @@ export function TicketTable({
                     ticket.unread && "text-foreground",
                   )}
                 >
-                  <span className="inline-flex items-center gap-2">
+                  {/*
+                    The number opens the ticket too.
+
+                    It was the only plain-text ticket number left in the
+                    application — every other list (the agent inbox, the search
+                    results, the reminder widget, the objects on a CI, the
+                    reporter's rail) wraps its whole row in one link, so the number
+                    there has always been clickable. In this table only the title
+                    was, and the number is what people read first and point at.
+
+                    `tabIndex={-1}` keeps it out of the tab order. It is the same
+                    destination as the link directly after it, and two stops per row
+                    is a hundred presses to walk fifty tickets — the keyboard path
+                    here is `j`/`k` plus Enter anyway. It stays in the
+                    accessibility tree: not focusable is not the same as hidden, and
+                    the number is the thing somebody reads a row by.
+                  */}
+                  <Link
+                    href={`${detailBase}/${ticket.id}`}
+                    tabIndex={-1}
+                    // Underline on hover like the title, not a background change:
+                    // this is an inline run of text inside a cell, and a filled
+                    // hover rectangle around eighteen mono characters reads as a
+                    // badge that has come loose.
+                    className="inline-flex items-center gap-2 underline-offset-4 hover:underline"
+                  >
                     <span
                       aria-hidden
                       className={cn(
@@ -269,7 +294,7 @@ export function TicketTable({
                       )}
                     />
                     {formatTicketNumber(ticket.ticket_number)}
-                  </span>
+                  </Link>
                 </TableCell>
                 {/*
                   `w-full max-w-0` is what makes automatic layout truncate instead

@@ -109,6 +109,7 @@ import {
   isSyntheticOpening,
   openingFieldName,
   openingMessageFor,
+  payloadAttachments,
   payloadFields,
 } from "../src/lib/ticket-opening";
 import {
@@ -2968,6 +2969,51 @@ console.log("opening message");
     payloadFields({ room: "3.14" }, new Map(), null)[0]?.label === "room",
   );
   check("values are formatted", rows.some((row) => row.text === "2"));
+
+  /*
+   * Anhänge werden in der Eröffnungsbubble als Bild bzw. als Link gerendert, also
+   * dürfen sie nicht zusätzlich als Textzeile in der Angaben-Liste stehen — der
+   * Dateiname stünde sonst zweimal, zwei Zentimeter unter der Datei selbst.
+   */
+  const withFiles = {
+    description: long,
+    dateien: [
+      { fileId: "f1", name: "screenshot.png", size: 12, type: "image/png" },
+      { fileId: "f2", name: "bericht.pdf", size: 34, type: "application/pdf" },
+    ],
+    raum: "3.14",
+  };
+
+  check(
+    "an attachment field is not a text line",
+    !payloadFields(withFiles, new Map(), "description").some(
+      (row) => row.name === "dateien",
+    ),
+  );
+  check(
+    "the other answers survive it",
+    payloadFields(withFiles, new Map(), "description").some(
+      (row) => row.name === "raum",
+    ),
+  );
+
+  const files = payloadAttachments(withFiles);
+  check("both attachments are found", files.length === 2);
+  check("in field order", files[0]?.name === "screenshot.png");
+  /*
+   * Ohne `fileId` gibt es nichts zu verlinken: eine Zeile aus der Zeit vor der
+   * Ablage oder ein Upload, der nie durchkam. Ein Bild-Tag darauf wäre ein
+   * defektes Bild, ein Link ein 404 mitten in der ersten Nachricht.
+   */
+  check(
+    "a descriptor without a fileId is dropped",
+    payloadAttachments({ d: [{ name: "alt.png", size: 1, type: "image/png" }] })
+      .length === 0,
+  );
+  check(
+    "a plain list of strings is not an attachment field",
+    payloadAttachments({ tags: ["Maus", "Dock"] }).length === 0,
+  );
 
   /*
    * The display mode decides a layout on two pages. An unrecognised value must

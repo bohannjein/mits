@@ -594,6 +594,41 @@ Größe, mit dem Download-Knopf daneben.
   `size-8`, belegt also die letzten 40 px der Zeile. Reserviert waren 36 — vier
   Pixel zu wenig, und unsichtbar nur, weil der Titel vorher kürzte.
 
+### Die Anhänge der Erstmeldung stehen in ihrer Bubble
+
+Ein Screenshot, den jemand beim Anlegen mitschickt, ist Teil seiner ersten
+Nachricht. Er stand nur in der Sammlung neben dem Verlauf — der Agent las die Frage
+und musste das Bild dazu suchen. `OpeningAttachments` rendert ihn jetzt im
+`details`-Slot der Eröffnungsbubble: Bilder als Raster, alles andere als Zeile mit
+Name und Größe.
+
+- **Aus der Payload, nicht aus `listUploadsForTicket`.** Letzteres liefert *alle*
+  Dateien am Ticket, also auch die aus späteren Antworten — und die sind in ihrer
+  eigenen Bubble schon eingebettet. `payloadAttachments` (rein, in `npm test`)
+  liest genau das, was mit dem Formular kam.
+- **Die Sammlung bleibt.** Sie ist der Ort, an dem man *alle* Dateien eines
+  Tickets findet; die Bubble zeigt die eine Teilmenge, die zur Nachricht gehört.
+- **Kein eigener Viewer.** Das Markup ist `<img src="/api/uploads/<id>?inline=1">`
+  bzw. `<a href="/api/uploads/<id>">` — genau das, was `AttachmentViewer` an der
+  Nachrichtenliste ohnehin abfängt. Ein Klick öffnet denselben Dialog wie bei einem
+  eingebetteten Bild aus einer Antwort.
+- **Der Dateiname steht im `title`.** Der Viewer entschied den Dateityp an
+  `element.textContent`, und der Linktext trägt hier zusätzlich die Größe:
+  „bericht.pdf1,2 MB" endet nicht auf `.pdf`. Er liest jetzt `title` zuerst und
+  fällt auf den Text zurück, den die Links aus dem Antwortfeld tragen. Ohne das
+  wäre das Fehlerbild „bei manchen PDFs geht die Vorschau nicht".
+- **`payloadFields` lässt Anhang-Felder weg.** `formatPayloadValue` gab für sie die
+  Dateinamen zurück; das wäre der Name ein zweites Mal, zwei Zentimeter unter der
+  Datei. In `npm test` festgehalten, in beide Richtungen — die übrigen Antworten
+  müssen bleiben.
+- **Unabhängig von `formDisplay`.** Die Einstellung entscheidet, wo die
+  *Formularantworten* stehen; ein Anhang ist keine Antwort auf ein Feld. Ihn daran
+  zu hängen hieße, dass „daneben" ein Bild in eine Liste aus Dateinamen verwandelt.
+- **`max-h-48` je Kachel.** Ein Handyfoto im Hochformat nimmt sonst die Bubble und
+  schiebt die Antwort des Agenten aus dem Bild. Volle Größe ist ein Klick entfernt.
+- **Auch im Pop-out**, obwohl das Fenster 384 Pixel breit ist: das Bild ist der
+  Grund, aus dem jemand ein Ticket überhaupt herauslöst.
+
 ### Anhängen: drei Wege, überall dieselben
 
 Klammer, Ablegen und **Strg+V** — im Antwortfeld beider Ansichten, im

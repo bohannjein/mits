@@ -44,8 +44,10 @@ import { getTicketDisplaySettings } from "@/lib/ticket-display";
 import {
   openingFieldName,
   openingMessageFor,
+  payloadAttachments,
   payloadFields,
 } from "@/lib/ticket-opening";
+import { OpeningAttachments } from "@/components/tickets/opening-attachments";
 import {
   getTicketFor,
   getTicketSeenAt,
@@ -156,6 +158,10 @@ export default async function CustomerTicketPage({
    * submission, so they ride in the opening bubble unless an admin decided
    * otherwise — or unless there is no bubble to ride in, which is the mail case.
    */
+  // Aus der Payload, nicht aus der Dateiliste des Tickets — siehe die Notiz an
+  // `payloadAttachments`.
+  const openingAttachments = payloadAttachments(ticket.payload);
+
   const display = getTicketDisplaySettings();
   const formDisplay = display.formDisplay;
   const fieldsInBubble = formDisplay !== "panel" && opening !== null;
@@ -389,9 +395,16 @@ export default async function CustomerTicketPage({
                 canRetract={flags.feature_message_retract}
                 seenAt={seenAt}
                 emptyText="Noch keine Antwort. Wir melden uns hier."
+                /* Anhänge immer, Antworten nach der Einstellung — ein
+                   mitgeschickter Screenshot ist keine Antwort auf ein Feld. */
                 openingDetails={
-                  fieldsInBubble ? (
-                    <PayloadFields fields={fields} variant="bubble" />
+                  openingAttachments.length > 0 || fieldsInBubble ? (
+                    <>
+                      <OpeningAttachments attachments={openingAttachments} />
+                      {fieldsInBubble && (
+                        <PayloadFields fields={fields} variant="bubble" />
+                      )}
+                    </>
                   ) : undefined
                 }
               />

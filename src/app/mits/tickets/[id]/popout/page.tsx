@@ -24,8 +24,10 @@ import { getTicketFormDisplay } from "@/lib/ticket-display";
 import {
   openingFieldName,
   openingMessageFor,
+  payloadAttachments,
   payloadFields,
 } from "@/lib/ticket-opening";
+import { OpeningAttachments } from "@/components/tickets/opening-attachments";
 import {
   getTicketFor,
   getTicketSeenAt,
@@ -108,6 +110,16 @@ export default async function TicketPopoutPage({
         )
       : [];
 
+  /*
+   * Anhänge auch hier, obwohl das Fenster 384 Pixel breit ist.
+   *
+   * `max-h-48` je Kachel deckelt die Höhe, die Breite folgt der Spalte — und das
+   * Bild ist der Grund, aus dem jemand ein Ticket überhaupt herauslöst. Die
+   * Antworten stehen bei `panel` weiterhin nicht hier, die haben einen zweiten Ort
+   * in der Vollansicht; ein Anhang hat den auch, aber er ist die Nachricht.
+   */
+  const openingAttachments = payloadAttachments(ticket.payload);
+
   return (
     /*
      * `h-full` and `overflow-hidden` on the wrapper, because this page *is* the
@@ -155,8 +167,13 @@ export default async function TicketPopoutPage({
               seenAt={seenAt}
               emptyText="Noch keine Beiträge."
               openingDetails={
-                openingFields.length > 0 ? (
-                  <PayloadFields fields={openingFields} variant="bubble" />
+                openingAttachments.length > 0 || openingFields.length > 0 ? (
+                  <>
+                    <OpeningAttachments attachments={openingAttachments} />
+                    {openingFields.length > 0 && (
+                      <PayloadFields fields={openingFields} variant="bubble" />
+                    )}
+                  </>
                 ) : undefined
               }
             />

@@ -1,5 +1,11 @@
 import { resolveFields } from "@/lib/forms/schema-to-zod";
-import type { MITSFormSchema, MITSTicket, TicketComment } from "@/types/mits";
+import {
+  AttachmentMetaSchema,
+  type AttachmentMeta,
+  type MITSFormSchema,
+  type MITSTicket,
+  type TicketComment,
+} from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    The reporter's opening message, as a bubble.
@@ -155,6 +161,62 @@ export interface PayloadField {
   text: string;
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Die Anhänge, die mit dem Formular hereinkamen.
+
+   Sie standen bisher nur in der Sammlung neben dem Verlauf — und die Sammlung ist
+   der richtige Ort dafür, aber nicht der einzige: der Screenshot, den jemand beim
+   Anlegen mitschickt, *ist* Teil seiner ersten Nachricht. Ihn nur als Zeile in
+   einer zugeklappten Liste zu führen heißt, dass der Agent die Frage liest und das
+   Bild dazu suchen muss.
+
+   **Aus der Payload, nicht aus `listUploadsForTicket`.** Letzteres liefert *alle*
+   Dateien am Ticket, also auch die aus späteren Antworten — und die sind in ihrer
+   eigenen Bubble schon eingebettet. Sie in der Eröffnungsbubble ein zweites Mal zu
+   zeigen wäre ein Verlauf, in dem jedes Bild zweimal steht, einmal an der falschen
+   Stelle. Die Payload ist genau das, was mit dem Formular abgeschickt wurde.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** Ein Wert, der eine Liste von Anhang-Beschreibungen ist. */
+function isAttachmentArray(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (entry) =>
+        entry !== null &&
+        typeof entry === "object" &&
+        !Array.isArray(entry) &&
+        "name" in entry &&
+        "size" in entry,
+    )
+  );
+}
+
+/**
+ * Die Anhänge aus der Payload, in Feldreihenfolge.
+ *
+ * Ohne `fileId` fällt ein Eintrag weg: er beschreibt eine Datei, die es in
+ * `mits_upload` nicht gibt — eine Zeile aus der Zeit vor der Ablage oder ein
+ * Upload, der nie durchkam. Ein Bild-Tag darauf wäre ein defektes Bild, und ein
+ * Link ein 404 mitten in der ersten Nachricht.
+ */
+export function payloadAttachments(
+  payload: Record<string, unknown>,
+): AttachmentMeta[] {
+  const found: AttachmentMeta[] = [];
+
+  for (const value of Object.values(payload)) {
+    if (!isAttachmentArray(value)) continue;
+    for (const entry of value as unknown[]) {
+      const parsed = AttachmentMetaSchema.safeParse(entry);
+      if (parsed.success && parsed.data.fileId) found.push(parsed.data);
+    }
+  }
+
+  return found;
+}
+
 /**
  * One payload value as a line of text.
  *
@@ -200,11 +262,21 @@ export function payloadFields(
   openingName: string | null,
 ): PayloadField[] {
   return fieldsBesidesOpening(
-    Object.entries(payload).map(([name, value]) => ({
-      name,
-      label: labels.get(name) ?? name,
-      text: formatPayloadValue(value),
-    })),
+    Object.entries(payload)
+      /*
+       * Anhänge nicht als Textzeile.
+       *
+       * `formatPayloadValue` gab für sie die Dateinamen zurück — „Anhänge:
+       * bild.png". Seit dieselben Dateien in der Eröffnungsbubble als Bild bzw. als
+       * Link stehen, wäre das der Name ein zweites Mal, zwei Zentimeter unter der
+       * Datei selbst. Die Sammlung neben dem Verlauf führt sie weiterhin.
+       */
+      .filter(([, value]) => !isAttachmentArray(value))
+      .map(([name, value]) => ({
+        name,
+        label: labels.get(name) ?? name,
+        text: formatPayloadValue(value),
+      })),
     openingName,
   ).filter((field) => field.text !== "");
 }
