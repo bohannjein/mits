@@ -1,37 +1,52 @@
+import type { MITSRole } from "@/lib/auth/roles";
+
 /* ──────────────────────────────────────────────────────────────────────────
-   The bootstrap window for the seeded administrator.
+   Das Fenster, in dem der Server ein Konto selbst anlegt.
 
-   Its own module, and deliberately import-free: `auth/server.ts` reads it from
-   inside the user-create hook while `auth/seed-admin.ts` sets it, so importing
-   one from the other would be a cycle.
+   Eigenes Modul und absichtlich fast import-frei: `auth/server.ts` liest es aus
+   dem User-Create-Hook heraus, während `auth/seed-admin.ts` und
+   `auth/create-account.ts` es setzen — ein Import in die andere Richtung wäre
+   ein Zyklus. Der Typ-Import auf `roles.ts` ist keiner: die Datei importiert
+   selbst nichts, und ein `import type` verschwindet beim Übersetzen.
 
-   The state is an address, not a boolean. A plain "bypass the registration
-   policy" switch would open a window in which any concurrent sign-up became an
-   admin; narrowing it to one address means the hook can only ever be relaxed
-   for the account the seeder is creating right now.
+   Der Zustand ist eine Adresse mit einer Rolle, kein Schalter. Ein bloßes
+   „Registrierungspolicy überspringen" würde ein Fenster öffnen, in dem *jede*
+   gleichzeitige Registrierung durchkommt — mit der eingestellten Rolle sogar
+   als Administrator. Auf eine Adresse eingegrenzt kann der Hook nur für genau
+   das Konto gelockert werden, das gerade entsteht.
+
+   Eine Map und keine einzelne Variable, weil zwei Admins gleichzeitig ein Konto
+   anlegen können: eine gemeinsame Variable würde das `finally` des ersten
+   Aufrufs auf den noch laufenden zweiten anwenden, und dessen Konto entstünde
+   dann als Benutzer — oder würde von der Registrierungspolicy abgelehnt.
    ────────────────────────────────────────────────────────────────────────── */
 
-let seedingEmail: string | null = null;
+const provisioning = new Map<string, MITSRole>();
 
-/**
- * True only while the seeder is creating exactly this account. Compared
- * case-insensitively because Better Auth stores the address as entered.
- */
-export function isSeedingAdmin(email: string): boolean {
-  return (
-    seedingEmail !== null && seedingEmail === email.trim().toLowerCase()
-  );
+function key(email: string): string {
+  return email.trim().toLowerCase();
 }
 
-/** Run `create` inside the bootstrap window for one address. */
-export async function withAdminBootstrap<T>(
+/**
+ * Die Rolle, die eine gerade laufende serverseitige Anlage für diese Adresse
+ * beansprucht — oder `null`. Adressen werden kleingeschrieben verglichen, weil
+ * Better Auth sie speichert, wie sie eingegeben wurde.
+ */
+export function provisionedRole(email: string): MITSRole | null {
+  return provisioning.get(key(email)) ?? null;
+}
+
+/** `create` innerhalb des Fensters für genau eine Adresse ausführen. */
+export async function withProvisionedRole<T>(
   email: string,
+  role: MITSRole,
   create: () => Promise<T>,
 ): Promise<T> {
-  seedingEmail = email.trim().toLowerCase();
+  const id = key(email);
+  provisioning.set(id, role);
   try {
     return await create();
   } finally {
-    seedingEmail = null;
+    provisioning.delete(id);
   }
 }

@@ -2,7 +2,7 @@ import "server-only";
 
 import { PHASE_PRODUCTION_BUILD } from "next/constants";
 
-import { withAdminBootstrap } from "@/lib/auth/bootstrap";
+import { withProvisionedRole } from "@/lib/auth/bootstrap";
 import { ensureAuthSchema, getAuth } from "@/lib/auth/server";
 import { db } from "@/lib/db/sqlite";
 import { countAdmins } from "@/lib/users";
@@ -131,7 +131,7 @@ async function seed(): Promise<SeedOutcome> {
   const ctx = await getAuth().$context;
   const hash = await ctx.password.hash(password);
 
-  await withAdminBootstrap(email, async () => {
+  await withProvisionedRole(email, "admin", async () => {
     const user = await ctx.internalAdapter.createUser({
       email,
       name: DEFAULT_ADMIN_NAME,

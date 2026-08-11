@@ -42,6 +42,25 @@ function check(name: string, fn: () => unknown): void {
   }
 }
 
+/**
+ * Dasselbe, aber gewartet.
+ *
+ * `check` ruft nur auf und fängt synchron — bei einer `async`-Funktion ist der
+ * Fehler eine abgewiesene Promise, die niemand liest, und der Testfall meldet
+ * „ok". Für einen Pfad, der wirklich awaited werden muss (Passwort-Hash,
+ * Better-Auth-Kontext), taugt das nicht.
+ */
+async function checkAsync(name: string, fn: () => Promise<unknown>): Promise<void> {
+  try {
+    await fn();
+    console.log(`  ok   ${name}`);
+  } catch (error) {
+    failures += 1;
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(`  FAIL ${name}\n         ${message}`);
+  }
+}
+
 try {
   const mits = await import("../src/types/mits");
   const locations = await import("../src/lib/locations");
@@ -1342,6 +1361,51 @@ try {
     if (pins.isPinned(ticketId, agentId)) throw new Error("still pinned");
     if (pins.countPins(agentId) !== 0) throw new Error("count did not drop");
     return state;
+  });
+
+  console.log("accounts");
+  const createAccountModule = await import("../src/lib/auth/create-account");
+  const users = await import("../src/lib/users");
+  await checkAsync("create an agent account", async () => {
+    const created = await createAccountModule.createAccount({
+      name: "Carla Vogt",
+      email: "carla@firma.de",
+      password: "GenugZeichen1",
+      role: "agent",
+      mustChangePassword: true,
+    });
+    // Die Rolle reist durch das Fenster in `auth/bootstrap.ts` und wird vom
+    // User-Create-Hook gesetzt — ohne das käme hier `user` zurück.
+    const stored = users.findUser(created.id);
+    if (stored?.role !== "agent") {
+      throw new Error(`Rolle ist ${stored?.role}, nicht agent`);
+    }
+    if (!users.mustChangePassword(created.id)) {
+      throw new Error("das Gate ist nicht gesetzt");
+    }
+    // Ohne die Zeile in `account` gibt es kein Passwort zum Anmelden.
+    const row = db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM account WHERE userId = ? AND providerId = 'credential'",
+      )
+      .get(created.id) as { count: number };
+    if (row.count !== 1) throw new Error("keine credential-Zeile");
+    return created;
+  });
+  await checkAsync("the address is refused twice", async () => {
+    try {
+      await createAccountModule.createAccount({
+        name: "Carla Zwei",
+        email: "CARLA@firma.de",
+        password: "GenugZeichen2",
+        role: "admin",
+        mustChangePassword: false,
+      });
+    } catch (error) {
+      if (error instanceof createAccountModule.AccountCreateError) return error;
+      throw error;
+    }
+    throw new Error("die doppelte Adresse ging durch");
   });
 
   console.log("purge");

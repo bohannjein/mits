@@ -1,9 +1,17 @@
 import type { Metadata } from "next";
 
+import { CreateUserForm } from "@/components/admin/create-user-form";
 import { UserRoleForm } from "@/components/admin/user-role-form";
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
 import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
   Table,
@@ -28,15 +36,27 @@ export const metadata: Metadata = {
    reporter's for where they sit and how to reach them. One combined table meant
    scrolling past colleagues to find a customer, and the two need different columns.
 
-   Promoting a reporter happens on the reporter page, where they are listed. This page
-   is for changing what somebody who already has a role may do.
+   ── Zwei Wege zu einem Agenten, und beide stehen jetzt hier ──
+
+   Bis hierher gab es nur den einen: die Person registriert sich selbst, danach
+   hebt ein Admin ihre Rolle — auf `/admin/customers`, in einer zugeklappten
+   Zeile. Auf einer Instanz mit abgeschalteter Selbstregistrierung war ein Agent
+   damit überhaupt nicht anlegbar, und wer ihn suchte, suchte ihn auf dieser
+   Seite. Deshalb steht die Kontoanlage oben und die Beförderung darunter, an der
+   Seite, deren Überschrift die Frage stellt.
+
+   Die Anwender-Tabelle unten ist bewusst schmal: Name, Adresse, Rolle. Standort
+   und Kontaktdaten bleiben auf `/admin/customers` — das ist die Pflege eines
+   Datensatzes, nicht die Vergabe eines Zugriffs.
    ────────────────────────────────────────────────────────────────────────── */
 
 export default async function AdminStaffPage() {
   // Authoritative gate: admin only. The proxy already redirects, this decides.
   const actor = await requireRole("admin", "/admin/staff");
 
-  const staff = listUsers().filter((user) => canViewBoard(user.role));
+  const users = listUsers();
+  const staff = users.filter((user) => canViewBoard(user.role));
+  const reporters = users.filter((user) => !canViewBoard(user.role));
   const admins = countAdmins();
 
   return (
@@ -64,7 +84,21 @@ export default async function AdminStaffPage() {
 
           <Separator className="my-8 bg-border" />
 
-          <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-elev-1">
+          <Card className="rounded-3xl border-border bg-card shadow-elev-1">
+            <CardHeader>
+              <CardTitle className="text-xl font-normal">Konto anlegen</CardTitle>
+              <CardDescription>
+                Das Passwort wird hier gesetzt und muss weitergegeben werden — es
+                ist danach nicht mehr einsehbar.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CreateUserForm />
+            </CardContent>
+          </Card>
+
+          <h2 className="mt-10 text-lg font-normal">Mit Zugriff</h2>
+          <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-card shadow-elev-1">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -117,6 +151,36 @@ export default async function AdminStaffPage() {
               {ROLE_LABELS.admin} ist der einfachste Weg, sich nicht selbst
               auszusperren.
             </p>
+          )}
+
+          <h2 className="mt-10 text-lg font-normal">Anwender befördern</h2>
+          {reporters.length === 0 ? (
+            <p className="mt-3 rounded-2xl border border-border bg-card px-5 py-6 text-sm text-muted-foreground">
+              Kein Konto ohne Zugriff.
+            </p>
+          ) : (
+            <div className="mt-3 overflow-x-auto rounded-2xl border border-border bg-card shadow-elev-1">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>E-Mail</TableHead>
+                    <TableHead>Rolle</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reporters.map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell className="font-medium">{user.name}</TableCell>
+                      <TableCell className="text-sm">{user.email}</TableCell>
+                      <TableCell>
+                        <UserRoleForm userId={user.id} currentRole={user.role} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </div>
       </main>

@@ -677,11 +677,42 @@ Nachrichten; wer unten steht, scrollt automatisch mit.
   (es ist kein Mailversand konfiguriert — eine aktivierte Verifikation würde alle
   aussperren). Das **erste** Konto einer Instanz wird immer angelegt und erhält
   `admin`; sonst hätte eine Instanz mit deaktivierter Registrierung nie einen Admin.
+- **Ein Admin legt Konten selbst an, mit Rolle.** `/admin/staff` hat oben die Maske
+  (Name, Adresse, Passwort, Rolle) und darunter zwei Tabellen: „Mit Zugriff" und
+  „Anwender befördern". Vorher gab es nur den Weg über die Selbstregistrierung mit
+  anschließendem Hochstufen — auf einer Instanz mit abgeschalteter Registrierung
+  also gar keinen.
+
+  Angelegt wird wie beim Seeding, über `internalAdapter.createUser` +
+  `linkAccount` (`lib/auth/create-account.ts`), **nicht** über `/sign-up/email`:
+  dieser Endpunkt würde den Aufrufer per `autoSignIn` als das neue Konto anmelden
+  — der Admin flöge aus seiner eigenen Sitzung — und könnte die Rolle wegen
+  `input: false` ohnehin nicht setzen.
+
+  Die Rolle reist durch das Fenster in `lib/auth/bootstrap.ts`, das der
+  User-Create-Hook liest. Es ist eine **Map** von Adresse auf Rolle und keine
+  einzelne Variable: zwei gleichzeitige Anlagen würden sich sonst das `finally`
+  teilen, und das zweite Konto entstünde als `user` oder fiele durch die
+  Registrierungspolicy. Das Fenster umgeht Registrierungsschalter **und**
+  Domain-Whitelist — die Policy regelt Selbstanmeldung, nicht was ein Admin
+  einträgt. Was das trägt, ist `requireRole("admin")` in
+  `createUserAccountAction`.
+
+  `must_change_password` ist im Formular vorbelegt: der Admin tippt das Passwort
+  und gibt es weiter, das Konto ersetzt es beim ersten Anmelden. Deshalb steht das
+  Passwort im Feld auch im Klartext — es ist nicht das eigene, und danach ist es
+  nirgends mehr einsehbar.
 - **Privilege Escalation:** `role` ist ein `additionalField` mit `input: false` —
   ein `role: "admin"` im Sign-up-Body wird verworfen, nicht übernommen. Zusätzlich
   erzwingt der `databaseHooks.user.create.before`-Hook die Default-Rolle.
 - **Rollenwechsel:** nur über `admin/actions.ts`. Der letzte Admin kann nicht
   herabgestuft werden, und niemand kann sich selbst die Admin-Rolle entziehen.
+
+  `setUserRoleAction` revalidiert **beide** Kontolisten und das Layout. Vorher nur
+  `/admin` — und weil eine Rollenänderung ein Konto von der einen Liste in die
+  andere verschiebt, blieb die Zeile nach dem Speichern stehen, wo sie war. Was
+  jemand sah, war ein Erfolg ohne Wirkung, und der naheliegende Schluss ist, dass
+  Beförderungen nicht funktionieren.
 - **Domain-Whitelist:** Vergleich auf dem Teil nach dem **letzten** `@` und exakt —
   `firma.de` lässt weder `nichtfirma.de` noch `x@firma.de@fremd.de` zu.
 - **Kein hardcodiertes Secret — nirgends.** `docker-compose.yml` hat **keine**

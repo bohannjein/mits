@@ -9,7 +9,8 @@ import {
   setAISettings,
 } from "@/lib/ai-settings";
 import { AIProviderError, verifyAIProvider } from "@/lib/services/ai/provider";
-import { isRole } from "@/lib/auth/roles";
+import { AccountCreateError, createAccount } from "@/lib/auth/create-account";
+import { ROLE_LABELS, isRole } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
 import { isFeatureEnabled, setFeatureFlags } from "@/lib/features";
 import { ingestMailbox } from "@/lib/mail/ingest";
@@ -234,8 +235,70 @@ export async function setUserRoleAction(
     throw error;
   }
 
+  /*
+   * Beide Listen und das Layout.
+   *
+   * Vorher stand hier nur `/admin` — und weil eine Rollenänderung ein Konto von
+   * der einen Liste in die andere verschiebt, blieb die Zeile nach dem Speichern
+   * genau dort stehen, wo sie war. Was jemand sieht, der einen Anwender zum
+   * Agenten macht, ist ein Erfolgszustand ohne sichtbare Wirkung, und der
+   * naheliegende Schluss ist, dass es nicht geht.
+   *
+   * Das Layout, weil das Benutzermenü der betroffenen Person ihre Bereichslinks
+   * aus der Rolle baut.
+   */
+  revalidatePath("/admin/staff");
+  revalidatePath("/admin/customers");
   revalidatePath("/admin");
+  revalidatePath("/", "layout");
+
   return { ok: true, message: "Rolle aktualisiert." };
+}
+
+/**
+ * Ein neues Konto mit Rolle, angelegt von einem Administrator.
+ *
+ * Die Rolle kommt aus dem Formular, und das ist hier richtig: das ist der Zweck
+ * der Maske. Was es trägt, ist `requireRole("admin")` in der ersten Zeile — ein
+ * Admin darf jede Rolle vergeben, und er könnte dieselbe Rolle direkt danach
+ * über `setUserRoleAction` setzen.
+ *
+ * Kein Sonderfall für „Administrator anlegen": ein Admin, der einen zweiten
+ * Admin einträgt, gibt nichts weg, was er nicht schon hat.
+ */
+export async function createUserAccountAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const role = String(formData.get("role") ?? "");
+  if (!isRole(role)) return { ok: false, error: "Unbekannte Rolle." };
+
+  try {
+    const created = await createAccount({
+      name: String(formData.get("name") ?? ""),
+      email: String(formData.get("email") ?? ""),
+      password: String(formData.get("password") ?? ""),
+      role,
+      mustChangePassword: formData.get("mustChangePassword") === "on",
+    });
+
+    // Beide Listen, weil die Rolle entscheidet, in welcher das Konto auftaucht.
+    revalidatePath("/admin/staff");
+    revalidatePath("/admin/customers");
+    revalidatePath("/admin");
+
+    return {
+      ok: true,
+      message: `${created.email} angelegt, Rolle ${ROLE_LABELS[created.role]}.`,
+    };
+  } catch (error) {
+    if (error instanceof AccountCreateError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
 }
 
 /** Cheap sanity check — a label, a dot, a TLD. Not a full RFC validation. */

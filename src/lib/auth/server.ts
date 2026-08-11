@@ -4,7 +4,7 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 
-import { isSeedingAdmin } from "@/lib/auth/bootstrap";
+import { provisionedRole } from "@/lib/auth/bootstrap";
 import { DEFAULT_ROLE } from "@/lib/auth/roles";
 import { authSecret } from "@/lib/auth/secret";
 import { db } from "@/lib/db/sqlite";
@@ -186,12 +186,23 @@ const baseAuthOptions = {
             return { data: { ...user, role: "admin" } };
           }
 
-          // The seeder recovers an instance that has users but no administrator
-          // — a database restored from a partial backup, say. Scoped to the one
-          // address the seeder is creating, so a sign-up racing this cannot slip
-          // through as admin.
-          if (isSeedingAdmin(user.email)) {
-            return { data: { ...user, role: "admin" } };
+          /*
+           * Ein Konto, das der Server selbst anlegt: der Seeder, der eine
+           * Instanz mit Benutzern aber ohne Administrator aufholt, und die
+           * Kontoanlage unter `/admin/staff`.
+           *
+           * Beides umgeht Registrierungsschalter *und* Domain-Whitelist, und
+           * beides mit Absicht: die Policy regelt, wer sich selbst anmelden
+           * darf, nicht wen ein Administrator einträgt — ein externer Dienst-
+           * leister mit fremder Adresse ist genau der Fall, für den die Maske
+           * existiert. Was das trägt, ist `requireRole("admin")` an der
+           * Aufrufstelle; hier steht nur das Fenster, und es ist auf die eine
+           * Adresse eingegrenzt, damit eine gleichzeitige Registrierung nicht
+           * mit durchrutscht.
+           */
+          const provisioned = provisionedRole(user.email);
+          if (provisioned) {
+            return { data: { ...user, role: provisioned } };
           }
 
           const settings = getAuthSettings();

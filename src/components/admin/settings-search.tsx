@@ -198,7 +198,8 @@ const ENTRIES: SettingsEntry[] = [
     href: "/admin/staff",
     label: "Agenten & Administration",
     icon: HeadsetIcon,
-    keywords: "benutzer konten rollen admin agent techniker mitarbeiter team",
+    keywords:
+      "benutzer konten rollen admin agent techniker mitarbeiter team anlegen neues konto passwort befördern hochstufen",
   },
   {
     href: "/admin/customers",
