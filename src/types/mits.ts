@@ -376,6 +376,80 @@ export const STATUS_RANK: Record<TicketStatus, number> = {
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Welche Spalten die Queue zeigt — eine Entscheidung je Agent.
+
+   Vorher entschied das eine Mischung aus Props (`showOwner`, `showTime`,
+   `locations`) und hartkodierten Breakpoints. Welche Spalten jemand braucht,
+   hängt aber an seiner Arbeit: wer Standorte betreut, will die Spalte, wer Zeiten
+   bucht, die Zeitspalte, und wer beides nicht tut, will den Platz für den Titel.
+
+   **Nummer und Titel sind gesperrt**, und das ist keine Vorsicht. Die Titelspalte
+   trägt `w-full max-w-0` und ist damit die *absorbierende*: sie nimmt den ganzen
+   Schlupf und kürzt. Ohne sie hat das automatische Tabellenlayout nichts, dem es
+   ihn geben kann, und die Tabelle fällt auf Inhaltsbreite zusammen. Die Nummer ist
+   die Kennung, an der ein Mensch die Zeile liest — und der `j`/`k`-Cursor läuft
+   über die Zeile, nicht über eine Spalte.
+
+   **Gespeichert wird das Ausgeblendete, nicht das Gezeigte.** Dieselbe
+   Entscheidung wie bei `hidden_forms`: eine Spalte, die eine spätere Version
+   dazunimmt, ist damit für jeden sofort sichtbar. Die Gegenrichtung hätte sie für
+   jeden unsichtbar gemacht, der einmal gespeichert hat — und das Fehlerbild wäre
+   „die neue Spalte gibt es nicht".
+
+   **Drei Verengungen, jede nimmt nur weg:** das Modul (`feature_time_tracking`,
+   Pins, gibt es überhaupt Standorte), dann der Agent, dann der Viewport über die
+   bestehenden `hidden … table-cell`-Breakpoints. Ein Agent kann nichts
+   einschalten, was das Modul nicht anbietet — dieselbe Form wie „Sichtbarkeit
+   verengt die Rolle".
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const QUEUE_COLUMNS = [
+  "pin",
+  "location",
+  "reporter",
+  "owner",
+  "priority",
+  "status",
+  "time",
+  "age",
+] as const;
+export type QueueColumn = (typeof QUEUE_COLUMNS)[number];
+
+export const QUEUE_COLUMN_LABELS: Record<QueueColumn, string> = {
+  pin: "Anheften",
+  location: "Standort",
+  reporter: "Melder",
+  owner: "Bearbeiter",
+  priority: "Priorität",
+  status: "Status",
+  time: "Zeit",
+  age: "Alter",
+};
+
+/**
+ * Die ausgeblendeten Spalten eines Agenten.
+ *
+ * Gefiltert statt geprüft: `z.array(z.string())` mit Filter in der Transform und
+ * **kein** `z.array(Enum)`. Zod 4 lehnt ein unbekanntes Element ab, und ein
+ * abgelehnter Parse nähme die ganze Spaltenwahl mit — ein Spaltenschlüssel, den
+ * eine spätere Version entfernt, macht dann aus einer gepflegten Auswahl den
+ * Auslieferungszustand. Dieselbe Falle wie bei `hidden_areas` und `widget_order`.
+ */
+export function toHiddenQueueColumns(value: unknown): QueueColumn[] {
+  if (!Array.isArray(value)) return [];
+  const named = new Set(value.filter((entry) => typeof entry === "string"));
+  // In der Reihenfolge von `QUEUE_COLUMNS`, damit die gespeicherte Zeile nicht
+  // davon abhängt, in welcher Reihenfolge die Maske ihre Haken abschickt.
+  return QUEUE_COLUMNS.filter((column) => named.has(column));
+}
+
+/** Zeigt die Queue diese Spalte? Ein fehlender Eintrag heißt „ja". */
+export const queueColumnVisible = (
+  hidden: QueueColumn[],
+  column: QueueColumn,
+): boolean => !hidden.includes(column);
+
+/* ──────────────────────────────────────────────────────────────────────────
    Two number series, one shape: a prefix, a leading 1, then the counter.
 
    `TCK-1000000000000001` is the first ticket ever written on an instance,
@@ -2252,17 +2326,22 @@ export const NOTIFICATION_CHANNEL_META: Record<
   },
   reminder: {
     /*
-     * Not staff-only, unlike the two above it.
+     * Staff-only, wie die zwei darüber — und das war einmal anders.
      *
-     * A reporter can set a reminder on their own ticket — "nachfragen, wenn bis
-     * Freitag nichts passiert ist" is the most reasonable thing somebody waiting
-     * on a ticket can do, and the alternative is that they ask on Tuesday
-     * instead.
+     * Die alte Begründung: ein Melder, der „nachfragen, wenn bis Freitag nichts
+     * passiert ist" auf sein eigenes Ticket legt, fragt nicht am Dienstag an. Die
+     * Entscheidung ist umgekehrt worden. Eine Erinnerung ist ein Arbeitsmittel des
+     * Desks; der Melder bekommt sein Ticket nachgehalten, statt es selbst
+     * nachhalten zu müssen.
+     *
+     * Bestehende Melder-Erinnerungen bleiben in der Tabelle stehen und feuern
+     * hier nicht mehr. Sie zu löschen wäre ein `DELETE` über fremde Notizen, und
+     * das tut ein Umbau nicht nebenbei.
      */
     label: "Erinnerung fällig",
     description:
-      "Eine Erinnerung, die du selbst auf ein Ticket gelegt hast, ist fällig.",
-    staffOnly: false,
+      "Eine Erinnerung, die du selbst auf ein Ticket gelegt hast, ist fällig. Nur für Agenten.",
+    staffOnly: true,
   },
 };
 

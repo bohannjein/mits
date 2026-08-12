@@ -33,10 +33,23 @@ und der Haken im Widget muss im selben Render rückgängig zu machen sein. Das
 Löschen daneben ist ein echtes `DELETE`, weil eine private Notiz an sich selbst
 keine Historie hat, die es zu bewahren gäbe.
 
-**Melder dürfen das auch.** Der Kanal ist nicht `staffOnly`: „Freitag nachfragen,
-wenn nichts passiert ist" ist das Vernünftigste, was jemand tun kann, der auf ein
-Ticket wartet — die Alternative ist, dass er am Dienstag fragt. Das Popover steht
-deshalb auf beiden Detailansichten.
+**Agenten vorbehalten.** Das war einmal anders, und die alte Begründung stand hier:
+„Freitag nachfragen, wenn nichts passiert ist" sei das Vernünftigste, was jemand
+tun kann, der auf ein Ticket wartet. Die Entscheidung ist umgekehrt worden — eine
+Erinnerung ist ein Arbeitsmittel des Desks, und der Melder bekommt sein Ticket
+nachgehalten, statt es selbst nachhalten zu müssen.
+
+Umgesetzt an drei Stellen, und die erste allein reicht nicht:
+
+1. Widget und Popover sind von `/customer` und `/customer/tickets/[id]` weg.
+2. **Die drei Actions verlangen `requireRole("agent")`** — Ausblenden ist keine
+   Grenze, und eine Server Action ist als POST auf die Route erreichbar, auf der
+   sie benutzt wurde.
+3. Der Kanal `reminder` in `NOTIFICATION_CHANNELS` ist `staffOnly: true`.
+
+**Bestehende Melder-Erinnerungen bleiben stehen.** Sie feuern nicht mehr (der
+Kanal ist staffOnly), und ein `DELETE` über fremde Notizen ist nichts, was ein
+Umbau nebenbei tut.
 
 ## Die Zeitrechnung liegt in einer Datei
 

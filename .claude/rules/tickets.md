@@ -551,6 +551,47 @@ alles ab dem fünfhundertsten Ticket, ohne es zu sagen. Stattdessen eine
 **absorbierende Spalte**, gekürzter Titel und `hidden … table-cell` für die
 Kontextspalten auf schmalen Schirmen — und `TicketPager` darunter.
 
+### Die Spalten gehören dem Agenten
+
+`QUEUE_COLUMNS` in `types/mits.ts`, gespeichert unter `queue_columns:<userId>`
+(`lib/agent-views.ts`, neben `agent_view:<userId>`). Popover im `actions`-Slot von
+`QueueTabs`.
+
+- **Nummer und Titel stehen nicht zur Wahl.** Der Titel trägt `w-full max-w-0` und
+  ist damit die *absorbierende* Spalte; ohne ihn hat das automatische Layout
+  nichts, dem es den Schlupf geben kann. Die Nummer ist die Kennung, an der ein
+  Mensch die Zeile liest.
+- **Gespeichert wird das Ausgeblendete.** Dieselbe Entscheidung wie bei
+  `hidden_forms`: eine Spalte, die eine spätere Version dazunimmt, ist für jeden
+  sofort da. Die Gegenrichtung hätte sie für jeden versteckt, der einmal
+  gespeichert hat.
+- **Gefiltert statt geprüft** (`toHiddenQueueColumns`) — `z.array(z.string())`
+  plus Filter, kein Enum. Ein entfernter Schlüssel nähme sonst die ganze Wahl mit,
+  und aus einer gepflegten Auswahl würde still der Auslieferungszustand.
+- **Drei Verengungen, jede nimmt nur weg:** das Modul
+  (`feature_time_tracking`, Pins, gibt es Standorte), dann der Agent, dann die
+  `hidden … table-cell`-Breakpoints. Ein Agent kann nichts einschalten, was die
+  Instanz nicht anbietet — dieselbe Form wie „Sichtbarkeit verengt die Rolle".
+- **Nur die Queue.** Die Melderliste teilt sich `TicketTable`, bekommt die Wahl
+  aber nicht übergeben und behält ihren festen schmalen Satz.
+
+**Der Queue-Container scrollt jetzt seitwärts, wenn es nicht reicht** — das kehrt
+„Ticket-Tabellen scrollen nie seitwärts" für diese eine Tabelle um. Der Titel hat
+dafür `min-w-48` neben seinem `max-w-0`: wer vier Kontextspalten anschaltet, hat
+die Breite verlangt, und die Alternative wäre ein Titel ohne Klickfläche — genau
+der Defekt, der einmal als „man kann Tickets nicht mehr öffnen" gemeldet wurde.
+
+**Queue und `AppHeader` stehen auf `max-w-[96rem]`**, die übrigen Seitenhüllen auf
+`7xl`. Die Regel ist gerichtet: der Header muss die *breiteste* Hülle sein,
+schmalere zentrieren sich darin. Eine Chatspalte auf 1200 px wäre eine Zeilenlänge,
+die niemand liest.
+
+**Die Sidebar-Spalte ist `clamp(16rem, 20vw, 24rem)` mit `minmax(0,1fr)** daneben.
+Ein nacktes `1fr` hat implizit `min-width: auto` und wächst nie unter seinen
+Inhalt — mit einer breiten Tabelle darin gewinnt sie den Streit und drückt die
+Sidebar aus dem Raster. Der Ring in `OpenClosedPie` skaliert mit statt bei festen
+112 px umzubrechen.
+
 **`table-fixed` mit Breite pro Spalte war der erste Versuch und hat die Seite
 zerlegt.** Die Breiten summierten sich auf rund 1070 px, während die Hauptspalte der
 Queue neben der Sidebar etwa 930 px hat — also wurde die einzige Spalte ohne

@@ -34,6 +34,8 @@ import {
   TICKET_PRIORITY_LABELS,
   CUSTOMER_STATUS,
   TICKET_STATUS_LABELS,
+  queueColumnVisible,
+  type QueueColumn,
   formatTicketNumber,
   isElevatedPriority,
   type MITSLocation,
@@ -125,6 +127,18 @@ export function TicketTable({
    * geschenkt.
    */
   customerLabels = true,
+  /**
+   * Spalten, die dieser Leser ausgeblendet hat.
+   *
+   * **Verengt, schaltet nicht ein.** `showOwner`, `showTime`, `showPin` und
+   * `locations` entscheiden weiter, ob eine Spalte überhaupt angeboten wird — das
+   * hängt an Modulen und daran, ob es Standorte gibt. Diese Liste nimmt aus dem
+   * Angebot etwas weg. Dieselbe Form wie „Sichtbarkeit verengt die Rolle": ein
+   * Agent kann sich nichts einschalten, was die Instanz nicht hat.
+   *
+   * Leer für die Melderliste, die ihren festen schmalen Satz behält.
+   */
+  hiddenColumns = [],
 }: {
   tickets: MITSTicket[];
   showOwner?: boolean;
@@ -137,6 +151,7 @@ export function TicketTable({
   showPin?: boolean;
   accent?: boolean;
   customerLabels?: boolean;
+  hiddenColumns?: QueueColumn[];
 }) {
   const timezone = getSystemTimezone();
   // One clock for every row, read once. Calling Date.now() per row would let a
@@ -152,7 +167,25 @@ export function TicketTable({
   }
 
   const byId = new Map((locations ?? []).map((entry) => [entry.id, entry]));
-  const showLocation = locations !== undefined && locations.length > 0;
+
+  /*
+   * Das Angebot **und** die Wahl, in dieser Reihenfolge.
+   *
+   * `showLocation` fragt, ob es überhaupt Standorte gibt; `on("location")` fragt,
+   * ob dieser Leser sie sehen will. Beides muss stimmen — die Wahl kann nichts
+   * einschalten, was die Instanz nicht anbietet.
+   */
+  const on = (column: QueueColumn) => queueColumnVisible(hiddenColumns, column);
+
+  const showLocation =
+    locations !== undefined && locations.length > 0 && on("location");
+  const withPin = showPin && on("pin");
+  const withReporter = showOwner && on("reporter");
+  const withAssignee = showOwner && on("owner");
+  const withPriority = on("priority");
+  const withStatus = on("status");
+  const withTime = showTime && on("time");
+  const withAge = on("age");
 
   const header = (key: TicketSortKey, className?: string) => (
     <SortableHead
@@ -183,11 +216,23 @@ export function TicketTable({
         pile.
 
         Automatic layout sizes each column to its content and gives the rest to the
-        title cell, which is marked `w-full max-w-0` below so it absorbs the slack
-        and truncates instead of growing. Nothing can overflow, so the container
-        stays `overflow-hidden`.
+        title cell, which is marked `w-full max-w-0 min-w-48` below so it absorbs
+        the slack and truncates instead of growing.
+
+        **Der Container scrollt seitwärts, wenn es trotzdem nicht reicht**, und das
+        kehrt eine frühere Regel um („Ticket-Tabellen scrollen nie seitwärts").
+        Grund: der Spaltensatz gehört jetzt dem Agenten. Wer Standort, Melder,
+        Bearbeiter und Zeit gleichzeitig anschaltet, hat die Breite verlangt — und
+        die Alternative zum Scrollen ist ein Titel ohne Klickfläche, was schon
+        einmal als „man kann Tickets nicht mehr öffnen" gemeldet wurde. Ein
+        Scrollbalken, den man selten sieht, ist die bessere der zwei schlechten
+        Antworten.
+
+        Bei den Breakpoints ändert das nichts: `hidden … table-cell` nimmt die
+        Kontextspalten auf schmalen Schirmen weiter heraus, bevor es überhaupt so
+        weit kommt.
       */}
-      <Table containerClassName="overflow-hidden">
+      <Table containerClassName="overflow-x-auto">
         <TableHeader>
           <TableRow>
             {/*
@@ -219,7 +264,7 @@ export function TicketTable({
               pinned rows have their own block above the table, so a sort on
               "pinned" would be a second way to do the same thing.
             */}
-            {showPin && (
+            {withPin && (
               <TableHead className="w-px">
                 <span className="sr-only">Anheften</span>
               </TableHead>
@@ -231,16 +276,16 @@ export function TicketTable({
                 Standort
               </TableHead>
             )}
-            {showOwner && header("reporter", "hidden w-px whitespace-nowrap xl:table-cell")}
-            {showOwner && header("owner", "hidden w-px whitespace-nowrap lg:table-cell")}
-            {header("priority", "hidden w-px whitespace-nowrap sm:table-cell")}
-            {header("status", "w-px whitespace-nowrap")}
-            {showTime && (
+            {withReporter && header("reporter", "hidden w-px whitespace-nowrap xl:table-cell")}
+            {withAssignee && header("owner", "hidden w-px whitespace-nowrap lg:table-cell")}
+            {withPriority && header("priority", "hidden w-px whitespace-nowrap sm:table-cell")}
+            {withStatus && header("status", "w-px whitespace-nowrap")}
+            {withTime && (
               <TableHead className="hidden w-px text-right whitespace-nowrap xl:table-cell">
                 Zeit
               </TableHead>
             )}
-            {header("age", "w-px whitespace-nowrap")}
+            {withAge && header("age", "w-px whitespace-nowrap")}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -263,7 +308,7 @@ export function TicketTable({
                 data-ticket-row=""
                 data-ticket-href={`${detailBase}/${ticket.id}`}
               >
-                {showPin && (
+                {withPin && (
                   <TableCell className="w-px pr-0">
                     <PinButton ticketId={ticket.id} pinned={ticket.pinned} />
                   </TableCell>
@@ -321,7 +366,17 @@ export function TicketTable({
                 */}
                 <TableCell
                   className={cn(
-                    "w-full max-w-0 truncate font-medium",
+                    // `min-w-48` neben `max-w-0`, und das ist kein Widerspruch.
+                    //
+                    // `max-w-0` ist, was die Zelle kürzen statt wachsen lässt;
+                    // `min-w` ist der Boden darunter. Ohne ihn konnte der Titel bei
+                    // vielen eingeschalteten Spalten auf null schrumpfen — ein
+                    // Klickziel ohne Fläche, genau der Defekt, den `table-fixed`
+                    // damals verursacht hat („man kann Tickets nicht mehr
+                    // öffnen"). Reicht die Breite dann nicht, scrollt der Container
+                    // seitwärts; das ist die schlechtere Antwort von zwei
+                    // schlechten, aber die einzige, die den Link erreichbar lässt.
+                    "w-full max-w-0 min-w-48 truncate font-medium",
                     // Weight *and* the dot, not an accent hue alone: colour is the
                     // one signal a red-green colour blind reader loses, and "which
                     // of these is new" is the entire point of the row.
@@ -347,7 +402,7 @@ export function TicketTable({
                     </span>
                   </TableCell>
                 )}
-                {showOwner && (
+                {withReporter && (
                   <TableCell className="hidden w-px text-xs xl:table-cell">
                     {/*
                       Capped on an inner span, not on the cell: in automatic layout
@@ -363,7 +418,7 @@ export function TicketTable({
                     </span>
                   </TableCell>
                 )}
-                {showOwner && (
+                {withAssignee && (
                   <TableCell className="hidden w-px text-xs lg:table-cell">
                     <span className="block max-w-32 truncate">
                       {ticket.assigned_to_name ?? (
@@ -374,24 +429,28 @@ export function TicketTable({
                     </span>
                   </TableCell>
                 )}
-                <TableCell className="hidden w-px whitespace-nowrap sm:table-cell">
-                  <Badge
-                    variant={
-                      isElevatedPriority(ticket.priority) ? "default" : "outline"
-                    }
-                    className="rounded-full"
-                  >
-                    {TICKET_PRIORITY_LABELS[ticket.priority]}
-                  </Badge>
-                </TableCell>
-                <TableCell className="w-px whitespace-nowrap">
-                  <Badge variant="secondary" className="rounded-full">
-                    {customerLabels
-                      ? CUSTOMER_STATUS[ticket.status].short
-                      : TICKET_STATUS_LABELS[ticket.status]}
-                  </Badge>
-                </TableCell>
-                {showTime && (
+                {withPriority && (
+                  <TableCell className="hidden w-px whitespace-nowrap sm:table-cell">
+                    <Badge
+                      variant={
+                        isElevatedPriority(ticket.priority) ? "default" : "outline"
+                      }
+                      className="rounded-full"
+                    >
+                      {TICKET_PRIORITY_LABELS[ticket.priority]}
+                    </Badge>
+                  </TableCell>
+                )}
+                {withStatus && (
+                  <TableCell className="w-px whitespace-nowrap">
+                    <Badge variant="secondary" className="rounded-full">
+                      {customerLabels
+                        ? CUSTOMER_STATUS[ticket.status].short
+                        : TICKET_STATUS_LABELS[ticket.status]}
+                    </Badge>
+                  </TableCell>
+                )}
+                {withTime && (
                   <TableCell className="hidden w-px text-right text-xs whitespace-nowrap tabular-nums xl:table-cell">
                     {ticket.logged_minutes > 0 ? (
                       <span className="inline-flex items-center gap-1.5">
@@ -413,12 +472,14 @@ export function TicketTable({
                   hydrate and no second clock to disagree with. It goes stale
                   between renders, which is what `AutoRefresh` in the header is for.
                 */}
-                <TableCell
-                  className="w-px text-xs whitespace-nowrap text-muted-foreground"
-                  title={formatDateTime(ticket.created_at, timezone)}
-                >
-                  {formatRelativeTime(ticket.created_at, now)}
-                </TableCell>
+                {withAge && (
+                  <TableCell
+                    className="w-px text-xs whitespace-nowrap text-muted-foreground"
+                    title={formatDateTime(ticket.created_at, timezone)}
+                  >
+                    {formatRelativeTime(ticket.created_at, now)}
+                  </TableCell>
+                )}
               </TableRow>
             );
           })}

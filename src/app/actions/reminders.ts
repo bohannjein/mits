@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireUser } from "@/lib/auth/session";
+import { requireRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
 import { resolveReminderDue } from "@/lib/reminder-presets";
 import { getSystemTimezone } from "@/lib/system-settings";
@@ -32,6 +32,16 @@ import { formatDateTime } from "@/lib/format";
    through `getTicketFor` — the same door as everywhere else. Ticking off and
    deleting need no ticket check at all: those statements carry `user_id` in the
    WHERE, so a foreign row is not found rather than refused.
+
+   **Agenten vorbehalten, alle drei.** Das war einmal anders begründet: ein
+   Melder, der „Freitag nachfragen" auf sein eigenes Ticket legt, fragt nicht am
+   Dienstag an. Die Entscheidung ist umgekehrt worden — eine Erinnerung ist ein
+   Arbeitsmittel des Desks, und der Melder bekommt sein Ticket ohnehin
+   nachgehalten.
+
+   `requireRole` und nicht bloß ein entfernter Knopf: Ausblenden ist keine Grenze.
+   Eine Server Action ist als POST auf die Route erreichbar, auf der sie benutzt
+   wurde, und die Melder-Ticketseite bleibt erreichbar.
    ────────────────────────────────────────────────────────────────────────── */
 
 export type ReminderActionResult =
@@ -41,17 +51,17 @@ export type ReminderActionResult =
 /**
  * Every surface a reminder shows up on.
  *
- * The two ticket pages carry the button and its badge; `/customer` and `/mits`
- * carry the widget. One function, so a surface added later is added once — the
- * same reasoning as `revalidateTicket`, and it exists for the same bug: thirteen
- * call sites revalidating by hand had drifted apart.
+ * Die Agenten-Ticketseite trägt den Knopf und sein Badge, `/mits` das Widget. Eine
+ * Funktion, damit eine später dazukommende Fläche einmal ergänzt wird — dieselbe
+ * Begründung wie bei `revalidateTicket`, und sie existiert wegen desselben
+ * Fehlers: dreizehn Aufrufstellen, die von Hand revalidierten, waren
+ * auseinandergelaufen.
  */
 function revalidateReminders(ticketId?: string): void {
-  if (ticketId) {
-    revalidatePath(`/customer/tickets/${ticketId}`);
-    revalidatePath(`/mits/tickets/${ticketId}`);
-  }
-  revalidatePath("/customer");
+  // Nur die Agentenflächen: die Melderseite trägt weder Knopf noch Widget mehr,
+  // und eine Revalidierung für eine Fläche ohne Inhalt ist ein Cache-Wurf ins
+  // Leere.
+  if (ticketId) revalidatePath(`/mits/tickets/${ticketId}`);
   revalidatePath("/mits");
 }
 
@@ -60,7 +70,7 @@ export async function setReminderAction(
   formData: FormData,
 ): Promise<ReminderActionResult> {
   const ticketId = String(formData.get("ticketId") ?? "");
-  const user = await requireUser(`/mits/tickets/${ticketId}`);
+  const user = await requireRole("agent", `/mits/tickets/${ticketId}`);
 
   // Checked in the action as well as hidden in the UI. A disabled module has to
   // be disabled for whoever posts to it, not only for whoever sees the button.
@@ -119,7 +129,7 @@ export async function completeReminderAction(
   _previous: ReminderActionResult | null,
   formData: FormData,
 ): Promise<ReminderActionResult> {
-  const user = await requireUser("/customer");
+  const user = await requireRole("agent", "/mits");
   const id = String(formData.get("reminderId") ?? "");
   const done = String(formData.get("done") ?? "1") === "1";
   const ticketId = String(formData.get("ticketId") ?? "");
@@ -143,7 +153,7 @@ export async function deleteReminderAction(
   _previous: ReminderActionResult | null,
   formData: FormData,
 ): Promise<ReminderActionResult> {
-  const user = await requireUser("/customer");
+  const user = await requireRole("agent", "/mits");
   const id = String(formData.get("reminderId") ?? "");
   const ticketId = String(formData.get("ticketId") ?? "");
 

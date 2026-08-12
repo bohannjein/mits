@@ -1,13 +1,17 @@
 import { SHORTCUT_GROUPS, isPlainKey, swallowsKeys } from "../src/lib/shortcuts";
 import { fillCannedResponse, firstNameOf } from "../src/types/mits";
 import {
+  QUEUE_COLUMNS,
+  QUEUE_COLUMN_LABELS,
   TicketStatus,
   TicketStatusValues,
   WorkflowSettingsSchema,
   describeTicketState,
   hasAutoClose,
   nextStatusAfterReply,
+  queueColumnVisible,
   toAutoCloseDays,
+  toHiddenQueueColumns,
 } from "../src/types/mits";
 import {
   RECONNECT_BASE_MS,
@@ -4750,6 +4754,51 @@ console.log("\nverfallsfristen");
   check(
     "und die vorgabetexte stehen",
     defaults.waitingReminderBody.length > 0 && defaults.autoCloseNote.length > 0,
+  );
+}
+
+console.log("\nqueue-spalten");
+{
+  /*
+   * Gespeichert wird das Ausgeblendete, gefiltert wird statt abgelehnt.
+   *
+   * Der zweite Teil ist die Pruefung, die zaehlt: ein Spaltenschluessel, den eine
+   * spaetere Version entfernt, darf nicht die ganze Wahl mitnehmen — sonst wird aus
+   * einer gepflegten Auswahl still der Auslieferungszustand.
+   */
+  check("keine Zeile heisst alle Spalten", toHiddenQueueColumns(null).length === 0);
+  check("kein Array wird zur leeren Menge", toHiddenQueueColumns("status").length === 0);
+  check(
+    "ein unbekannter Schluessel wird gefiltert, nicht abgelehnt",
+    (() => {
+      const kept = toHiddenQueueColumns(["status", "sternzeichen", "time"]);
+      return kept.length === 2 && kept.includes("status") && kept.includes("time");
+    })(),
+  );
+  check(
+    "die Reihenfolge kommt aus QUEUE_COLUMNS, nicht aus der Eingabe",
+    toHiddenQueueColumns(["age", "pin"]).join(",") === "pin,age",
+  );
+  check(
+    "Doppelte fallen zusammen",
+    toHiddenQueueColumns(["status", "status"]).length === 1,
+  );
+
+  // Nummer und Titel stehen nicht zur Wahl: der Titel ist die absorbierende
+  // Spalte, ohne die das automatische Layout nichts zu verteilen hat.
+  check(
+    "Nummer und Titel sind keine schaltbaren Spalten",
+    !(QUEUE_COLUMNS as readonly string[]).includes("number") &&
+      !(QUEUE_COLUMNS as readonly string[]).includes("title"),
+  );
+  check(
+    "jede schaltbare Spalte hat eine Beschriftung",
+    QUEUE_COLUMNS.every((column) => QUEUE_COLUMN_LABELS[column].length > 0),
+  );
+
+  check(
+    "eine ausgeblendete Spalte ist unsichtbar, jede andere sichtbar",
+    !queueColumnVisible(["time"], "time") && queueColumnVisible(["time"], "status"),
   );
 }
 

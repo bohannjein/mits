@@ -48,8 +48,21 @@ export function OpenClosedPie({
 
   return (
     <div className="flex flex-wrap items-center gap-5 rounded-2xl border border-border bg-card px-5 py-4 shadow-elev-1">
+      {/*
+        Der Ring wächst mit der Spalte, statt bei fester Größe umzubrechen.
+
+        Vorher `size-28` — 112 px, `shrink-0`, in einer `flex-wrap`-Zeile: sobald
+        die Sidebar schmaler wurde als Ring plus Legende, rutschte die Legende
+        unter den Ring und die Karte wurde doppelt so hoch. Jetzt eine Clamp-Größe:
+        auf einer engen Spalte schrumpft der Ring und die Legende bleibt daneben,
+        auf einer breiten nutzt er den Platz.
+
+        `aspect-square` statt einer zweiten Clamp für die Höhe — sonst wären es
+        zwei Werte, die auseinanderlaufen können, und ein Ring in einem Rechteck
+        ist eine Ellipse.
+      */}
       <div
-        className="relative size-28 shrink-0"
+        className="relative aspect-square w-[clamp(5rem,9vw,8rem)] shrink-0"
         role="img"
         aria-label={
           total === 0

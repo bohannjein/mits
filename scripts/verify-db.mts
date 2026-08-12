@@ -1629,6 +1629,47 @@ try {
     });
   }
 
+  console.log("queue-spalten");
+  {
+    const views = await import("../src/lib/agent-views");
+
+    check("ohne Zeile sind alle Spalten an", () => {
+      const hidden = views.getHiddenQueueColumns(agentId);
+      if (hidden.length !== 0) throw new Error(hidden.join(","));
+      return "alle";
+    });
+
+    check("speichern und zuruecklesen", () => {
+      views.saveHiddenQueueColumns(agentId, ["time", "location"]);
+      const hidden = views.getHiddenQueueColumns(agentId);
+      // In der Reihenfolge von QUEUE_COLUMNS, nicht in der der Eingabe.
+      if (hidden.join(",") !== "location,time") throw new Error(hidden.join(","));
+      return hidden.join(",");
+    });
+
+    // Je Konto, wie die Startansicht: die Wahl des einen darf die des anderen
+    // nicht anfassen.
+    check("die Wahl gehoert dem Konto", () => {
+      const other = views.getHiddenQueueColumns(reporterId);
+      if (other.length !== 0) throw new Error(other.join(","));
+      return "unberuehrt";
+    });
+
+    check("ein unbekannter Schluessel landet nicht in der Zeile", () => {
+      const saved = views.saveHiddenQueueColumns(agentId, [
+        "status",
+        "sternzeichen",
+      ] as never);
+      if (saved.join(",") !== "status") throw new Error(saved.join(","));
+      return saved.join(",");
+    });
+
+    check("zuruecksetzen", () => {
+      views.saveHiddenQueueColumns(agentId, []);
+      return views.getHiddenQueueColumns(agentId).length;
+    });
+  }
+
   console.log("auth log");
   const authLog = await import("../src/lib/auth-log");
   check("record and read back", () => {

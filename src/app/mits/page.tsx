@@ -14,6 +14,7 @@ import { StatsTiles } from "@/components/dashboard/stats-tiles";
 import { AppHeader } from "@/components/layout/app-header";
 import { QueueLive } from "@/components/tickets/queue-live";
 import { QueueShortcuts } from "@/components/tickets/queue-shortcuts";
+import { QueueColumnPicker } from "@/components/tickets/queue-columns";
 import { QueueFilterBar } from "@/components/tickets/queue-filter-bar";
 import { QueueTabs } from "@/components/tickets/queue-tabs";
 import type { TicketFilterValues } from "@/components/tickets/ticket-filters";
@@ -24,6 +25,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   AGENT_VIEWS,
   filterFor,
+  getHiddenQueueColumns,
   getSavedAgentView,
   isAgentScope,
   isAgentView,
@@ -60,6 +62,7 @@ import {
   todayCounts,
 } from "@/lib/tickets";
 import {
+  QUEUE_COLUMNS,
   TICKET_STATUS_LABELS,
   formatTicketNumber,
   type TicketStatus,
@@ -214,6 +217,23 @@ export default async function AgentQueuePage({
     reminderRows.length > 0;
 
   /*
+   * Die Spaltenwahl dieses Agenten, plus das, was die Instanz überhaupt anbietet.
+   *
+   * Zwei Listen, weil es zwei Fragen sind: `available` ist das Angebot — „Zeit"
+   * nur mit `feature_time_tracking`, „Anheften" nur mit Pins, „Standort" nur wenn
+   * es Standorte gibt —, `hiddenColumns` die Wahl daraus. Der Picker bekommt
+   * beide; die Tabelle bekommt nur die Wahl und prüft das Angebot über ihre
+   * bestehenden Props ein zweites Mal. Eine Spalte muss durch beide Tore.
+   */
+  const hiddenColumns = getHiddenQueueColumns(user.id);
+  const availableColumns = QUEUE_COLUMNS.filter((column) => {
+    if (column === "time") return flags.feature_time_tracking;
+    if (column === "pin") return pinning;
+    if (column === "location") return locations.length > 0;
+    return true;
+  });
+
+  /*
    * Awaited, unlike the counts above: the banner belongs at the top of the page
    * and streaming it in afterwards would push the queue down under the agent's
    * cursor. The grouping itself is synchronous arithmetic — the await is only
@@ -225,7 +245,14 @@ export default async function AgentQueuePage({
     <>
       <AppHeader />
       <main className="flex flex-1 flex-col items-center px-6 py-10">
-        <div className="w-full max-w-7xl">
+        {/*
+          `96rem` und weiter zentriert, nicht randlos: der Spaltensatz gehört
+          jetzt dem Agenten, und wer Standort, Melder, Bearbeiter und Zeit
+          gleichzeitig anschaltet, braucht die Breite. Derselbe Deckel wie im
+          `AppHeader` — die Kopfleiste muss die breiteste Hülle sein, sonst sitzt
+          das Logo eingerückt gegenüber der Überschrift darunter.
+        */}
+        <div className="w-full max-w-[96rem]">
           {/* Renders nothing. Refreshes the list on a realtime signal, and
               falls back to an ETag check that answers 304 when nothing moved. */}
           <QueueLive />
@@ -261,13 +288,25 @@ export default async function AgentQueuePage({
             The sidebar column exists only when something goes in it. Declaring
             `1fr 20rem` unconditionally reserved 320 px of nothing on an instance
             with both sidebar modules switched off, and took that width straight
-            out of the ticket table — the one element on the page that has to fit
-            without scrolling sideways.
+            out of the ticket table.
+
+            **Die Spalte wächst mit, statt fest zu stehen.** `clamp(16rem, 20vw,
+            24rem)`: auf einem Laptop schrumpft sie und gibt der Tabelle den Platz,
+            auf einem breiten Schirm nutzt sie ihn. Der Ring im Kennzahlen-Modul
+            skaliert mit — er stand vorher auf festen 112 px und brach stattdessen
+            um.
+
+            **`minmax(0, 1fr)` und nicht `1fr`.** Ein `1fr`-Track hat implizit
+            `min-width: auto`, wächst also nie unter seinen Inhalt. Mit einer
+            Tabelle darin, die viele Spalten tragen kann, gewinnt sie den Streit um
+            die Breite und drückt die Sidebar aus dem Raster — sichtbar als eine
+            Spalte, die rechts aus dem Bild läuft. `minmax(0, …)` erlaubt dem Track
+            zu schrumpfen; die Tabelle scrollt dann in ihrem eigenen Container.
           */}
           <div
             className={
               showAside
-                ? "grid gap-8 lg:grid-cols-[1fr_20rem] lg:items-start"
+                ? "grid gap-8 lg:grid-cols-[minmax(0,1fr)_clamp(16rem,20vw,24rem)] lg:items-start"
                 : "grid gap-8"
             }
           >
@@ -300,29 +339,41 @@ export default async function AgentQueuePage({
                 view={view}
                 counts={counts}
                 actions={
-                  /* Zweite Achse neben dem Modulschalter: die CMDB kann für die
-                     Instanz an und für diese Rolle ausgeblendet sein. */
                   /*
-                   * The CMDB only. "Statistiken" used to sit here as its equal and
-                   * has moved next to the pie chart in the sidebar — the CMDB is a
-                   * place agents work, the statistics are a place they look
-                   * occasionally, and two identical pills said otherwise.
+                   * Zwei Knöpfe: die Spaltenwahl und der Weg in die CMDB.
                    *
-                   * Hidden with the module, not merely disabled: a link into a 404
-                   * is a worse answer than no link.
+                   * Die Spaltenwahl betrifft die Tabelle direkt darunter und
+                   * gehört deshalb in diese Zeile — sie ist keine Navigation und
+                   * kein Filter, sondern die Form der Liste. Beide `h-11` wie der
+                   * Zuständigkeits-Umschalter links: zwei Bedienelemente derselben
+                   * Ordnung in einer Zeile sind exakt gleich hoch, sonst misst sich
+                   * eines aus seinem Innenabstand auf zwei Pixel mehr.
+                   *
+                   * Die CMDB ist mit dem Modul versteckt, nicht bloß abgeschaltet:
+                   * ein Link in einen 404 ist die schlechtere Antwort als kein
+                   * Link. „Statistiken" saß hier einmal als ihr Gleicher und ist an
+                   * den Ring in der Sidebar gezogen — die CMDB ist ein Ort, an dem
+                   * Agenten arbeiten, die Statistik einer, an den sie gelegentlich
+                   * schauen.
                    */
-                  flags.feature_cmdb && areas.mits_cmdb ? (
-                    <Button
-                      asChild
-                      size="sm"
-                      className="h-11 rounded-full border border-border bg-card px-4 text-foreground hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <Link href="/mits/cmdb">
-                        <ServerIcon strokeWidth={1.5} />
-                        CMDB
-                      </Link>
-                    </Button>
-                  ) : undefined
+                  <>
+                    <QueueColumnPicker
+                      available={availableColumns}
+                      hidden={hiddenColumns}
+                    />
+                    {flags.feature_cmdb && areas.mits_cmdb && (
+                      <Button
+                        asChild
+                        size="sm"
+                        className="h-11 rounded-full border border-border bg-card px-4 text-foreground hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <Link href="/mits/cmdb">
+                          <ServerIcon strokeWidth={1.5} />
+                          CMDB
+                        </Link>
+                      </Button>
+                    )}
+                  </>
                 }
               />
 
@@ -387,6 +438,7 @@ export default async function AgentQueuePage({
                     // Anwender" sagt hier, dass das Ticket nicht die eigene
                     // Baustelle ist.
                     customerLabels={false}
+                    hiddenColumns={hiddenColumns}
                   />
                 </section>
               )}
@@ -418,6 +470,7 @@ export default async function AgentQueuePage({
                     detailBase="/mits/tickets"
                     sort={sort}
                     customerLabels={false}
+                    hiddenColumns={hiddenColumns}
                     sortBasePath="/mits"
                     // Passed whole, so a sort click keeps the tab, the scope and any
                     // deep filter that is already narrowing the list.

@@ -2,6 +2,7 @@ import "server-only";
 
 import { db } from "@/lib/db/sqlite";
 import { OPEN_TICKET_STATUSES, type TicketFilter } from "@/lib/tickets";
+import { toHiddenQueueColumns, type QueueColumn } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    The staff queue: a scope and a view.
@@ -153,6 +154,50 @@ export function saveAgentView(userId: string, saved: SavedView): void {
     `INSERT INTO mits_setting (key, value) VALUES (?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
   ).run(key(userId), JSON.stringify(saved));
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Ausgeblendete Spalten, ebenfalls je Agent.
+
+   Eigener Setting-Key und nicht ein Feld in `agent_view`: die Startansicht wird
+   bei jedem Reiterwechsel geschrieben, die Spaltenwahl selten und aus einer
+   anderen Maske. Zwei Schreiber auf einer Zeile überschreiben sich gegenseitig
+   den Abschnitt des anderen — dieselbe Begründung wie bei den fünf
+   `portal_*`-Keys.
+
+   Gespeichert wird das **Ausgeblendete**; die Begründung steht an
+   `QUEUE_COLUMNS` in `types/mits.ts`.
+   ────────────────────────────────────────────────────────────────────────── */
+
+const columnsKey = (userId: string) => `queue_columns:${userId}`;
+
+export function getHiddenQueueColumns(userId: string): QueueColumn[] {
+  const row = db
+    .prepare("SELECT value FROM mits_setting WHERE key = ?")
+    .get(columnsKey(userId)) as { value: string } | undefined;
+
+  // Keine Zeile heißt „alle Spalten" — die leere Menge ist hier der
+  // Auslieferungszustand und nicht ein Fehlerfall.
+  if (!row) return [];
+
+  return toHiddenQueueColumns(safeJsonParse(row.value));
+}
+
+export function saveHiddenQueueColumns(
+  userId: string,
+  hidden: QueueColumn[],
+): QueueColumn[] {
+  // Durch die Transform, nicht rohes `hidden`: die Action baut die Liste aus
+  // Formularfeldern, und ein Wert, den dieser Build nicht kennt, hat in der Zeile
+  // nichts zu suchen.
+  const clean = toHiddenQueueColumns(hidden);
+
+  db.prepare(
+    `INSERT INTO mits_setting (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(columnsKey(userId), JSON.stringify(clean));
+
+  return clean;
 }
 
 function safeJsonParse(value: string): unknown {

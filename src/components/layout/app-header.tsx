@@ -85,14 +85,21 @@ export async function AppHeader() {
         <NotificationWatcher settings={getNotificationSettings()} />
       )}
       {/*
-        `max-w-7xl`, matching the widest page shell below it. At `max-w-6xl` the
-        header was 128 px narrower than the queue, the analytics panel and both
-        ticket views, so on a wide screen the logo sat visibly inset from the
-        heading underneath it and the user menu from the sidebar. Narrower pages
-        centre inside it, which is what a chrome bar is supposed to do — the defect
-        was only ever the header being the *narrower* of the two.
+        So breit wie die breiteste Seite darunter — das ist die Regel, und sie hat
+        eine Richtung.
+
+        Bei `max-w-6xl` war der Header 128 px schmaler als Queue, Statistiken und
+        beide Ticketansichten; auf einem breiten Schirm saß das Logo sichtbar
+        eingerückt gegenüber der Überschrift darunter. Schmalere Seiten zentrieren
+        sich dagegen darin, was eine Kopfleiste tun soll — der Defekt war
+        ausschließlich der Header als der *schmalere* von beiden.
+
+        `96rem` seit die Queue ihre Spalten frei stellt: dort passen mehr davon
+        neben die Sidebar. Die übrigen Seitenhüllen bleiben bei `7xl`, und das ist
+        Absicht — eine Chatspalte auf 1200 px wäre eine Zeilenlänge, die niemand
+        liest. Sie zentrieren sich hierin, und genau das ist erlaubt.
       */}
-      <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-6 py-3">
+      <div className="mx-auto flex w-full max-w-[96rem] flex-wrap items-center justify-between gap-3 px-6 py-3">
         {/* Straight to the signed-in user's own area instead of through the `/`
             dispatcher: a reporter clicking the logo lands in their portal without
             a redirect hop that briefly resolves a staff route. */}

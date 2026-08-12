@@ -329,6 +329,10 @@ mit `category_changed`, was es getan hat.
 keine Benachrichtigungstabelle; `dueReminders` liest das Fenster
 `since < due_at <= now`. `/api/cron/reminders` liefert nichts, es stößt nur an.
 
+**Und sie sind Agenten vorbehalten.** Nicht nur ausgeblendet: die drei Actions
+verlangen `requireRole("agent")` und der Kanal `reminder` ist `staffOnly`. Die
+Melderseite trägt weder Widget noch Popover.
+
 ## Nach der CMDB: Betriebsausbau
 
 Ein Durchgang, neun Themen. Was dabei nicht offensichtlich ist:
