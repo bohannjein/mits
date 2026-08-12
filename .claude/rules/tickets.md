@@ -551,6 +551,50 @@ alles ab dem fünfhundertsten Ticket, ohne es zu sagen. Stattdessen eine
 **absorbierende Spalte**, gekürzter Titel und `hidden … table-cell` für die
 Kontextspalten auf schmalen Schirmen — und `TicketPager` darunter.
 
+### Zwei Marker in der Zeile, und sie beantworten zwei Fragen
+
+| Marker | Frage | Geltung |
+|---|---|---|
+| Punkt (`bg-primary`) | habe ich das gesehen? | **je Leser** |
+| Antwort-Pfeil (`text-warning`) | wartet ein Kunde auf uns? | **geteilt** |
+
+Der Punkt gab es schon: `unread` ist `activity > seen_at`, und die erste
+Verzweigung im `CASE` ist `readAt IS NULL → 1` — ein ganz neues Ticket ist damit
+für jeden ungelesen. Der Pfeil ist neu, und er füllt die Lücke, die der Punkt
+lässt: der Punkt ist persönlich, zwei Agenten sehen zwei verschiedene Queues, und
+keiner von beiden sah, ob der Kunde am Zug war.
+
+**`awaiting_reply` ist schärfer als „der Melder ist am Zug".** Das sagt der Status
+seit dem Ballbesitz-Umbau schon (`open` = Team am Zug), und ein Marker dafür wäre
+ein zweites Signal für eine Frage. Die Regel ist deshalb: **es gibt eine
+Melder-Nachricht, die neuer ist als die jüngste öffentliche Team-Antwort — und
+eine solche Antwort existiert.** Das ist der Fall, den der Status platt macht: ein
+Ticket, das von `waiting_user` auf `open` zurückgesprungen ist, sieht aus wie jedes
+andere offene.
+
+- **Interne Notizen zählen nicht als Antwort.** „Das Team hat geantwortet" heißt,
+  der Melder hat etwas bekommen. Ohne das `visibility = 'public'` leuchtete der
+  Marker auf einem Ticket, auf das nie jemand geantwortet hat.
+- **`author_is_agent`, nicht die Rolle des Kontos.** Der Mail-Ingest erzwingt dort
+  `0`, eine gemailte Kundenantwort zählt also mit — der häufigste Fall überhaupt.
+- **Der Ausdruck ist parameterlos**, weil der Marker geteilt ist. Er steht trotzdem
+  hinter `pinned`, damit die Bindungswarnung an dieser Liste weiter für alles gilt.
+- **Andere Form, nicht zweite Farbe.** Zwei Punkte in verschiedenen Tönen wären
+  eine Legende, die niemand hat, und Farbe ist das eine Signal, das ein
+  rot-grün-blinder Leser verliert. Dazu ein `sr-only`-Satz — ein Symbol allein ist
+  auch eine Legende.
+- **`showAwaitingReply` ist aus per Default.** Wie jeder Schalter in
+  `TicketTable`: der Auslieferungszustand ist die Melderansicht. Ein Melder weiß,
+  dass er geschrieben und keine Antwort hat.
+- **`queueFingerprint` musste nicht angefasst werden** — es trägt für Agenten schon
+  `MAX(created_at) FROM mits_ticket_comment`, der Marker erscheint also live.
+
+Der Test in `test:db` läuft die sechs Schritte durch und **datiert die bestehenden
+Beiträge vor jedem neuen um eine Minute zurück**: sechs `addComment` hintereinander
+landen leicht in derselben Millisekunde, und die Regel vergleicht mit `>`. Ohne das
+wäre der Test in jedem zweiten Lauf rot, aus einem Grund, der mit der Regel nichts
+zu tun hat.
+
 ### Die Spalten gehören dem Agenten
 
 `QUEUE_COLUMNS` in `types/mits.ts`, gespeichert unter `queue_columns:<userId>`

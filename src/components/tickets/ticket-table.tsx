@@ -4,6 +4,7 @@ import {
   ArrowUpDownIcon,
   ArrowUpIcon,
   ClockIcon,
+  ReplyIcon,
 } from "lucide-react";
 
 import { PinButton } from "@/components/tickets/pin-button";
@@ -139,6 +140,14 @@ export function TicketTable({
    * Leer für die Melderliste, die ihren festen schmalen Satz behält.
    */
   hiddenColumns = [],
+  /**
+   * Zeigt den geteilten Marker „der Melder hat nachgelegt".
+   *
+   * Aus wie jeder andere Schalter hier: der Auslieferungszustand ist die
+   * Melderansicht, die Queue schaltet ihn ein. Ein Melder braucht ihn nicht —
+   * dass er geschrieben und noch keine Antwort hat, weiß er.
+   */
+  showAwaitingReply = false,
 }: {
   tickets: MITSTicket[];
   showOwner?: boolean;
@@ -152,6 +161,7 @@ export function TicketTable({
   accent?: boolean;
   customerLabels?: boolean;
   hiddenColumns?: QueueColumn[];
+  showAwaitingReply?: boolean;
 }) {
   const timezone = getSystemTimezone();
   // One clock for every row, read once. Calling Date.now() per row would let a
@@ -355,6 +365,37 @@ export function TicketTable({
                       )}
                     />
                     {formatTicketNumber(ticket.ticket_number)}
+                    {/*
+                      Zweiter Marker, und er hat mit dem Punkt daneben nichts zu
+                      tun: der Punkt ist **persönlich** („habe ich das gesehen"),
+                      dieser ist **geteilt** („wartet ein Kunde auf uns"). Zwei
+                      Agenten sehen den Punkt verschieden und den Pfeil gleich.
+
+                      Eine andere **Form**, nicht eine zweite Farbe. Zwei Punkte in
+                      verschiedenen Tönen wären eine Legende, die niemand hat, und
+                      Farbe ist das eine Signal, das ein rot-grün-blinder Leser
+                      verliert — dieselbe Begründung, aus der der Titel bei
+                      Ungelesenem *auch* fetter wird und nicht nur farbig.
+
+                      `bg-warning` als Ton, weil `open-tickets-panel` ihn schon für
+                      „der Melder ist am Zug" benutzt.
+
+                      Reitet auf derselben Zelle wie der Punkt, aus demselben Grund:
+                      eine feste Spalte, die nicht mit der Titellänge wandert.
+                    */}
+                    {showAwaitingReply && ticket.awaiting_reply && (
+                      <>
+                        <ReplyIcon
+                          className="size-3.5 shrink-0 text-warning"
+                          strokeWidth={2}
+                          aria-hidden
+                        />
+                        {/* Ein Symbol allein ist eine Legende. */}
+                        <span className="sr-only">
+                          Der Melder hat nachgeschrieben
+                        </span>
+                      </>
+                    )}
                   </Link>
                 </TableCell>
                 {/*

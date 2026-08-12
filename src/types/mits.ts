@@ -646,6 +646,20 @@ export const MITSTicketSchema = z.object({
    * never asked would be stating something it did not check.
    */
   pinned: z.boolean().default(false),
+  /**
+   * Der Melder hat nachgelegt: es gibt eine Melder-Nachricht, die neuer ist als
+   * die jüngste öffentliche Team-Antwort — und eine solche Antwort existiert.
+   *
+   * **Geteilt, nicht pro Leser.** Das ist der Unterschied zu `unread` und
+   * `pinned` darüber: die beiden antworten je Konto, dieses Feld beschreibt das
+   * Ticket. Zwei Agenten sehen hier denselben Wert, und genau das ist der Zweck —
+   * „wartet ein Kunde auf uns" ist keine persönliche Frage.
+   *
+   * Schärfer als „der Melder ist am Zug", weil das der Status schon sagt; die
+   * Begründung steht am Ausdruck in `searchTickets`. Wie die zwei darüber nur
+   * dort berechnet, überall sonst ist dieser Default die ehrliche Antwort.
+   */
+  awaiting_reply: z.boolean().default(false),
   /** Minutes of work logged against this ticket. Summed on read, never stored. */
   logged_minutes: z.number().int().nonnegative().default(0),
   /**
@@ -715,6 +729,7 @@ export const MITSTicketDraftSchema = MITSTicketSchema.omit({
   last_activity_at: true,
   unread: true,
   pinned: true,
+  awaiting_reply: true,
   logged_minutes: true,
   // Written by the routing service after the ticket exists, and declared by an
   // agent respectively. Neither is a client's to state.

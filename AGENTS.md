@@ -352,6 +352,14 @@ SQLite nicht parametrisieren, ein ungeprüfter Schlüssel wäre konkatenierte SQ
 Nebeneffekt und Grund: `TicketTable` bleibt eine Server Component, also wird das
 relative Alter einmal beim Rendern berechnet statt nach der Hydration.
 
+**Zwei Marker in der Queue-Zeile, und einer davon ist geteilt.** Der Punkt ist
+`unread` und gilt **je Leser**; der Antwort-Pfeil ist `awaiting_reply` und gilt für
+**alle** — „wartet ein Kunde auf uns" ist keine persönliche Frage. Der Ausdruck
+dafür in `searchTickets` ist deshalb parameterlos, und das ist der ganze
+Unterschied. Die Regel ist schärfer als „der Melder ist am Zug", weil das der
+Status schon sagt: es muss eine Melder-Nachricht **nach** einer öffentlichen
+Team-Antwort geben. Details in `.claude/rules/tickets.md`.
+
 **Ungelesen wird abgeleitet, gelesen wird gespeichert.** `mits_ticket_read` hält je
 Paar einen Zeitstempel; „ungelesen“ ist der Vergleich mit der jüngsten Aktivität,
 die dieser Leser **nicht** verursacht hat. Ein gespeichertes Boolean müsste jeder

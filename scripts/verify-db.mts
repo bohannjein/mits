@@ -1629,6 +1629,116 @@ try {
     });
   }
 
+  console.log("melder hat nachgelegt");
+  {
+    /*
+     * Ein eigenes Ticket: das oben hat aus den Ballbesitz-Prüfungen eine gemischte
+     * Historie, und diese Regel ist eine Aussage über die *Reihenfolge* der
+     * Beiträge.
+     */
+    const waitId = tickets.createTicket(
+      mits.MITSTicketDraftSchema.parse({
+        source: "legacy",
+        form_schema_id: "quick-ticket",
+        payload: {
+          title: "Scanner zieht zwei Blatt",
+          description: "Der Einzug nimmt regelmaessig zwei Blaetter gleichzeitig.",
+        },
+      }),
+      reporter,
+    ).id;
+
+    /*
+     * Vor jedem neuen Beitrag werden die bestehenden um eine Minute
+     * zurueckdatiert.
+     *
+     * `created_at` ist eine ISO-Zeichenkette mit Millisekunden, und sechs Aufrufe
+     * hintereinander landen leicht in derselben. Die Regel vergleicht mit `>`, also
+     * waere ein Gleichstand ein Marker, der zufaellig aus ist — ein Test, der in
+     * jedem zweiten Lauf rot ist, und zwar aus einem Grund, der mit der Regel
+     * nichts zu tun hat. Das Zurueckdatieren macht die Reihenfolge eindeutig und
+     * laesst den echten Schreibpfad (`addComment`) unberuehrt.
+     */
+    const age = db.prepare(
+      `UPDATE mits_ticket_comment
+          SET created_at = datetime(created_at, '-1 minute')
+        WHERE ticket_id = ?`,
+    );
+
+    const awaiting = () => {
+      const row = tickets
+        .searchTickets({}, agent)
+        .find((entry) => entry.id === waitId);
+      if (!row) throw new Error("Ticket nicht in der Liste");
+      return row.awaiting_reply;
+    };
+
+    check("1. unberuehrt: kein Marker", () => {
+      if (awaiting()) throw new Error("Marker auf einem unberuehrten Ticket");
+      return false;
+    });
+
+    check("2. Melder schreibt, Team hat nie geantwortet: kein Marker", () => {
+      age.run(waitId);
+      comments.addComment(waitId, reporter, "Noch ein Detail.", "public");
+      if (awaiting()) throw new Error("Marker ohne Team-Antwort");
+      return false;
+    });
+
+    check("3. Team antwortet oeffentlich: kein Marker", () => {
+      age.run(waitId);
+      comments.addComment(waitId, agent, "Wir sehen uns das an.", "public");
+      if (awaiting()) throw new Error("Marker direkt nach der Antwort");
+      return false;
+    });
+
+    check("4. Melder legt nach: Marker", () => {
+      age.run(waitId);
+      comments.addComment(waitId, reporter, "Jetzt zieht er drei.", "public");
+      if (!awaiting()) throw new Error("kein Marker nach der Nachlieferung");
+      return true;
+    });
+
+    /*
+     * Die Zeile, die die Absicht festhaelt: `unread` unterscheidet sich zwischen
+     * zwei Lesern, dieser Marker darf es nicht. Ein gebundener Parameter an der
+     * falschen Stelle waere genau hier sichtbar.
+     */
+    check("der Marker ist fuer jeden Leser gleich", () => {
+      const forAdmin = tickets
+        .searchTickets({}, admin)
+        .find((entry) => entry.id === waitId);
+      if (!forAdmin?.awaiting_reply) throw new Error("nicht geteilt");
+      return "geteilt";
+    });
+
+    check("5. eine interne Notiz ist keine Antwort: Marker bleibt", () => {
+      age.run(waitId);
+      comments.addComment(waitId, agent, "Ersatzteil bestellt.", "internal");
+      if (!awaiting()) throw new Error("die Notiz hat den Marker geloescht");
+      return true;
+    });
+
+    check("6. Team antwortet oeffentlich: Marker weg", () => {
+      age.run(waitId);
+      comments.addComment(waitId, agent, "Neuer Einzug ist unterwegs.", "public");
+      if (awaiting()) throw new Error("Marker nach der Antwort noch da");
+      return false;
+    });
+
+    // Ein zurueckgezogener Beitrag zaehlt nicht mehr: `deleted_at IS NULL` steht in
+    // beiden Unterabfragen, und ohne das haette eine geloeschte Nachricht den
+    // Marker dauerhaft gesetzt.
+    check("ein zurueckgezogener Melder-Beitrag setzt den Marker nicht", () => {
+      age.run(waitId);
+      const late = comments.addComment(waitId, reporter, "Doch nicht.", "public");
+      if (!awaiting()) throw new Error("Vorbedingung: Marker sollte an sein");
+      comments.retractComment(late.id, reporter);
+      if (awaiting()) throw new Error("Marker haelt einen geloeschten Beitrag");
+      return "geprueft";
+    });
+  }
+
   console.log("queue-spalten");
   {
     const views = await import("../src/lib/agent-views");

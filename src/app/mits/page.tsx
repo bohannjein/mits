@@ -439,6 +439,9 @@ export default async function AgentQueuePage({
                     // Baustelle ist.
                     customerLabels={false}
                     hiddenColumns={hiddenColumns}
+                    // Der geteilte Marker: „ein Kunde wartet auf uns" ist eine
+                    // Frage des Desks, nicht des Melders.
+                    showAwaitingReply
                   />
                 </section>
               )}
@@ -471,6 +474,9 @@ export default async function AgentQueuePage({
                     sort={sort}
                     customerLabels={false}
                     hiddenColumns={hiddenColumns}
+                    // Der geteilte Marker: „ein Kunde wartet auf uns" ist eine
+                    // Frage des Desks, nicht des Melders.
+                    showAwaitingReply
                     sortBasePath="/mits"
                     // Passed whole, so a sort click keeps the tab, the scope and any
                     // deep filter that is already narrowing the list.
