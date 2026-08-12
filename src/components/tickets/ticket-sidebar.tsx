@@ -67,7 +67,7 @@ import {
   TICKET_PRIORITY_LABELS,
   TICKET_STATUS_LABELS,
   TicketPriorityValues,
-  TicketStatus,
+  TicketStatusValues,
   type MITSLocation,
   type MITSTicket,
   type AuditEntry,
@@ -316,55 +316,39 @@ export function TicketSidebar({
       content: (
         <div className="grid gap-4">
           {/*
-            Die zwei Entscheidungen, die nach dem Ballbesitz-Umbau noch von einem
-            Menschen kommen — ganz oben und als Knöpfe.
+            Ein Knopf, und das ist die einzige Entscheidung, die hier noch von
+            einem Menschen kommt.
 
-            Vorher standen hier vier Auswahllisten in einer Reihe, und drei davon
-            entscheidet inzwischen `nextStatusAfterReply`: der Status folgt der
-            Antwort, die Zuweisung ebenfalls. Was übrig blieb, ist „die Arbeit ist
-            getan" und „das Gespräch ist zu Ende", und das waren zwei Klicks in
-            einem Dropdown für die zwei häufigsten Handlungen der Seite.
+            Vorher standen hier vier Auswahllisten, dann zwei Knöpfe und zwei
+            Listen. Beides war zu viel: der Status folgt seit dem
+            Ballbesitz-Umbau der Antwort, die Zuweisung ebenfalls — und „Gelöst"
+            neben „Schließen" waren zwei gleich große Knöpfe für zwei Statuswerte,
+            die sich nur darin unterschieden, ob der eine noch in der offenen
+            Liste stand. Der Wert ist weg, der Knopf mit ihm.
 
-            `Gelöst` trägt das Kürzel, `Schließen` nicht: gelöst bleibt für den
-            Melder wiederöffenbar, geschlossen ist das Archiv, und eine
-            versehentlich gedrückte Taste darf das Erste tun und nicht das Zweite.
+            Das Dropdown darunter führt weiter alle drei Werte — „Wartet auf
+            Anwender" von Hand zu setzen ist der Fall, für den es da ist.
           */}
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Button
-              type="button"
-              onClick={() => {
-                setStatus("resolved");
-                dispatch(statusAction, {
-                  ticketId: ticket.id,
-                  status: "resolved",
-                });
-              }}
-              disabled={busy || status === "resolved" || status === "closed"}
-              className="h-10 rounded-full bg-inverse-surface px-4 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
-            >
-              {changingStatus ? (
-                <Loader2Icon className="animate-spin" />
-              ) : (
-                <CheckCircle2Icon strokeWidth={1.5} />
-              )}
-              Gelöst
-              <Kbd keys={["E"]} className="opacity-60" />
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                setStatus("closed");
-                dispatch(statusAction, {
-                  ticketId: ticket.id,
-                  status: "closed",
-                });
-              }}
-              disabled={busy || status === "closed"}
-              className="h-10 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
-            >
-              Schließen
-            </Button>
-          </div>
+          <Button
+            type="button"
+            onClick={() => {
+              setStatus("closed");
+              dispatch(statusAction, {
+                ticketId: ticket.id,
+                status: "closed",
+              });
+            }}
+            disabled={busy || status === "closed"}
+            className="h-10 w-full rounded-full bg-inverse-surface px-4 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+          >
+            {changingStatus ? (
+              <Loader2Icon className="animate-spin" />
+            ) : (
+              <CheckCircle2Icon strokeWidth={1.5} />
+            )}
+            Ticket abschließen
+            <Kbd keys={["E"]} className="opacity-60" />
+          </Button>
 
           <div className="grid gap-1.5">
             <Label htmlFor="sb-status" className="text-xs text-muted-foreground">
@@ -383,7 +367,7 @@ export function TicketSidebar({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {TicketStatus.options.map((option) => (
+                {TicketStatusValues.map((option) => (
                   <SelectItem key={option} value={option}>
                     {TICKET_STATUS_LABELS[option]}
                   </SelectItem>

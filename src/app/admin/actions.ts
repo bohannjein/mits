@@ -263,7 +263,6 @@ export async function saveWorkflowSettingsAction(
   const settings = setWorkflowSettings({
     claimOnReply: formData.get("claimOnReply") === "on",
     statusFollowsReply: formData.get("statusFollowsReply") === "on",
-    resolvedCloseDays: toAutoCloseDays(formData.get("resolvedCloseDays")),
     waitingReminderDays: toAutoCloseDays(formData.get("waitingReminderDays")),
     waitingCloseDays: toAutoCloseDays(formData.get("waitingCloseDays")),
     waitingReminderSubject: String(
@@ -284,9 +283,6 @@ export async function saveWorkflowSettingsAction(
    * in einer Woche bemerkt.
    */
   const parts: string[] = [];
-  if (settings.resolvedCloseDays > 0) {
-    parts.push(`Gelöst schließt nach ${settings.resolvedCloseDays} Tagen`);
-  }
   if (settings.waitingReminderDays > 0) {
     parts.push(`Erinnerung nach ${settings.waitingReminderDays} Tagen`);
   }

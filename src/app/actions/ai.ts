@@ -155,8 +155,21 @@ export async function resolveChildTicketsAction(
 
   for (const child of children) {
     try {
-      addComment(child.id, auth.user, body, "public", "text");
-      setTicketStatus(child.id, "resolved", auth.user);
+      /*
+       * Die Sammelantwort geht raus, danach ist das Kind-Ticket zu.
+       *
+       * `closed` und nicht der frühere Zwischenzustand `resolved`: den gibt es
+       * nicht mehr, weil er dasselbe war. Was er hier abdeckte — der Melder
+       * widerspricht, weil es bei *ihm* noch klemmt —, deckt weiter
+       * `nextStatusAfterReply` ab: eine Melderantwort auf ein abgeschlossenes
+       * Ticket öffnet es wieder, und dann steht es einzeln in der Queue.
+       *
+       * `skipReplyWorkflow` am Beitrag, sonst schaltete die Ballbesitz-Regel das
+       * Ticket auf „Wartet auf Anwender" und die Zeile darunter gleich wieder zu —
+       * zwei Historienzeilen für einen Vorgang.
+       */
+      addComment(child.id, auth.user, body, "public", "text", undefined, true);
+      setTicketStatus(child.id, "closed", auth.user);
       closed += 1;
       revalidatePath(`/customer/tickets/${child.id}`);
       revalidatePath(`/mits/tickets/${child.id}`);

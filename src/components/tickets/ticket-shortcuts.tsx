@@ -13,8 +13,8 @@ import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 /* ──────────────────────────────────────────────────────────────────────────
    The ticket page's keystrokes. Renders nothing.
 
-   `r` jump to the reply box · `e` mark resolved · `m` assign to me · `i` toggle
-   the internal note · `Esc` leave the field.
+   `r` jump to the reply box · `e` close the ticket · `m` assign to me · `i`
+   toggle the internal note · `Esc` leave the field.
 
    The two that touch the composer go through `ComposerHandleProvider`, which is
    a context and not props for one reason: this page is a Server Component and
@@ -33,13 +33,13 @@ export function TicketShortcuts({
   currentUserId,
   /** Already yours — then `m` does nothing rather than re-assigning. */
   mine,
-  /** Schon gelöst — dann tut `e` nichts, statt denselben Status zu setzen. */
-  resolved = false,
+  /** Schon zu — dann tut `e` nichts, statt denselben Status zu setzen. */
+  closed = false,
 }: {
   ticketId: string;
   currentUserId: string;
   mine: boolean;
-  resolved?: boolean;
+  closed?: boolean;
 }) {
   const router = useRouter();
   const busy = useRef(false);
@@ -53,22 +53,18 @@ export function TicketShortcuts({
      * einzige, der nach `m` dazugekommen ist.
      *
      * Vertretbar aus denselben drei Gründen: `applyStatusChange` lehnt eine
-     * Nicht-Änderung ab, „Gelöst" ist mit einem Klick zurückzunehmen, und
+     * Nicht-Änderung ab, ein abgeschlossenes Ticket ist mit einem Klick wieder
+     * offen — und eine Melderantwort öffnet es sogar von selbst —, und
      * `swallowsKeys` garantiert, dass die Taste kein Buchstabe in einer Antwort
      * war.
-     *
-     * **`Gelöst` und nicht `Geschlossen`.** Der Unterschied ist der Punkt: gelöst
-     * ist der normale Abschluss der Arbeit und bleibt für den Melder
-     * wiederöffenbar, geschlossen ist das Archiv. Eine versehentlich gedrückte
-     * Taste darf das Erste tun und nicht das Zweite.
      */
     e: () => {
-      if (resolved || busy.current) return;
+      if (closed || busy.current) return;
       busy.current = true;
 
       const data = new FormData();
       data.set("ticketId", ticketId);
-      data.set("status", "resolved");
+      data.set("status", "closed");
       startTransition(async () => {
         await setTicketStatusAction(null, data);
         router.refresh();

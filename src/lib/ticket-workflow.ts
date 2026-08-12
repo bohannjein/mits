@@ -92,14 +92,17 @@ export interface ReplyWorkflowResult {
  * Melderantwort ist die Antwortmail auf die Schließungsnachricht, und die
  * berührt nie eine Action.
  *
- * Zwei Dinge, in dieser Reihenfolge, weil das zweite vom ersten abhängt:
+ * Zwei Dinge, in dieser Reihenfolge:
  *
  * 1. **Beanspruchen**, wenn ein Agent öffentlich antwortet und niemand das
  *    Ticket hält. „Niemand" ist die ganze Bedingung — wer es schon hat, behält
  *    es, auch wenn ein Kollege dazwischenschreibt.
- * 2. **Umschalten** nach `nextStatusAfterReply`, mit der Zuweisung von eben.
- *    Ohne die Reihenfolge liefe eine gerade beanspruchte Antwort auf `open`
- *    statt auf `in_progress`.
+ * 2. **Umschalten** nach `nextStatusAfterReply`.
+ *
+ * Die Reihenfolge entscheidet nichts mehr am Ergebnis, seit „in Bearbeitung"
+ * abgeleitet wird und nicht mehr als eigener Statuswert existiert. Sie bleibt,
+ * weil sie die Zuweisung an die Regel weiterreicht — der Parameter dort ist
+ * ungenutzt und ausdrücklich als solcher markiert.
  *
  * Interne Notizen kommen hier nie an; das prüft der Aufrufer, weil die
  * Sichtbarkeit schon darüber entscheidet, ob überhaupt jemand am Zug ist.

@@ -376,11 +376,10 @@ export function addComment(
  * `reopenIfClosed` stand hier und ist in `nextStatusAfterReply`
  * (`types/mits.ts`) aufgegangen.
  *
- * Es holte `closed` und `resolved` auf `open` zurück, wenn ein Melder schrieb —
+ * Es holte ein abgeschlossenes Ticket auf `open` zurück, wenn ein Melder schrieb —
  * und ließ `waiting_user` unberührt. Genau das war der teuerste Defekt des alten
  * Modells: der Tab „Wartend" füllte sich mit Tickets, die längst beantwortet
- * waren. Die Nachfolgeregel deckt beide Fälle ab und hat eine Zeile mehr, in der
- * die Zuweisung über `open` und `in_progress` entscheidet.
+ * waren. Die Nachfolgeregel deckt beide Fälle ab.
  */
 
 /**

@@ -403,7 +403,7 @@ export default async function AgentTicketPage({
             ticketId={ticket.id}
             currentUserId={user.id}
             mine={ticket.assigned_to === user.id}
-            resolved={ticket.status === "resolved" || ticket.status === "closed"}
+            closed={ticket.status === "closed"}
           />
           <TicketFrame
             sidebarLabel="Details"
@@ -655,11 +655,10 @@ export default async function AgentTicketPage({
                   ticket.major_incident
                     ? {
                         children: parkedChildren(id),
-                        // `resolved` and `closed` both count: the outage is over
-                        // either way, and the children are still parked.
-                        resolved:
-                          ticket.status === "resolved" ||
-                          ticket.status === "closed",
+                        // Die Störung ist vorbei, sobald das Elternticket zu ist —
+                        // die Kinder hängen weiter daran, bis die Sammelantwort
+                        // raus ist.
+                        resolved: ticket.status === "closed",
                       }
                     : null
                 }

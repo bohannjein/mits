@@ -90,7 +90,8 @@ try {
   const cmdbExport = await import("../src/lib/cmdb-export");
   const cmdbImport = await import("../src/lib/cmdb-import");
   const csv = await import("../src/lib/csv");
-  const db = (await import("../src/lib/db/sqlite")).db;
+  const sqlite = await import("../src/lib/db/sqlite");
+  const db = sqlite.db;
 
   /*
    * Better Auth owns the `user` table and creates it through its own migrator,
@@ -815,13 +816,17 @@ try {
   });
 
   // Fall 3: die Einbahnstraße, die es vorher war. Ein Melder, der auf „Wartet auf
-  // Anwender" antwortet, gibt den Ball zurück — mit Bearbeiter heißt das
-  // `in_progress`.
+  // Anwender" antwortet, gibt den Ball zurück.
   check("a reporter reply on waiting_user hands the ball back", () => {
     comments.addComment(ticketId, reporter, "Hier ist ein Foto.", "public");
     const ticket = tickets.getTicketFor(ticketId, agent);
-    if (ticket?.status !== "in_progress") {
+    if (ticket?.status !== "open") {
       throw new Error(`Status ist ${ticket?.status}`);
+    }
+    // Die Zuweisung bleibt — „in Bearbeitung" ist die *Anzeige* daraus, kein
+    // eigener Statuswert mehr.
+    if (ticket.assigned_to !== agentId) {
+      throw new Error(`Bearbeiter ist ${ticket.assigned_to}`);
     }
     return ticket.status;
   });
@@ -872,22 +877,19 @@ try {
   });
 
   check("assign", () => tickets.assignTicket(ticketId, agentId, agent));
-  check("status", () => tickets.setTicketStatus(ticketId, "in_progress", agent));
+  check("status", () => tickets.setTicketStatus(ticketId, "waiting_user", agent));
   check("priority", () => tickets.setTicketPriority(ticketId, "high", agent));
   check("close", () => tickets.setTicketStatus(ticketId, "closed", agent));
-  /*
-   * Ein geschlossenes Ticket holt der Melder zurück — und zwar auf
-   * `in_progress`, weil es einen Bearbeiter hat.
-   *
-   * Vorher stand hier `open`, weil `reopenIfClosed` nichts anderes kannte. Das
-   * war die Stelle, an der ein zurückgeholtes Ticket die Zuweisung behielt und
-   * trotzdem aussah wie ein neues.
-   */
-  check("a reporter reply reopens it, to the assignee", () => {
+  // Ein abgeschlossenes Ticket holt der Melder zurück, und die Zuweisung bleibt
+  // stehen — wer es zuletzt hatte, ist die naheliegende Person dafür.
+  check("a reporter reply reopens it and keeps the assignee", () => {
     comments.addComment(ticketId, reporter, "Doch noch ein Problem.", "public");
     const ticket = tickets.getTicketFor(ticketId, agent);
-    if (ticket?.status !== "in_progress") {
-      throw new Error(`expected in_progress, got ${ticket?.status}`);
+    if (ticket?.status !== "open") {
+      throw new Error(`expected open, got ${ticket?.status}`);
+    }
+    if (ticket.assigned_to !== agentId) {
+      throw new Error(`Bearbeiter ist ${ticket.assigned_to}`);
     }
   });
 
@@ -1514,23 +1516,59 @@ try {
         status: string;
       }).status;
 
-    check("eine Frist einstellen", () =>
+    const setReminderStamp = db.prepare(
+      "UPDATE mits_ticket SET waiting_reminder_at = ? WHERE id = ?",
+    );
+    const reminderStampOf = (id: string) =>
+      (
+        db
+          .prepare("SELECT waiting_reminder_at AS at FROM mits_ticket WHERE id = ?")
+          .get(id) as { at: string | null }
+      ).at;
+
+    check("beide Fristen einstellen", () =>
       workflowSettings.setWorkflowSettings(
-        mits.WorkflowSettingsSchema.parse({ resolvedCloseDays: 7 }),
+        mits.WorkflowSettingsSchema.parse({
+          waitingReminderDays: 3,
+          waitingCloseDays: 7,
+        }),
       ),
     );
 
     /*
-     * Der Zustand wird von Hand gesetzt statt über `setTicketStatus`: die Uhr
-     * soll zurückdatiert sein, und genau das kann kein Schreibpfad — er stempelt
-     * immer „jetzt". Ohne das Zurückdatieren prüfte der Test nur, dass ein
-     * gerade gelöstes Ticket *nicht* geschlossen wird.
+     * Der Zustand wird von Hand gesetzt statt über `setTicketStatus`: die Uhr soll
+     * zurückdatiert sein, und genau das kann kein Schreibpfad — er stempelt immer
+     * „jetzt". Ohne das Zurückdatieren prüfte der Test nur, dass ein gerade
+     * gewechseltes Ticket *nicht* angefasst wird.
+     *
+     * Die Mail geht ins Leere: ohne konfiguriertes SMTP schluckt
+     * `sendNotification` den Transport selbst. Was hier geprüft wird, ist der
+     * Stempel — er entscheidet, ob die Erinnerung genau einmal rausgeht.
      */
-    await checkAsync("Gelöst schließt nach der Frist", async () => {
-      backdate.run("resolved", longAgo, 0, ticketId);
+    await checkAsync("Wartend erinnert nach der Frist", async () => {
+      backdate.run("waiting_user", longAgo, 0, ticketId);
+      setReminderStamp.run(null, ticketId);
       const result = await sweeper.sweepWorkflow();
-      if (result.closedResolved !== 1) {
-        throw new Error(`geschlossen: ${result.closedResolved}`);
+      if (result.remindersSent !== 1) {
+        throw new Error(`erinnert: ${result.remindersSent}`);
+      }
+      if (reminderStampOf(ticketId) === null) throw new Error("kein Stempel");
+      return "gestempelt";
+    });
+
+    await checkAsync("und erinnert nicht zweimal", async () => {
+      const result = await sweeper.sweepWorkflow();
+      if (result.remindersSent !== 0) {
+        throw new Error(`erinnert: ${result.remindersSent}`);
+      }
+      return "still";
+    });
+
+    await checkAsync("nach der Erinnerung schließt es", async () => {
+      setReminderStamp.run(longAgo, ticketId);
+      const result = await sweeper.sweepWorkflow();
+      if (result.closedWaiting !== 1) {
+        throw new Error(`geschlossen: ${result.closedWaiting}`);
       }
       const after = statusOf(ticketId);
       if (after !== "closed") throw new Error(after);
@@ -1538,35 +1576,56 @@ try {
     });
 
     await checkAsync("der Schalter am Ticket sticht die Frist", async () => {
-      backdate.run("resolved", longAgo, 1, ticketId);
+      backdate.run("waiting_user", longAgo, 1, ticketId);
+      setReminderStamp.run(longAgo, ticketId);
       const result = await sweeper.sweepWorkflow();
-      if (result.closedResolved !== 0) {
-        throw new Error(`geschlossen: ${result.closedResolved}`);
+      if (result.remindersSent + result.closedWaiting !== 0) {
+        throw new Error(JSON.stringify(result));
       }
       const after = statusOf(ticketId);
-      if (after !== "resolved") throw new Error(after);
+      if (after !== "waiting_user") throw new Error(after);
       return after;
-    });
-
-    await checkAsync("frisch gelöst bleibt offen", async () => {
-      backdate.run("resolved", new Date().toISOString(), 0, ticketId);
-      const result = await sweeper.sweepWorkflow();
-      if (result.closedResolved !== 0) {
-        throw new Error(`geschlossen: ${result.closedResolved}`);
-      }
-      return statusOf(ticketId);
     });
 
     // Ohne Frist läuft gar nichts — der Auslieferungszustand, und der Grund,
     // warum ein Update keine Kundentickets schließt.
     await checkAsync("ohne Frist rührt der Sweeper nichts an", async () => {
       workflowSettings.setWorkflowSettings(mits.WorkflowSettingsSchema.parse({}));
-      backdate.run("resolved", longAgo, 0, ticketId);
+      backdate.run("waiting_user", longAgo, 0, ticketId);
+      setReminderStamp.run(longAgo, ticketId);
       const result = await sweeper.sweepWorkflow();
-      if (result.closedResolved + result.remindersSent + result.closedWaiting !== 0) {
+      if (result.remindersSent + result.closedWaiting !== 0) {
         throw new Error(JSON.stringify(result));
       }
       return statusOf(ticketId);
+    });
+
+    /*
+     * Die Migration von sechs Werten auf drei.
+     *
+     * Von Hand geschriebene Altwerte, dann `collapseStatuses` — die Funktion, die
+     * beim Serverstart läuft. Das ist die Prüfung, die einen Bestand rettet: ein
+     * Ticket, das nach dem Update in keiner Liste steht, sieht aus wie ein
+     * verlorenes Ticket.
+     */
+    check("alte Statuswerte werden zusammengelegt", () => {
+      const setRaw = db.prepare("UPDATE mits_ticket SET status = ? WHERE id = ?");
+      setRaw.run("in_progress", ticketId);
+      sqlite.collapseStatuses(db);
+      const after = statusOf(ticketId);
+      if (after !== "open") throw new Error(after);
+
+      setRaw.run("resolved", ticketId);
+      sqlite.collapseStatuses(db);
+      const closedNow = statusOf(ticketId);
+      if (closedNow !== "closed") throw new Error(closedNow);
+
+      setRaw.run("waiting_major", ticketId);
+      sqlite.collapseStatuses(db);
+      const parkedNow = statusOf(ticketId);
+      if (parkedNow !== "open") throw new Error(parkedNow);
+
+      return "drei Werte";
     });
   }
 
@@ -1588,15 +1647,29 @@ try {
     }
     return newest.detail;
   });
-  // Die Anmeldung selbst hängt in `databaseHooks.session.create.after`; hier wird
-  // geprüft, dass der Schreibpfad, den sie benutzt, mit einer Sitzung ohne
-  // Adresse zurechtkommt — der Hook liest die Adresse aus der Tabelle und findet
-  // sie nicht immer.
+  /*
+   * Die Anmeldung selbst hängt in `databaseHooks.session.create.after`; hier wird
+   * geprüft, dass der Schreibpfad, den sie benutzt, mit einer Sitzung ohne Adresse
+   * zurechtkommt — der Hook liest die Adresse aus der Tabelle und findet sie nicht
+   * immer.
+   *
+   * Gesucht statt `[0]` genommen: `listAuthEvents` sortiert nach
+   * `created_at DESC, id DESC`, und zwei Zeilen aus derselben Millisekunde
+   * entscheidet damit eine UUID. Ein Test, der die vorderste Zeile erwartet, ist
+   * dann in einem von zwei Läufen rot — und zwar aus einem Grund, der nichts mit
+   * dem geprüften Schreibpfad zu tun hat.
+   */
   check("an event without an account still lands", () => {
+    const before = authLog.countAuthEvents();
     authLog.recordAuthEvent("sign_in", { id: null, email: null });
-    const [newest] = authLog.listAuthEvents(1);
-    if (newest?.action !== "sign_in") throw new Error(String(newest?.action));
-    return newest.actorEmail === "" ? "(leer)" : newest.actorEmail;
+    if (authLog.countAuthEvents() !== before + 1) {
+      throw new Error("nichts geschrieben");
+    }
+    const anonymous = authLog
+      .listAuthEvents(5)
+      .find((entry) => entry.action === "sign_in" && entry.actorEmail === "");
+    if (!anonymous) throw new Error("die Zeile ohne Konto fehlt");
+    return "(leer)";
   });
   await checkAsync("the address is refused twice", async () => {
     try {

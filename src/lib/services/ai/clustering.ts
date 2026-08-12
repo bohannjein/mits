@@ -116,9 +116,13 @@ interface CandidateRow {
 /**
  * Open, unparented tickets from the configured window.
  *
- * `waiting_major` is excluded because those are already somebody's children, and
- * so is anything that is already a major incident — an outage must not be
- * clustered with the outage ticket describing it.
+ * Schon geparkte Kinder fallen über das `NOT EXISTS` auf die
+ * `parent_of`-Verknüpfung heraus — nicht mehr über einen Statuswert. Das war
+ * vorher `waiting_major`, also zwei Bedingungen für dieselbe Aussage in einer
+ * Abfrage; die Verknüpfung ist die, die stimmt, wenn jemand sie löst.
+ *
+ * Ein bestehendes Hauptstörungs-Ticket ist ebenfalls ausgeschlossen: eine Störung
+ * darf nicht mit dem Ticket gruppiert werden, das sie beschreibt.
  */
 function candidates(windowMinutes: number): ClusterInput[] {
   const since = new Date(Date.now() - windowMinutes * 60_000).toISOString();
@@ -129,7 +133,7 @@ function candidates(windowMinutes: number): ClusterInput[] {
          FROM mits_ticket t
         WHERE t.deleted_at IS NULL
           AND t.major_incident = 0
-          AND t.status IN ('open', 'in_progress')
+          AND t.status = 'open'
           AND t.created_at >= ?
           AND NOT EXISTS (
             SELECT 1 FROM mits_ticket_link l
@@ -321,7 +325,7 @@ export function promoteToMajorIncident(
         `SELECT id FROM mits_ticket
           WHERE deleted_at IS NULL
             AND major_incident = 0
-            AND status IN ('open', 'in_progress')
+            AND status = 'open'
             AND id IN (${placeholders})`,
       )
       .all(...ticketIds) as { id: string }[];
@@ -346,7 +350,7 @@ export function promoteToMajorIncident(
           created_at, tags, major_incident)
        VALUES
          (@id, @ticket_number, NULL, @created_by, @created_by_email, 'legacy',
-          @form_schema_id, @title, @payload, 'in_progress', 'critical',
+          @form_schema_id, @title, @payload, 'open', 'critical',
           @assigned_to, @created_at, '[]', 1)`,
     ).run({
       id: parentId,
@@ -372,38 +376,33 @@ export function promoteToMajorIncident(
        VALUES (?, ?, ?, 'parent_of', ?, ?)`,
     );
     /*
-     * `status_changed_at` wird mitgeschrieben, obwohl `waiting_major` von keiner
-     * Verfallsregel angefasst wird.
+     * Geparkt wird jetzt über die **Verknüpfung**, nicht über den Status.
      *
-     * Nicht aus Symmetrie: das Ticket verlässt diesen Status irgendwann wieder,
-     * und der Sweeper rechnet dann gegen die Uhr, die *hier* stehengeblieben
-     * wäre. Ein Kind, das eine Woche hinter einer Störung geparkt war, wäre in
-     * dem Moment überfällig, in dem es auf „Gelöst" geht.
+     * `waiting_major` war eine Kopie der `parent_of`-Zeile, die eine Zeile
+     * darüber ohnehin geschrieben wird — und eine Kopie, die stehenblieb, wenn
+     * jemand die Verknüpfung löste. `parkedChildren` liest deshalb die
+     * Verknüpfung, und die Anzeige leitet „Bekannte Störung" daraus ab.
      *
-     * `waiting_reminder_at` wird aus demselben Grund geleert wie in
-     * `applyStatusChange`: der Stempel gehört zu einer Wartephase, und diese
-     * hier ist eine andere.
+     * Was hier bleibt, ist die Historienzeile: dass das Ticket an eine
+     * Hauptstörung gehängt wurde, ist ein Vorgang, den jemand später erklären
+     * können muss. Sie steht als `link_added` statt als `status_changed`, weil
+     * genau das passiert ist.
      */
-    const park = db.prepare(
-      `UPDATE mits_ticket
-          SET status = 'waiting_major', status_changed_at = ?,
-              waiting_reminder_at = NULL
-        WHERE id = ?`,
-    );
     const audit = db.prepare(
       `INSERT INTO mits_audit_log
          (id, ticket_id, actor_id, actor_email, action, field, old_value,
           new_value, created_at)
-       VALUES (?, ?, ?, ?, 'status_changed', 'status', '', 'waiting_major', ?)`,
+       VALUES (?, ?, ?, ?, 'link_added', 'Hauptstörung', '', ?, ?)`,
     );
+
+    const parentNumber = formatTicketNumber(number + 1);
 
     for (const child of children) {
       link.run(randomUUID(), parentId, child.id, user.id, now);
-      park.run(now, child.id);
-      // Written here rather than through `setTicketStatus`: that function reads the
-      // row back after each write, and this loop would then do three queries per
-      // child inside a transaction for a value it already knows.
-      audit.run(randomUUID(), child.id, user.id, user.email, now);
+      // Direkt geschrieben und nicht über `recordAudit`: der Rumpf ist derselbe,
+      // und der Aufruf pro Kind würde in dieser Transaktion ein vorbereitetes
+      // Statement pro Zeile neu bauen.
+      audit.run(randomUUID(), child.id, user.id, user.email, parentNumber, now);
     }
 
     return { number: number + 1, children: children.length };
@@ -430,7 +429,12 @@ export function parkedChildren(
         WHERE l.from_ticket = ?
           AND l.kind = 'parent_of'
           AND t.deleted_at IS NULL
-          AND t.status = 'waiting_major'
+          -- Noch nicht abgeschlossen, statt des alten waiting_major. Der
+          -- Statuswert war eine Kopie dieser Verknüpfung; die Verknüpfung ist die
+          -- Wahrheit, und ein Kind, das jemand einzeln gelöst hat, gehört nicht
+          -- mehr in die Liste der Wartenden.
+          -- (Keine Backticks: der SQL-Text steht in einem Template-Literal.)
+          AND t.status <> 'closed'
         ORDER BY t.ticket_number ASC`,
     )
     .all(parentId) as CandidateRow[];

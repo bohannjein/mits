@@ -19,7 +19,7 @@ import {
   TICKET_STATUS_LABELS,
   TicketPriority,
   TicketPriorityValues,
-  TicketStatus,
+  TicketStatusValues,
   type MITSLocation,
 } from "@/types/mits";
 
@@ -137,7 +137,7 @@ export function TicketFilters({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ANY}>Alle</SelectItem>
-              {TicketStatus.options.map((status) => (
+              {TicketStatusValues.map((status) => (
                 <SelectItem key={status} value={status}>
                   {TICKET_STATUS_LABELS[status]}
                 </SelectItem>

@@ -2,7 +2,7 @@ import {
   PRIORITY_RANK,
   STATUS_RANK,
   TicketPriorityValues,
-  TicketStatus,
+  TicketStatusValues,
 } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -207,6 +207,6 @@ export const TICKET_SORT_LABELS: Record<TicketSortKey, string> = {
 
 /** Guards the CASE builders above against a value that has no rank. */
 export const SORTABLE_ENUM_COVERAGE = {
-  status: TicketStatus.options,
+  status: TicketStatusValues,
   priority: TicketPriorityValues,
 } as const;

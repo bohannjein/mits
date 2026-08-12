@@ -139,13 +139,6 @@ export function WorkflowSettingsForm({
 
         <CardContent className="grid gap-4">
           <DayPicker
-            name="resolvedCloseDays"
-            label="Gelöst schließt nach"
-            value={settings.resolvedCloseDays}
-            disabled={pending}
-          />
-
-          <DayPicker
             name="waitingReminderDays"
             label="Erinnerung an den Melder nach"
             value={settings.waitingReminderDays}

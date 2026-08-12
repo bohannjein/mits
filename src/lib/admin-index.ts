@@ -220,9 +220,11 @@ export function collectAdminSummaries(): Record<string, AdminSummary> {
 
   const workflow = getWorkflowSettings();
   const deadlines = [
-    workflow.resolvedCloseDays > 0 ? `Gelöst nach ${workflow.resolvedCloseDays} T.` : null,
     workflow.waitingReminderDays > 0
       ? `Erinnerung nach ${workflow.waitingReminderDays} T.`
+      : null,
+    workflow.waitingCloseDays > 0
+      ? `schließt ${workflow.waitingCloseDays} T. danach`
       : null,
   ].filter(Boolean);
   summaries["/admin/settings/workflow"] = {

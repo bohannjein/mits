@@ -354,6 +354,19 @@ die dieser Leser **nicht** verursacht hat. Ein gespeichertes Boolean müsste jed
 Schreiber für jeden anderen Benutzer zurücksetzen, und der erste, der es vergisst,
 hinterlässt ein Ticket, das sich nie wieder meldet.
 
+**Es gibt drei Statuswerte: `open`, `waiting_user`, `closed`.** Es waren sechs;
+`in_progress` doppelte `assigned_to`, `waiting_major` die `parent_of`-Verknüpfung,
+und `resolved` war `closed`. Was ein Mensch liest, leitet
+`describeTicketState` (`types/mits.ts`) aus dem Wert plus Zuweisung plus
+Hauptstörung ab — fünf Zustände aus drei Werten, in Desk- und Meldersprache.
+
+**`LEGACY_STATUS_MAP` plus `z.preprocess` ist die Versicherung gegen den
+Totalausfall**, wie bei `LEGACY_PRIORITY_MAP`: ein aus einem Backup
+zurückgespieltes `mits.db` hat `collapseStatuses` nie gesehen, und ohne die
+Zuordnung scheitert `MITSTicketSchema` an jeder Zeile. **Der Audit-Log wird nicht
+migriert** — er ist append-only, deshalb behalten die Analytics-Abfragen
+`IN ('closed', 'resolved')` dauerhaft.
+
 **Der Status sagt, wer am Zug ist, und ergibt sich aus dem Schreiben.** Eine
 öffentliche Antwort beansprucht ein herrenloses Ticket und schaltet den Status
 um; die Regel ist `nextStatusAfterReply` in `types/mits.ts` — eine reine

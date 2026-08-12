@@ -2,7 +2,9 @@ import { SHORTCUT_GROUPS, isPlainKey, swallowsKeys } from "../src/lib/shortcuts"
 import { fillCannedResponse, firstNameOf } from "../src/types/mits";
 import {
   TicketStatus,
+  TicketStatusValues,
   WorkflowSettingsSchema,
+  describeTicketState,
   hasAutoClose,
   nextStatusAfterReply,
   toAutoCloseDays,
@@ -4578,67 +4580,128 @@ console.log("\nvisibility presets");
   );
 }
 
+console.log("\ndrei status: die legacy-zuordnung");
+{
+  /*
+   * **Die Prüfung, die einen Totalausfall verhindert.**
+   *
+   * Sechs Werte wurden drei. Migriert wird in `lib/db/sqlite.ts` — aber eine aus
+   * einem älteren Backup zurückgespielte Datenbank hat die Migration nie gesehen,
+   * und ohne `LEGACY_STATUS_MAP` scheitert `MITSTicketSchema` dann an *jeder*
+   * Zeile und nimmt ganze Listen mit. Dieselbe Absicherung wie bei den
+   * Prioritäten, und aus demselben Grund hier festgehalten.
+   */
+  const parse = (status: string) => TicketStatus.safeParse(status);
+
+  check("in_progress wird offen", parse("in_progress").data === "open");
+  check("waiting_major wird offen", parse("waiting_major").data === "open");
+  check("resolved wird abgeschlossen", parse("resolved").data === "closed");
+  check("ein neuer wert bleibt", parse("waiting_user").data === "waiting_user");
+  check("und etwas Unbekanntes wird abgelehnt", !parse("halbfertig").success);
+
+  // Am ganzen Ticket, nicht nur am Feld: das ist der Weg, den eine gelesene Zeile
+  // wirklich nimmt.
+  const legacy = MITSTicketSchema.safeParse({
+    id: "t1",
+    created_by: "u1",
+    created_by_email: "anna@firma.de",
+    source: "legacy",
+    title: "Alter Bestand",
+    payload: {},
+    status: "resolved",
+    priority: "normal",
+    created_at: "2024-01-01T00:00:00.000Z",
+  });
+  check(
+    "eine alte Ticketzeile parst und zeigt auf den neuen Wert",
+    legacy.success && legacy.data.status === "closed",
+  );
+
+  check("drei werte, nicht sechs", TicketStatusValues.length === 3);
+}
+
 console.log("\nballbesitz: status nach einer antwort");
 {
   /*
-   * Die ganze Tabelle, beide Schreiber, mit und ohne Bearbeiter.
+   * Die ganze Tabelle, beide Schreiber.
    *
    * Das ist die Prüfung, die zählt: die Regel ist eine reine Funktion, und eine
    * falsche Zeile darin ist ein Ticket, das im falschen Tab liegt — sichtbar
    * erst, wenn jemand es dort sucht.
    */
-  const agent = (from: (typeof TicketStatus.options)[number], assigned = true) =>
+  const agent = (from: (typeof TicketStatusValues)[number], assigned = true) =>
     nextStatusAfterReply(from, true, assigned);
-  const reporter = (
-    from: (typeof TicketStatus.options)[number],
-    assigned = true,
-  ) => nextStatusAfterReply(from, false, assigned);
+  const reporter = (from: (typeof TicketStatusValues)[number], assigned = true) =>
+    nextStatusAfterReply(from, false, assigned);
 
   check("agent auf offen -> wartet auf anwender", agent("open") === "waiting_user");
-  check(
-    "agent auf in bearbeitung -> wartet auf anwender",
-    agent("in_progress") === "waiting_user",
-  );
   check("agent auf wartend -> nichts", agent("waiting_user") === null);
-  check("agent auf geloest -> nichts", agent("resolved") === null);
-  check("agent auf geschlossen -> nichts", agent("closed") === null);
+  check("agent auf abgeschlossen -> nichts", agent("closed") === null);
 
   check("melder auf offen -> nichts", reporter("open") === null);
-  check("melder auf in bearbeitung -> nichts", reporter("in_progress") === null);
-  check(
-    "melder auf wartend -> in bearbeitung",
-    reporter("waiting_user") === "in_progress",
-  );
-  check("melder auf geloest -> in bearbeitung", reporter("resolved") === "in_progress");
-  check(
-    "melder auf geschlossen -> in bearbeitung",
-    reporter("closed") === "in_progress",
-  );
+  check("melder auf wartend -> offen", reporter("waiting_user") === "open");
+  check("melder auf abgeschlossen -> offen", reporter("closed") === "open");
 
-  // Ohne Bearbeiter landet die Rueckkehr auf `open` — sonst stuende das Ticket in
-  // keiner Liste: nicht im Eingang, weil der Status nicht passt, und nicht in
-  // "Mein Bereich", weil es niemandem gehoert.
+  // Die Zuweisung entscheidet nichts mehr: „in Bearbeitung" wird angezeigt, nicht
+  // gespeichert. Beide Richtungen geprüft, damit der Parameter nicht still wieder
+  // Bedeutung bekommt.
   check(
-    "melder auf geschlossen ohne bearbeiter -> offen",
-    reporter("closed", false) === "open",
+    "der bearbeiter aendert das ergebnis nicht",
+    reporter("closed", false) === "open" && reporter("closed", true) === "open",
   );
-  check(
-    "melder auf wartend ohne bearbeiter -> offen",
-    reporter("waiting_user", false) === "open",
-  );
-
-  // Die eine Zeile, die beide Seiten unberuehrt lassen muessen.
-  check("agent ruehrt eine hauptstoerung nicht an", agent("waiting_major") === null);
-  check("melder ebenso wenig", reporter("waiting_major") === null);
 
   // Jeder Status ist abgedeckt: eine neue Lebenszyklus-Stufe soll hier auffallen
   // und nicht erst dadurch, dass sie sich nie bewegt.
   check(
     "die tabelle kennt jeden status",
-    TicketStatus.options.every(
-      (status) =>
-        agent(status) !== undefined && reporter(status) !== undefined,
+    TicketStatusValues.every(
+      (status) => agent(status) !== undefined && reporter(status) !== undefined,
     ),
+  );
+}
+
+console.log("\nabgeleiteter zustand");
+{
+  /*
+   * Fünf lesbare Zustände aus drei gespeicherten Werten. Das ist der Tausch, der
+   * die Statusliste kürzen konnte — geht er kaputt, sieht jedes Ticket gleich aus.
+   */
+  const state = (
+    status: (typeof TicketStatusValues)[number],
+    extra: { assigned_to?: string | null; parkedBehindMajor?: boolean } = {},
+  ) => describeTicketState({ status, ...extra });
+
+  check("offen und herrenlos -> Neu", state("open").agent === "Neu");
+  check(
+    "offen mit bearbeiter -> In Bearbeitung",
+    state("open", { assigned_to: "u1" }).agent === "In Bearbeitung",
+  );
+  check(
+    "die hauptstoerung sticht den bearbeiter",
+    state("open", { assigned_to: "u1", parkedBehindMajor: true }).agent ===
+      "Bekannte Störung",
+  );
+  check(
+    "wartend nennt den melder",
+    state("waiting_user").long === "Wir warten auf Ihre Antwort",
+  );
+  check("abgeschlossen bleibt abgeschlossen", state("closed").agent === "Abgeschlossen");
+
+  // Eine Hauptstörung an einem abgeschlossenen Ticket darf den Endzustand nicht
+  // überschreiben: das Kind ist fertig, die Störung ändert daran nichts.
+  check(
+    "abgeschlossen sticht die hauptstoerung",
+    state("closed", { parkedBehindMajor: true }).agent === "Abgeschlossen",
+  );
+
+  check(
+    "jeder wert liefert drei nicht leere texte",
+    TicketStatusValues.every((status) => {
+      const view = state(status);
+      return (
+        view.agent.length > 0 && view.short.length > 0 && view.long.length > 0
+      );
+    }),
   );
 }
 
@@ -4652,9 +4715,7 @@ console.log("\nverfallsfristen");
   check("beide schalter sind an", defaults.claimOnReply && defaults.statusFollowsReply);
   check(
     "aber keine frist laeuft",
-    defaults.resolvedCloseDays === 0 &&
-      defaults.waitingReminderDays === 0 &&
-      defaults.waitingCloseDays === 0,
+    defaults.waitingReminderDays === 0 && defaults.waitingCloseDays === 0,
   );
   check("also schliesst nichts", !hasAutoClose(defaults));
 
@@ -4674,13 +4735,16 @@ console.log("\nverfallsfristen");
   );
 
   // Eine kaputte Zeile darf die Texte nicht mitnehmen: ohne sie ginge eine Mail
-  // mit leerem Betreff an einen Kunden.
+  // mit leerem Betreff an einen Kunden. Und ein Schlüssel, den dieser Build nicht
+  // mehr kennt (`resolvedCloseDays` gab es einmal), wird still verworfen statt den
+  // Parse abzulehnen.
   const salvaged = WorkflowSettingsSchema.parse({
-    resolvedCloseDays: "morgen",
+    waitingReminderDays: "morgen",
+    resolvedCloseDays: 7,
     waitingReminderSubject: "Kurze Nachfrage",
   });
   check("eine unlesbare frist nimmt den betreff nicht mit", (
-    salvaged.resolvedCloseDays === 0 &&
+    salvaged.waitingReminderDays === 0 &&
     salvaged.waitingReminderSubject === "Kurze Nachfrage"
   ));
   check(

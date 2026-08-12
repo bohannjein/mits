@@ -87,10 +87,12 @@ export function filterFor(
        * `status: "open"`, und damit fiel ein unzugewiesenes Ticket aus dem Pool,
        * sobald es irgendetwas anderes hieß — es stand dann in keiner Liste mehr:
        * nicht im Eingang, weil der Status nicht passte, und nicht in „Mein
-       * Bereich", weil es niemandem gehörte. Seit der Status dem Schreiben folgt,
-       * ist das kein Randfall mehr: eine Melderantwort auf ein herrenloses
-       * geschlossenes Ticket macht es `open`, aber `waiting_major` und ein von
-       * Hand geleerter Bearbeiter treffen genauso.
+       * Bereich", weil es niemandem gehörte.
+       *
+       * Mit drei Statuswerten ist der Fall `waiting_user` ohne Bearbeiter: ein
+       * Agent, der antwortet und danach die Zuweisung von Hand leert, oder ein
+       * Ticket, dessen Bearbeiter das Konto verloren hat. Selten, und genau
+       * deshalb der Fall, der ohne diese Zeile jahrelang unbemerkt bliebe.
        */
       return { unassignedOnly: true, statusIn: OPEN_TICKET_STATUSES };
     case "open":

@@ -19,44 +19,80 @@ paths:
 
 # Ticket-Detailseite, Chatverlauf, Antwortzeile, Textbausteine
 
+## Drei Statuswerte, und der Rest wird abgeleitet
+
+Es waren sechs. Drei davon trugen eine Auskunft, die woanders präziser stand und
+von der Anwendung dort auch gelesen wurde:
+
+| gestrichen | stand schon in |
+|---|---|
+| `in_progress` | `assigned_to` — seit eine Antwort die Zuweisung setzt |
+| `waiting_major` | der `parent_of`-Verknüpfung, die `parkedChildren` ohnehin joint |
+| `resolved` | `closed` — fünf Analytics-Abfragen schrieben immer `IN ('closed','resolved')` |
+
+Geblieben sind die zwei Fragen, die ein Status beantworten muss: **wer ist am
+Zug** (`open` / `waiting_user`) und **ist es fertig** (`closed`).
+
+**„Wartet auf Lieferant" ist eine Erinnerung, kein Status.** Der Fall, für den man
+einen vierten Wert baut, ist `mits_ticket_reminder`.
+
+**Die Anzeige wurde dabei reicher.** `describeTicketState(ticket)` in
+`types/mits.ts` macht aus drei Werten plus Zuweisung plus Hauptstörung fünf
+lesbare Zustände, je in Desk- und Meldersprache. Rein, offline geprüft.
+
+| gespeichert | zusätzlich | Agent | Melder |
+|---|---|---|---|
+| `open` | kein Bearbeiter | Neu | Eingegangen |
+| `open` | Bearbeiter | In Bearbeitung | Wird bearbeitet |
+| `open` | an Hauptstörung | Bekannte Störung | Bekannte Störung |
+| `waiting_user` | — | Wartet auf Anwender | Wir warten auf Ihre Antwort |
+| `closed` | — | Abgeschlossen | Abgeschlossen |
+
+Die Hauptstörung sticht den Bearbeiter, und `closed` sticht beides.
+
+**`LEGACY_STATUS_MAP` plus `z.preprocess` ist Pflicht, nicht Kosmetik.** Genau wie
+bei den Prioritäten: ein aus einem älteren Backup zurückgespieltes `mits.db` hat
+`collapseStatuses` nie gesehen, und ohne die Zuordnung scheitert
+`MITSTicketSchema` an **jeder** Zeile. In `npm run test:forms` festgehalten, samt
+einem vollständigen Ticket mit `status: "resolved"`.
+
+**Der Audit-Log wird nicht migriert** — er ist append-only, und das ist der Sinn
+der Tabelle. Deshalb behalten die Analytics-Abfragen `IN ('closed', 'resolved')`
+dauerhaft; wer dort kürzt, verliert jede Kennzahl über Tickets, die vor der
+Umstellung geschlossen wurden, und die Statistik sieht danach plausibel und zu
+klein aus.
+
 ## Ballbesitz: Zuweisung und Status folgen dem Schreiben
 
 Vorher war beides Handarbeit, und das Ergebnis stimmte deshalb selten. Ein Agent
 antwortete einem Melder, und das Ticket lag danach weiter unzugewiesen und
 „Offen" im Eingang — für jeden anderen sah es unbearbeitet aus.
 
-**Die Regel ist eine reine Funktion**: `nextStatusAfterReply(current, byAgent,
-hasAssignee)` in `types/mits.ts`, offline geprüft in `npm run test:forms`. Die
-Serverseite reicht nur die Zeile herein.
+**Die Regel ist eine reine Funktion**: `nextStatusAfterReply` in `types/mits.ts`,
+offline geprüft in `npm run test:forms`. Die Serverseite reicht nur die Zeile
+herein.
 
 | aktuell | Agent antwortet öffentlich | Melder antwortet öffentlich |
 |---|---|---|
 | `open` | `waiting_user` | — |
-| `in_progress` | `waiting_user` | — |
-| `waiting_user` | — | `in_progress` / `open` |
-| `waiting_major` | — | — |
-| `resolved` | — | `in_progress` / `open` |
-| `closed` | — | `in_progress` / `open` |
+| `waiting_user` | — | `open` |
+| `closed` | — | `open` |
 
-Drei Zeilen sind Entscheidungen, keine Mechanik:
+**Der Agent hebt `closed` nicht auf.** Eine Nachtragsmail auf einem
+abgeschlossenen Ticket ist Archivarbeit. Nur der Melder holt zurück.
 
-- **`waiting_major` wird nie angefasst.** Das Ticket hängt an einer Hauptstörung;
-  eine Zwischenmeldung darf es nicht aus der Kopplung lösen, sonst fehlt es in
-  der Kinderliste und niemand bemerkt das.
-- **Der Agent hebt `resolved` und `closed` nicht auf.** Bestehende Regel: eine
-  Nachtragsmail auf einem geschlossenen Ticket ist Archivarbeit. Nur der Melder
-  holt zurück.
-- **`in_progress` nur mit Bearbeiter, sonst `open`.** Ein zurückgeholtes Ticket
-  ohne Bearbeiter muss in einem Status landen, den der Eingang zeigt.
+**`hasAssignee` wird nicht mehr gelesen** und bleibt trotzdem in der Signatur —
+`void` markiert das. Es entschied zwischen `open` und `in_progress`, und den Wert
+gibt es nicht mehr.
 
 **Beansprucht wird nur bei öffentlicher Antwort, und nur wenn das Ticket frei
 ist.** Wer es hält, behält es — ein Kollege, der „kenne ich, siehe TCK-x"
 danebenschreibt, reißt es nicht an sich. Eine interne Notiz bewegt nichts: sie
 sagt weder dem Melder noch der Queue, dass jemand am Zug ist.
 
-**`reopenIfClosed` gibt es nicht mehr.** Es fing nur `closed` und `resolved` und
-ließ `waiting_user` unberührt — der teuerste Defekt des alten Modells, weil sich
-der Tab „Wartend" mit Tickets füllte, die längst beantwortet waren.
+**`reopenIfClosed` gibt es nicht mehr.** Es fing nur ein abgeschlossenes Ticket
+und ließ `waiting_user` unberührt — der teuerste Defekt des alten Modells, weil
+sich der Tab „Wartend" mit Tickets füllte, die längst beantwortet waren.
 
 **Der Eingang filtert `statusIn: OPEN_TICKET_STATUSES`, nicht `status: "open"`.**
 Vorher fiel ein unzugewiesenes Ticket aus dem Pool, sobald es anders hieß: nicht
@@ -86,18 +122,25 @@ sofort verfällt — ein halbes Jahr alter Zeitstempel an einem Status von heute
 
 ### Verfall
 
-Drei Regeln unter `/admin/settings/workflow`, Setting-Key `workflow`, angestoßen
+Zwei Regeln unter `/admin/settings/workflow`, Setting-Key `workflow`, angestoßen
 von `POST /api/cron/workflow` (Service-Token **oder** Admin-Sitzung, wie
 `/api/cron/reminders` — nur schreibt dieser hier).
 
-1. `resolved` schließt nach N Tagen.
-2. `waiting_user` erinnert den Melder einmal per Mail.
-3. `waiting_user` schließt N Tage **nach der Erinnerung**, nicht nach dem
+1. `waiting_user` erinnert den Melder einmal per Mail.
+2. `waiting_user` schließt N Tage **nach der Erinnerung**, nicht nach dem
    Statuswechsel — dafür gibt es `waiting_reminder_at` als eigene Spalte.
 
-- **Alle drei stehen auf `0` = aus.** Ein Update, das Kundentickets schließt und
-  Mail verschickt, ist die eine Richtung, die niemand bemerkt, bis ein Kunde
-  anruft.
+**Es war eine dritte: `resolved` schloss nach einer Frist.** Sie ist mit dem
+Statuswert weggefallen. Ein Zwischenzustand, dessen einziger Zweck ist, später zum
+Endzustand zu werden, ist der Endzustand mit einer Verzögerung — und die
+Verzögerung kaufte nichts, weil ein abgeschlossenes Ticket sich bei einer
+Melderantwort ohnehin wieder öffnet. Eine gespeicherte Zeile mit
+`resolvedCloseDays` wird beim Parsen still verworfen.
+
+- **Beide stehen auf `0` = aus.** Ein Update, das Kundentickets schließt und Mail
+  verschickt, ist die eine Richtung, die niemand bemerkt, bis ein Kunde anruft.
+- **`hasAutoClose` verlangt beide Fristen.** Ohne Erinnerung schließt „Wartet auf
+  Anwender" nie — die zweite Frist zählt ab dem Stempel der ersten.
 - **`auto_close_off` je Ticket**, Schalter in der Sidebar, sichtbar nur wenn
   überhaupt eine Frist läuft (`hasAutoClose`). Default `0` heißt „Automatik
   gilt"; die andere Richtung hätte jedes bestehende Ticket beim Update

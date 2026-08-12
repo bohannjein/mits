@@ -37,7 +37,7 @@ import {
   TICKET_PRIORITY_LABELS,
   TICKET_STATUS_LABELS,
   TicketPriorityValues,
-  TicketStatus,
+  TicketStatusValues,
   macroIsEmpty,
   normalizeShortcut,
   type CannedResponse,
@@ -228,7 +228,7 @@ export function MacrosForm({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={KEEP}>Nicht ändern</SelectItem>
-                      {TicketStatus.options.map((status) => (
+                      {TicketStatusValues.map((status) => (
                         <SelectItem key={status} value={status}>
                           {TICKET_STATUS_LABELS[status]}
                         </SelectItem>

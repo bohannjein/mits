@@ -36,7 +36,7 @@ import {
   TICKET_STATUS_LABELS,
   TicketPriority,
   TicketPriorityValues,
-  TicketStatus,
+  TicketStatusValues,
   formatTicketNumber,
   isElevatedPriority,
   parseTicketNumber,
@@ -304,7 +304,7 @@ export function TicketSearchDialog({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={ANY}>Jeder Status</SelectItem>
-                      {TicketStatus.options.map((value) => (
+                      {TicketStatusValues.map((value) => (
                         <SelectItem key={value} value={value}>
                           {TICKET_STATUS_LABELS[value]}
                         </SelectItem>

@@ -16,12 +16,18 @@ import { fillCannedResponse, type MITSTicket } from "@/types/mits";
 /* ──────────────────────────────────────────────────────────────────────────
    Was mit Tickets passiert, die stillstehen.
 
-   Drei Durchgänge, alle drei einzeln abschaltbar (`0` Tage = aus, und das ist
-   der Auslieferungszustand):
+   Zwei Durchgänge, beide einzeln abschaltbar (`0` Tage = aus, und das ist der
+   Auslieferungszustand):
 
-   1. `resolved` schließt nach der eingestellten Frist.
-   2. `waiting_user` erinnert den Melder einmal.
-   3. `waiting_user` schließt, wenn auf die Erinnerung nichts kam.
+   1. `waiting_user` erinnert den Melder einmal.
+   2. `waiting_user` schließt, wenn auf die Erinnerung nichts kam.
+
+   **Der dritte gab es und ist weg.** Er schloss `resolved` nach einer Frist — und
+   `resolved` gibt es nicht mehr, weil es dasselbe war wie `closed`. Ein
+   Zwischenzustand, dessen einziger Zweck war, später zu einem Endzustand zu
+   werden, ist der Endzustand mit einer Verzögerung; und die Verzögerung kaufte
+   nichts, weil ein abgeschlossenes Ticket sich bei einer Melderantwort ohnehin
+   wieder öffnet.
 
    ── Warum diese Datei getrennt von `lib/ticket-workflow.ts` liegt ──
 
@@ -55,7 +61,6 @@ const AUTOMATION: SessionUser = {
 };
 
 export interface SweepResult {
-  closedResolved: number;
   remindersSent: number;
   closedWaiting: number;
   /** Tickets, an denen etwas schiefging. Der Lauf geht weiter. */
@@ -162,7 +167,6 @@ async function sendReminder(
 export async function sweepWorkflow(): Promise<SweepResult> {
   const settings = getWorkflowSettings();
   const result: SweepResult = {
-    closedResolved: 0,
     remindersSent: 0,
     closedWaiting: 0,
     failed: 0,
@@ -177,26 +181,7 @@ export async function sweepWorkflow(): Promise<SweepResult> {
    * Ausgeschrieben, weil ein Leser sonst prüft, ob es fehlt.
    */
 
-  /* ── 1. Gelöst schließt ── */
-  if (settings.resolvedCloseDays > 0) {
-    const rows = db
-      .prepare(
-        `SELECT id, status FROM mits_ticket
-          WHERE deleted_at IS NULL
-            AND status = 'resolved'
-            AND auto_close_off = 0
-            AND status_changed_at IS NOT NULL
-            AND status_changed_at < ?`,
-      )
-      .all(cutoff(settings.resolvedCloseDays)) as Candidate[];
-
-    const counters = { done: 0, failed: 0 };
-    await each(rows, (row) => closeWithNote(row, settings.autoCloseNote), counters);
-    result.closedResolved = counters.done;
-    result.failed += counters.failed;
-  }
-
-  /* ── 2. Erinnerung an den Melder ── */
+  /* ── 1. Erinnerung an den Melder ── */
   if (settings.waitingReminderDays > 0) {
     const rows = db
       .prepare(
@@ -229,7 +214,7 @@ export async function sweepWorkflow(): Promise<SweepResult> {
     result.failed += counters.failed;
   }
 
-  /* ── 3. Wartend schließt, gerechnet ab der Erinnerung ── */
+  /* ── 2. Wartend schließt, gerechnet ab der Erinnerung ── */
   if (settings.waitingCloseDays > 0 && settings.waitingReminderDays > 0) {
     const rows = db
       .prepare(
@@ -256,8 +241,7 @@ export async function sweepWorkflow(): Promise<SweepResult> {
    * vierzig geschlossenen Tickets vierzig Queue-Signale absetzt, ließe jeden
    * offenen Desk vierzigmal neu rendern.
    */
-  const moved =
-    result.closedResolved + result.remindersSent + result.closedWaiting;
+  const moved = result.remindersSent + result.closedWaiting;
   if (moved > 0) {
     publish({ type: "queue", audience: "staff" });
     invalidateAnalytics();

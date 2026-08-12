@@ -493,6 +493,7 @@ function migrateAppTables(database: Database.Database): void {
   backfillTicketNumbers(database);
   backfillInventoryNumbers(database);
   renamePriorities(database);
+  collapseStatuses(database);
   renameAgentRole(database);
 }
 
@@ -619,6 +620,61 @@ function renamePriorities(database: Database.Database): void {
 
   console.info(
     `[MITS] Prioritäten umbenannt: ${pending.count} Ticket(s), ${payloadsPending.count} Payload(s), ${schemasPending.count} Schema(ta).`,
+  );
+}
+
+/**
+ * Sechs Statuswerte auf drei.
+ *
+ * `in_progress` und `waiting_major` werden `open`, `resolved` wird `closed`. Die
+ * Begründung steht an `TicketStatus` in `types/mits.ts`; hier steht, was der
+ * Bestand davon merkt.
+ *
+ * **`waiting_major → open` verliert nichts.** Die `parent_of`-Verknüpfung zur
+ * Hauptstörung ist eine eigene Zeile in `mits_ticket_link` und bleibt; der Status
+ * war eine Kopie davon. `parkedChildren` filtert danach auf „noch nicht
+ * abgeschlossen" statt auf den Statuswert, und die Anzeige leitet „Bekannte
+ * Störung" aus derselben Verknüpfung ab.
+ *
+ * **Der Audit-Log wird ausdrücklich nicht angefasst.** `mits_audit_log` ist
+ * append-only, und das ist der Sinn der Tabelle: sie sagt, was damals passiert
+ * ist. Deshalb müssen die Analytics-Abfragen `IN ('closed', 'resolved')` dauerhaft
+ * behalten — wer dort auf einen Wert vereinfacht, verliert jede Kennzahl über
+ * Tickets, die vor dieser Umstellung geschlossen wurden, und das Fehlerbild ist
+ * eine Statistik, die plausibel aussieht und zu klein ist.
+ *
+ * Makros bleiben ebenfalls stehen: `set_status` ist ein `z.string()` und wird erst
+ * beim Anwenden geparst, wo `LEGACY_STATUS_MAP` greift.
+ *
+ * Exportiert, obwohl `openDatabase` der einzige echte Aufrufer ist: `test:db` ruft
+ * sie mit von Hand geschriebenen Altwerten auf. Das ist die Prüfung, die einen
+ * Bestand rettet — ein Ticket, das nach dem Update in keiner Liste steht, sieht
+ * aus wie ein verlorenes Ticket.
+ */
+export function collapseStatuses(database: Database.Database): void {
+  const pending = database
+    .prepare(
+      `SELECT COUNT(*) AS count FROM mits_ticket
+        WHERE status IN ('in_progress', 'waiting_major', 'resolved')`,
+    )
+    .get() as { count: number };
+
+  if (pending.count === 0) return;
+
+  database.transaction(() => {
+    database
+      .prepare(
+        `UPDATE mits_ticket SET status = 'open'
+          WHERE status IN ('in_progress', 'waiting_major')`,
+      )
+      .run();
+    database
+      .prepare("UPDATE mits_ticket SET status = 'closed' WHERE status = 'resolved'")
+      .run();
+  })();
+
+  console.info(
+    `[MITS] Statuswerte zusammengelegt: ${pending.count} Ticket(s) auf offen/abgeschlossen.`,
   );
 }
 

@@ -41,7 +41,6 @@ export function setWorkflowSettings(next: WorkflowSettings): WorkflowSettings {
   const settings = WorkflowSettingsSchema.parse({
     claimOnReply: next.claimOnReply,
     statusFollowsReply: next.statusFollowsReply,
-    resolvedCloseDays: next.resolvedCloseDays,
     waitingReminderDays: next.waitingReminderDays,
     waitingCloseDays: next.waitingCloseDays,
     waitingReminderSubject: next.waitingReminderSubject,

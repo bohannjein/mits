@@ -36,31 +36,66 @@ export const TICKET_SOURCE_LABELS: Record<TicketSource, string> = {
   email: "E-Mail",
 };
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Ticket-Lebenszyklus: drei Werte, nicht sechs.
+
+   Ein Status hat zwei Fragen zu beantworten — **wer ist am Zug** und **ist es
+   fertig**. Das sind drei Werte. Die drei, die gestrichen wurden, trugen jeweils
+   eine Auskunft, die woanders präziser steht und von der Anwendung dort auch
+   gelesen wird:
+
+   - **`in_progress` doppelte `assigned_to`.** Seit eine öffentliche Antwort die
+     Zuweisung setzt, ist „In Bearbeitung" nichts anderes als *offen und hat einen
+     Bearbeiter*. Das wird jetzt **angezeigt** statt gespeichert
+     (`describeTicketState`) — zwei Spalten mit derselben Aussage laufen
+     auseinander, und die, die es hier tat, war die, die niemand pflegte.
+   - **`waiting_major` doppelte eine Verknüpfung.** `parkedChildren` joint
+     `mits_ticket_link` auf `kind = 'parent_of'`; der Status war dort eine zweite,
+     redundante Bedingung in derselben Abfrage — und eine Kopie, die stehenblieb,
+     wenn jemand die Verknüpfung löste.
+   - **`resolved` war `closed`.** Fünf Analytics-Abfragen, die Aufbewahrung und
+     `todayCounts` schrieben schon immer `IN ('closed', 'resolved')`, und beide
+     öffneten sich bei einer Melderantwort wieder.
+
+   „Wartet auf Lieferant" — der Fall, für den man einen vierten Wert baut — ist
+   eine **Erinnerung** (`mits_ticket_reminder`), kein Status.
+
+   Reihenfolge ist Bedeutung: sie ist die der Statusauswahl, und
+   `OPEN_TICKET_STATUSES` leitet sich daraus ab.
+   ────────────────────────────────────────────────────────────────────────── */
+
 /**
- * Ticket lifecycle.
+ * Statuswerte, die dieser Build nicht mehr schreibt, aber lesen muss.
  *
- * `waiting_user` and `resolved` were added for the agent workflow; the column is
- * plain TEXT with no constraint, so older rows carrying only the original three
- * keep parsing. Order matters — it is the order the board and the status pickers
- * offer, and `OPEN_TICKET_STATUSES` derives from it.
+ * Migriert in `lib/db/sqlite.ts` — und die Zuordnung steht trotzdem hier, aus
+ * exakt dem Grund, der bei `LEGACY_PRIORITY_MAP` steht: eine aus einem älteren
+ * Backup zurückgespielte Datenbank hat die Migration nie gesehen. Ohne diese Map
+ * scheitert `MITSTicketSchema` dann an **jeder** Zeile und nimmt ganze Listen mit
+ * — ein Totalausfall für einen umbenannten Wert.
+ *
+ * Deckt auch ein gespeichertes Makro mit `set_status: "resolved"` ab: das Feld ist
+ * ein `z.string()` und wird erst beim Anwenden geparst.
  */
-export const TicketStatus = z.enum([
-  "open",
-  "in_progress",
-  "waiting_user",
-  "waiting_major",
-  "resolved",
-  "closed",
-]);
+export const LEGACY_STATUS_MAP: Record<string, string> = {
+  in_progress: "open",
+  waiting_major: "open",
+  resolved: "closed",
+};
+
+export const TicketStatus = z.preprocess(
+  (value) =>
+    typeof value === "string" ? (LEGACY_STATUS_MAP[value] ?? value) : value,
+  z.enum(["open", "waiting_user", "closed"]),
+);
 export type TicketStatus = z.infer<typeof TicketStatus>;
+
+/** The bare enum, for `.options` where the preprocess wrapper hides it. */
+export const TicketStatusValues = ["open", "waiting_user", "closed"] as const;
 
 export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
   open: "Offen",
-  in_progress: "In Bearbeitung",
   waiting_user: "Wartet auf Anwender",
-  waiting_major: "Wartet auf Hauptstörung",
-  resolved: "Gelöst",
-  closed: "Geschlossen",
+  closed: "Abgeschlossen",
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -93,41 +128,85 @@ export const CUSTOMER_STATUS: Record<
   TicketStatus,
   { short: string; long: string }
 > = {
-  open: { short: "Eingegangen", long: "Eingegangen, noch nicht zugeteilt" },
-  in_progress: { short: "In Arbeit", long: "Wird bearbeitet" },
+  open: { short: "Eingegangen", long: "Eingegangen" },
   waiting_user: {
     short: "Ihre Antwort",
     long: "Wir warten auf Ihre Antwort",
   },
-  // Nicht „wartet auf Hauptstörung": dass die IT das Ticket an eine größere
-  // Störung gehängt hat, ist eine Organisationsauskunft. Was der Melder wissen
-  // will, ist, dass es bekannt ist und mehrere betrifft.
-  waiting_major: {
-    short: "Bekannte Störung",
-    long: "Bekannte Störung, wird zentral behoben",
-  },
-  resolved: { short: "Erledigt", long: "Erledigt — Rückmeldung möglich" },
   closed: { short: "Abgeschlossen", long: "Abgeschlossen" },
 };
 
-/**
- * Still someone's problem. `resolved` counts as open on purpose: the agent is
- * done but the reporter has not confirmed, and a resolved ticket that vanishes
- * from every list is a ticket nobody notices was never actually fixed.
- */
-export const OPEN_TICKET_STATUSES: TicketStatus[] = [
-  "open",
-  "in_progress",
-  "waiting_user",
-  // A ticket parked behind a major incident is still somebody's problem — the
-  // major one. Counting it as closed would make an outage look like it shrank the
-  // queue instead of consuming it.
-  "waiting_major",
-  "resolved",
-];
+/** Noch nicht fertig — die Menge, auf die jede Queue-Ansicht filtert. */
+export const OPEN_TICKET_STATUSES: TicketStatus[] = ["open", "waiting_user"];
 
 export const isOpenStatus = (status: TicketStatus): boolean =>
   OPEN_TICKET_STATUSES.includes(status);
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Was ein Ticket gerade tut — abgeleitet, nicht gespeichert.
+
+   Drei gespeicherte Werte plus Daten, die es ohnehin gibt, ergeben fünf lesbare
+   Zustände. Das ist der Tausch, der die Statusliste kürzen konnte: die Anzeige
+   wird dabei reicher, nicht ärmer.
+
+   | gespeichert | zusätzlich | Agent | Melder |
+   |---|---|---|---|
+   | `open` | kein Bearbeiter | Neu | Eingegangen |
+   | `open` | Bearbeiter | In Bearbeitung | Wird bearbeitet |
+   | `open` | an Hauptstörung | Bekannte Störung | Bekannte Störung |
+   | `waiting_user` | — | Wartet auf Anwender | Wir warten auf Ihre Antwort |
+   | `closed` | — | Abgeschlossen | Abgeschlossen |
+
+   Rein, damit sie offline prüfbar ist (`npm run test:forms`) — dieselbe
+   Aufteilung wie bei `nextStatusAfterReply` und `roleSeesArea`.
+
+   **Die Hauptstörung sticht den Bearbeiter.** Ein Kind-Ticket hat meist beides;
+   was der Melder wissen will, ist, dass sein Problem bekannt ist und mehrere
+   betrifft — nicht der Name der Person, die es nicht einzeln lösen wird.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export interface TicketStateView {
+  /** Für den Desk. Kurz, das Vokabular der Queue. */
+  agent: string;
+  /** Für den Melder. `short` für Listen, `long` für die Detailseite. */
+  short: string;
+  long: string;
+}
+
+export function describeTicketState(ticket: {
+  status: TicketStatus;
+  assigned_to?: string | null;
+  /** Hängt an einer Hauptstörung — aus der `parent_of`-Verknüpfung, nicht aus dem Status. */
+  parkedBehindMajor?: boolean;
+}): TicketStateView {
+  if (ticket.status === "closed" || ticket.status === "waiting_user") {
+    return {
+      agent: TICKET_STATUS_LABELS[ticket.status],
+      ...CUSTOMER_STATUS[ticket.status],
+    };
+  }
+
+  if (ticket.parkedBehindMajor) {
+    return {
+      agent: "Bekannte Störung",
+      short: "Bekannte Störung",
+      long: "Bekannte Störung, wird zentral behoben",
+    };
+  }
+
+  if (ticket.assigned_to) {
+    return {
+      agent: "In Bearbeitung",
+      short: "In Arbeit",
+      long: "Wird bearbeitet",
+    };
+  }
+
+  // Offen und herrenlos. „Neu" für den Desk, weil das die Zeile ist, die aus dem
+  // Eingang geholt werden muss; „Eingegangen" für den Melder, weil „neu" aus
+  // seiner Sicht nichts über den Fortschritt sagt.
+  return { agent: "Neu", short: "Eingegangen", long: "Eingegangen" };
+}
 
 /* ──────────────────────────────────────────────────────────────────────────
    Ballbesitz: der Status sagt, wer am Zug ist.
@@ -141,18 +220,16 @@ export const isOpenStatus = (status: TicketStatus): boolean =>
    Serverseite reicht nur die Zeile herein. Dieselbe Aufteilung wie bei
    `roleSeesArea` und `priorityForRole`.
 
-   Drei Zeilen der Tabelle sind Entscheidungen und keine Mechanik:
+   Mit drei Werten ist die Tabelle drei Zeilen lang, und die zwei
+   Entscheidungen darin sind:
 
-   - **`waiting_major` wird nie angefasst.** Das Ticket hängt an einer
-     Hauptstörung; eine Zwischenmeldung an den Melder darf es nicht aus dieser
-     Kopplung lösen — es fiele aus der Kinderliste der Störung und niemand
-     bemerkte, dass es dort fehlt.
-   - **Der Agent hebt `resolved` und `closed` nicht auf.** Das ist die bestehende
-     Regel und sie bleibt: eine Nachtragsmail auf einem geschlossenen Ticket ist
-     Archivarbeit. Nur der Melder holt ein Ticket zurück.
-   - **`in_progress` nur mit Bearbeiter, sonst `open`.** Ein zurückgeholtes Ticket
-     ohne Bearbeiter muss in einem Status landen, den der Eingang zeigt — sonst
-     ist es wieder da und trotzdem in keiner Liste.
+   - **Der Agent hebt `closed` nicht auf.** Eine Nachtragsmail auf einem
+     abgeschlossenen Ticket ist Archivarbeit. Nur der Melder holt ein Ticket
+     zurück.
+   - **`hasAssignee` spielt keine Rolle mehr.** Es entschied vorher zwischen
+     `open` und `in_progress`; seit „in Bearbeitung" aus der Zuweisung *abgeleitet*
+     wird (`describeTicketState`), gibt es dafür keinen zweiten Wert. Der Parameter
+     bleibt trotzdem in der Signatur — siehe dort, warum.
    ────────────────────────────────────────────────────────────────────────── */
 
 /**
@@ -164,30 +241,27 @@ export const isOpenStatus = (status: TicketStatus): boolean =>
  *
  * Interne Notizen kommen hier nie an — die Sichtbarkeit prüft der Aufrufer, weil
  * sie schon darüber entscheidet, ob überhaupt jemand am Zug ist.
+ *
+ * `hasAssignee` wird nicht mehr gelesen, bleibt aber in der Signatur: die
+ * Aufrufstelle in `applyReplyWorkflow` beansprucht das Ticket unmittelbar vorher
+ * und reicht das Ergebnis herein, und ein Parameter, der wegfällt und beim
+ * nächsten Statuswert wieder gebraucht wird, ist eine Aufrufstelle, die man dann
+ * neu verkabeln muss. `void` macht sichtbar, dass das Absicht ist.
  */
 export function nextStatusAfterReply(
   current: TicketStatus,
   byAgent: boolean,
   hasAssignee: boolean,
 ): TicketStatus | null {
-  // Geparkt hinter einer Hauptstörung: unantastbar für beide Seiten.
-  if (current === "waiting_major") return null;
+  void hasAssignee;
 
   if (byAgent) {
-    // Nur aus einem laufenden Zustand heraus. `resolved` und `closed` bleiben,
-    // wo sie sind.
-    if (current === "open" || current === "in_progress") return "waiting_user";
-    return null;
+    // Nur aus einem laufenden Zustand heraus. `closed` bleibt, wo es ist.
+    return current === "open" ? "waiting_user" : null;
   }
 
   // Der Melder ist am Zug gewesen und hat geantwortet — zurück zum Team.
-  if (
-    current === "waiting_user" ||
-    current === "resolved" ||
-    current === "closed"
-  ) {
-    return hasAssignee ? "in_progress" : "open";
-  }
+  if (current === "waiting_user" || current === "closed") return "open";
 
   return null;
 }
@@ -297,11 +371,8 @@ export const PRIORITY_RANK: Record<TicketPriority, number> = {
 /** Same problem, same fix: lifecycle order, not alphabetical. */
 export const STATUS_RANK: Record<TicketStatus, number> = {
   open: 0,
-  in_progress: 1,
-  waiting_user: 2,
-  waiting_major: 3,
-  resolved: 4,
-  closed: 5,
+  waiting_user: 1,
+  closed: 2,
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -1095,8 +1166,12 @@ export const WorkflowSettingsSchema = z.object({
   /** Der Status folgt dem Schreiben — siehe `nextStatusAfterReply`. */
   statusFollowsReply: z.boolean().default(true),
 
-  /** `resolved` → `closed`, gerechnet ab dem Statuswechsel. */
-  resolvedCloseDays: z.unknown().optional().transform(toAutoCloseDays),
+  /* Es gab hier einmal `resolvedCloseDays` — „Gelöst schließt nach N Tagen".
+     Der Wert ist mit dem Statuswert `resolved` weggefallen: ein Zwischenzustand,
+     dessen einziger Zweck war, später zum Endzustand zu werden, ist der
+     Endzustand mit einer Verzögerung. Eine gespeicherte Zeile mit dem Schlüssel
+     wird beim Parsen still verworfen, was hier richtig ist — das Objekt kennt
+     keine `strict()`-Regel, und ein abgelehnter Parse nähme die Texte mit. */
   /** Erinnerung an den Melder, gerechnet ab dem Wechsel auf `waiting_user`. */
   waitingReminderDays: z.unknown().optional().transform(toAutoCloseDays),
   /** `waiting_user` → `closed`, gerechnet **ab der Erinnerung**, nicht ab dem Statuswechsel. */
@@ -1114,10 +1189,17 @@ export type WorkflowSettings = z.infer<typeof WorkflowSettingsSchema>;
 export const DEFAULT_WORKFLOW_SETTINGS: WorkflowSettings =
   WorkflowSettingsSchema.parse({});
 
-/** Läuft überhaupt eine Automatik? Entscheidet, ob der Schalter am Ticket erscheint. */
+/**
+ * Läuft überhaupt eine Automatik? Entscheidet, ob der Schalter am Ticket
+ * erscheint.
+ *
+ * **Beide Fristen, nicht eine.** Ohne Erinnerung schließt „Wartet auf Anwender"
+ * nie — die zweite Frist zählt ab dem Zeitpunkt, an dem die erste ihren Stempel
+ * gesetzt hat. Eine Instanz mit nur der zweiten hat eine Einstellung, die nichts
+ * tut, und der Schalter am Ticket wäre dann ein Schalter gegen nichts.
+ */
 export const hasAutoClose = (settings: WorkflowSettings): boolean =>
-  settings.resolvedCloseDays > 0 ||
-  (settings.waitingReminderDays > 0 && settings.waitingCloseDays > 0);
+  settings.waitingReminderDays > 0 && settings.waitingCloseDays > 0;
 
 /** `1,4 GB`, `312 MB`, `18 KB` — for a statistics panel, not a report. */
 export function formatBytes(bytes: number): string {
