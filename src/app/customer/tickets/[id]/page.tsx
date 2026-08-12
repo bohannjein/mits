@@ -64,7 +64,7 @@ import { CustomerTicketMeta } from "@/components/tickets/customer-ticket-meta";
 import { findUser } from "@/lib/users";
 import { cn } from "@/lib/utils";
 import {
-  TICKET_STATUS_LABELS,
+  CUSTOMER_STATUS,
   formatTicketNumber,
   isOpenStatus,
 } from "@/types/mits";
@@ -279,7 +279,7 @@ export default async function CustomerTicketPage({
                       variant="secondary"
                       className="h-auto rounded-full px-3 py-1"
                     >
-                      {TICKET_STATUS_LABELS[ticket.status]}
+                      {CUSTOMER_STATUS[ticket.status].long}
                     </Badge>
                   )}
                   {location && (

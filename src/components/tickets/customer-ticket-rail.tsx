@@ -4,7 +4,7 @@ import { ListIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
-  TICKET_STATUS_LABELS,
+  CUSTOMER_STATUS,
   formatTicketNumber,
   isOpenStatus,
   type MITSTicket,
@@ -88,7 +88,9 @@ export function CustomerTicketRail({
                   variant={isOpenStatus(ticket.status) ? "secondary" : "outline"}
                   className="h-auto shrink-0 rounded-full px-2 py-0 text-[10px] font-normal"
                 >
-                  {TICKET_STATUS_LABELS[ticket.status]}
+                  {/* Die kurze Form: dreißig Zeilen in einer schmalen Spalte,
+                      ein Satz würde hier über drei Zeilen umbrechen. */}
+                  {CUSTOMER_STATUS[ticket.status].short}
                 </Badge>
               </span>
               <span

@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   Bot,
+  Inbox,
   ListChecks,
   PenLine,
   type LucideIcon,
@@ -78,11 +79,23 @@ export function PortalActions({
   showCatalog = true,
   /** Das Freitext-Formular ist für diese Rolle sichtbar. */
   showQuick = true,
+  /**
+   * Der Weg zu den eigenen Tickets, oder `null` wenn die Rolle den Bereich nicht
+   * hat.
+   *
+   * **Nicht an das Portal-Widget gekoppelt, und das ist der Punkt.** Die eigene
+   * Ticketliste war ausschließlich als abschaltbares Widget (`active_tickets`)
+   * auf dieser Seite. Schaltet ein Admin es aus, führte der einzige Weg zum
+   * eigenen Ticket über das Benutzermenü — und „wie steht es um meine Sache" ist
+   * die Frage, mit der ein Melder das Portal öffnet.
+   */
+  myTicketsHref = null,
 }: {
   label?: string;
   showAi?: boolean;
   showCatalog?: boolean;
   showQuick?: boolean;
+  myTicketsHref?: string | null;
 }) {
   const reduceMotion = useReducedMotion();
 
@@ -94,7 +107,9 @@ export function PortalActions({
 
   // Nichts freigegeben, also keine Überschrift über einer leeren Reihe. Die Seite
   // sagt an dieser Stelle dann gar nichts, statt eine Aufforderung ohne Ziel.
-  if (actions.length === 0) return null;
+  // Der Weg zu den eigenen Tickets zählt mit: er ist der Grund, dass dieser
+  // Abschnitt auch für eine Rolle ohne Eingang noch etwas zu sagen hat.
+  if (actions.length === 0 && !myTicketsHref) return null;
 
   return (
     <section aria-label={label ?? "Ticket erfassen"} className="grid gap-3">
@@ -150,6 +165,31 @@ export function PortalActions({
         </motion.div>
       ))}
       </div>
+
+      {/*
+        Eine Zeile über die ganze Breite, nicht eine dritte Kachel im Raster.
+        Zwei Gründe: drei Kacheln in zwei Spalten lassen eine Lücke, und das hier
+        ist Navigation und keine Erfassung — dieselbe Ordnung, aus der die
+        Kacheln oben nach Eingangsart getrennt sind.
+      */}
+      {myTicketsHref && (
+        <Card className="rounded-2xl border border-border bg-card p-0 ring-0 shadow-elev-1 transition-[box-shadow,border-color] duration-300 hover:border-foreground/20 hover:shadow-elev-3">
+          <Link
+            href={myTicketsHref}
+            className="flex items-center gap-4 rounded-2xl px-5 py-4 outline-ring/50 focus-visible:outline-2"
+          >
+            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-surface-elevated text-muted-foreground">
+              <Inbox className="size-5" strokeWidth={1.5} aria-hidden />
+            </span>
+            <span className="font-medium">Meine Tickets</span>
+            <ArrowRight
+              className="ml-auto size-5 shrink-0 text-muted-foreground"
+              strokeWidth={1.5}
+              aria-hidden
+            />
+          </Link>
+        </Card>
+      )}
     </section>
   );
 }

@@ -78,6 +78,26 @@ Priorität still auf den Default gesetzt.
 **Der Zähler im Reiter zählt sie nicht.** Er zählt Einschränkungen, und eine
 Startpriorität ist keine.
 
+## Das Ergebnis ansehen: `/customer?preview=user|agent`
+
+Diese Maske hatte den größten Abstand zwischen Klick und Wirkung im ganzen
+System: prüfen konnte ein Admin sie nur, indem er sich ein Testkonto anlegte —
+bei drei Rollen, Vorlagen und einem Dutzend Formularen.
+
+Zwei Knöpfe oben rechts führen ins Portal in der Sicht der gewählten Rolle,
+`RolePreviewBanner` sitzt darüber.
+
+- **Die Vorschau kann nur verengen.** Gelesen wird der Parameter nur hinter
+  `canAdminister`, und `isRestrictableRole` lässt nur `user` und `agent` durch —
+  ein Admin ist selbst nicht einschränkbar, jede Wahl nimmt also weg.
+  `?preview=admin` von einem Anwender ändert nichts: beide Prüfungen fallen durch.
+- **Fremde Daten werden nicht simuliert.** Die Ticketliste bleibt die eigene. Die
+  Frage lautet „welche Flächen bietet die Instanz dieser Rolle an", nicht „was
+  steht bei jemand anderem drin".
+- **Nur das Portal.** `/customer/new` und `/customer/tickets` haben ihre eigenen
+  `requireArea`-Guards, und eine Vorschau, die durch einen Guard läuft, wäre eine
+  Umleitung mit Banner.
+
 ## Admin ist nicht einschränkbar
 
 `RESTRICTABLE_ROLES` ist `["user", "agent"]`. Die Maske liegt selbst unter

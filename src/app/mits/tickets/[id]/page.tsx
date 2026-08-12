@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   AlertTriangleIcon,
+  ArrowRightIcon,
   FolderTreeIcon,
   TagIcon,
   UserIcon,
@@ -65,6 +67,7 @@ import {
   getTicketFor,
   getTicketSeenAt,
   markTicketRead,
+  nextInboxTicket,
 } from "@/lib/tickets";
 import { getUserProfile } from "@/lib/user-profile";
 import { findUser, listUsers } from "@/lib/users";
@@ -300,6 +303,17 @@ export default async function AgentTicketPage({
    */
   const timezone = getSystemTimezone();
   const nowMs = Date.now();
+
+  /*
+   * Die nächste Zeile des Eingangs — ein indizierter Read mit `LIMIT 1`.
+   *
+   * Hier und nicht im Header-Fragment weiter unten: die Seite ist eine Server
+   * Component, und der Knopf ist ein Link. Ein Client-Bauteil, das sich das
+   * nächste Ticket selbst holt, wäre ein zweiter Ort mit der Regel „herrenlos und
+   * offen" — und der zweite ist der, der beim nächsten Statuswert veraltet.
+   */
+  const nextInbox = nextInboxTicket(id);
+
   const reminders = flags.feature_ticket_reminders
     ? listRemindersForTicket(id, user.id).map((entry) => ({
         id: entry.id,
@@ -389,6 +403,7 @@ export default async function AgentTicketPage({
             ticketId={ticket.id}
             currentUserId={user.id}
             mine={ticket.assigned_to === user.id}
+            resolved={ticket.status === "resolved" || ticket.status === "closed"}
           />
           <TicketFrame
             sidebarLabel="Details"
@@ -414,6 +429,27 @@ export default async function AgentTicketPage({
                   <h1 className="min-w-0 flex-1 truncate text-base font-medium tracking-tight sm:text-lg">
                     {ticket.title}
                   </h1>
+                  {/*
+                    Der Weg zur nächsten Zeile des Eingangs, ohne über die Queue
+                    zu gehen. Steht nur da, wenn dort etwas liegt — ein Knopf, der
+                    nirgends hinführt, ist schlechter als keiner.
+
+                    Neben dem Zurück-Link und nicht bei den Workflow-Knöpfen: das
+                    ist Navigation und keine Entscheidung am Ticket.
+                  */}
+                  {nextInbox && (
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 shrink-0 rounded-full px-3 text-xs"
+                    >
+                      <Link href={`/mits/tickets/${nextInbox.id}`}>
+                        Nächstes im Eingang
+                        <ArrowRightIcon className="size-3.5" strokeWidth={1.5} />
+                      </Link>
+                    </Button>
+                  )}
                   {/* Beside the title rather than in a toolbar: detaching is about
                       this conversation, and the title is what names it. */}
                   <DetachButtons

@@ -63,6 +63,53 @@ export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
   closed: "Geschlossen",
 };
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Derselbe Status, zwei Vokabulare.
+
+   `TICKET_STATUS_LABELS` ist die Sprache des Desks: „Wartet auf Anwender" sagt
+   einem Agenten, dass dieses Ticket nicht seine Baustelle ist. Dem Melder sagt
+   es nichts — es ist ein interner Zustandsname, und dabei ist es die
+   handlungsrelevanteste Auskunft der ganzen Seite: *er* ist der Grund, dass
+   nichts passiert.
+
+   Deshalb eine zweite Map. Kein Umschreiben der ersten: zwei Rollen lesen
+   dieselbe Zeile und brauchen zwei verschiedene Sätze, und der Agent, der einem
+   Melder am Telefon hilft, muss weiter den Namen benutzen können, der in der
+   Queue steht.
+
+   **Zwei Längen, und das ist keine Bequemlichkeit.** Auf der Detailseite steht
+   ein Satz, der sagt, was zu tun ist. In der Ticketliste am Rand — dreißig
+   Zeilen in einer schmalen Spalte — steht ein Wort: „Wir warten auf Ihre
+   Antwort" in einem Badge von 90 Pixeln wäre entweder ein Umbruch über drei
+   Zeilen oder ein „Wir warten auf Ihre A…", und beides ist schlechter als
+   „Ihre Antwort". Ein Objekt statt zweier Maps, damit ein neuer Status beide
+   Formen erzwingt.
+
+   Kein Name des Bearbeiters darin: der steht als eigenes Feld daneben, und zwei
+   Orte für denselben Namen sind einer zu viel.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const CUSTOMER_STATUS: Record<
+  TicketStatus,
+  { short: string; long: string }
+> = {
+  open: { short: "Eingegangen", long: "Eingegangen, noch nicht zugeteilt" },
+  in_progress: { short: "In Arbeit", long: "Wird bearbeitet" },
+  waiting_user: {
+    short: "Ihre Antwort",
+    long: "Wir warten auf Ihre Antwort",
+  },
+  // Nicht „wartet auf Hauptstörung": dass die IT das Ticket an eine größere
+  // Störung gehängt hat, ist eine Organisationsauskunft. Was der Melder wissen
+  // will, ist, dass es bekannt ist und mehrere betrifft.
+  waiting_major: {
+    short: "Bekannte Störung",
+    long: "Bekannte Störung, wird zentral behoben",
+  },
+  resolved: { short: "Erledigt", long: "Erledigt — Rückmeldung möglich" },
+  closed: { short: "Abgeschlossen", long: "Abgeschlossen" },
+};
+
 /**
  * Still someone's problem. `resolved` counts as open on purpose: the agent is
  * done but the reporter has not confirmed, and a resolved ticket that vanishes

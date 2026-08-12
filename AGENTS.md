@@ -125,6 +125,47 @@ Folge aus dem Feld selbst ableiten, und was kostet es, wenn nicht.
 Ein entfernter Erklärsatz ist eine gewonnene Zeile. Eine entfernte Warnung ist
 ein Supportfall.
 
+## Der Admin-Desk ist eine Einstellungsliste, kein Pillenteppich
+
+Achtundzwanzig Ziele lagen als umbrechende Reihe gleich aussehender Pillen da, in
+einer Ordnung, die niemand benennen konnte. Das Suchfeld darüber half, *wenn man
+das Wort kannte*.
+
+Jetzt nach dem Vorbild einer Telefon-Einstellungsapp: **Gruppen mit Überschrift,
+ganzzeilige Einträge, und unter jeder Beschriftung der aktuelle Wert.** Die dritte
+Eigenschaft ist die, die zählt — eine frische Installation sah vorher aus wie eine
+seit zwei Jahren gepflegte.
+
+- **`collectAdminSummaries` (`lib/admin-index.ts`) liefert die Zeile je `href`.**
+  Sieben davon kommen aus `collectSystemStatus()` und werden übernommen statt
+  nachgebaut: dort steckt die Unterscheidung, die den Wert ausmacht —
+  *abgeschaltet* ist neutral, *eingeschaltet und unvollständig* ist der Zustand,
+  der etwas kaputt macht.
+- **Die Werte reisen als Props, nicht über einen Fetch.** Die Liste ist ein
+  Client-Bauteil (die Suche filtert pro Tastendruck), die Symbole sind
+  React-Komponenten und überleben die Serialisierung nicht. Verbunden wird über
+  `href`: Einträge und Symbole im Client, Werte vom Server.
+- **`collectSetupSteps` ist eine Liste mit Haken, kein Wizard.** Fünf Schritte mit
+  echter Abhängigkeit — ohne Kategorien filtert die Queue nichts, ohne SMTP
+  erfährt kein Melder etwas. Sie verschwindet, wenn sie durch ist; ein Assistent,
+  der einmal läuft, hilft genau der Person nicht, die ihn ein Jahr später
+  bräuchte.
+- **Der Desk trägt kein Formular mehr.** Die Registrierungsrichtlinie liegt unter
+  `/admin/settings/registration`. Vorher war der Desk Index *und* Seite, und das
+  eine Formular darauf sah willkürlich aus.
+
+## Derselbe Status, zwei Vokabulare
+
+`TICKET_STATUS_LABELS` ist die Sprache des Desks, `CUSTOMER_STATUS` die des
+Melders. „Wartet auf Anwender" sagt einem Agenten, dass das Ticket nicht seine
+Baustelle ist — dem Melder sagt es nichts, obwohl **er** der Grund ist. Dort steht
+„Wir warten auf Ihre Antwort".
+
+**Zwei Längen je Status** (`short`, `long`), und das ist keine Bequemlichkeit: in
+der Ticketliste am Rand — dreißig Zeilen in einer schmalen Spalte — bräche ein Satz
+über drei Zeilen. `TicketTable` entscheidet über `customerLabels`, Default ist die
+Melderansicht wie bei jedem anderen Schalter dort.
+
 ## Design-System
 
 **Google Web Design Language** (Material 3 / Gemini), **beide Themes
@@ -393,6 +434,8 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /admin/categories       Kategoriebaum: Haupt- und Unterkategorien, Kachel-Symbol
 /admin/settings/routing Stichwort-Regeln: Kategorie, Mindestpriorität, FAQ-Vorschläge
 /admin/settings/workflow Ballbesitz beim Antworten, Fristen fürs automatische Schließen
+/admin/settings/registration Selbstregistrierung, Domains, Sitzungsdauer, 2FA-Pflicht
+/customer?preview=user|agent Portal in der Sicht dieser Rolle, nur für Admins
 /admin/settings/roles   Sichtbarkeit je Rolle: welche Formulare, welche Bereiche
 /admin/settings/storage Dateispeicher (Platte oder S3)
 /admin/settings/api-keys API-Keys je System, Token nur einmal sichtbar

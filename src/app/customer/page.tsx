@@ -8,7 +8,9 @@ import { PortalActions } from "@/components/dashboard/portal-actions";
 import { RemindersWidget } from "@/components/dashboard/reminders-widget";
 import { ResourceGrid } from "@/components/dashboard/resource-grid";
 import { ServiceStatus } from "@/components/dashboard/service-status";
+import { RolePreviewBanner } from "@/components/admin/role-preview-banner";
 import { AppHeader } from "@/components/layout/app-header";
+import { canAdminister } from "@/lib/auth/roles";
 import { requireUser } from "@/lib/auth/session";
 import { getFeatureFlags } from "@/lib/features";
 import {
@@ -34,6 +36,7 @@ import { listOwnTickets } from "@/lib/tickets";
 import {
   fillPortalText,
   formatTicketNumber,
+  isRestrictableRole,
   type PortalWidgetKey,
 } from "@/types/mits";
 
@@ -48,10 +51,39 @@ import {
    branch to keep in step with the public one.
    ────────────────────────────────────────────────────────────────────────── */
 
-export default async function CustomerPortalPage() {
+export default async function CustomerPortalPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ preview?: string }>;
+}) {
   const user = await requireUser("/customer");
   const config = getPortalConfig();
   const titles = config.widget_titles;
+
+  /*
+   * Das Portal aus der Sicht einer anderen Rolle ansehen.
+   *
+   * `/admin/settings/roles` nimmt Rollen einzelne Formulare und Bereiche weg, und
+   * prüfen konnte ein Admin das Ergebnis nur mit einem Testkonto: bei drei
+   * Rollen, Vorlagen und einem Dutzend Formularen ist das die Einstellung mit dem
+   * größten Abstand zwischen Klick und Wirkung.
+   *
+   * **Die Vorschau kann nur verengen.** Ein Admin ist nicht einschränkbar
+   * (`RESTRICTABLE_ROLES`), jede Wahl hier nimmt also weg statt hinzuzufügen —
+   * und `canAdminister` ist die Bedingung dafür, dass der Parameter überhaupt
+   * gelesen wird. Ein Anwender, der `?preview=admin` anhängt, ändert nichts:
+   * `isRestrictableRole` kennt den Wert nicht, und die Prüfung davor sowieso
+   * nicht.
+   *
+   * Was **nicht** simuliert wird, sind fremde Daten. Die Ticketliste bleibt die
+   * eigene — die Frage, die diese Vorschau beantwortet, ist „welche Flächen
+   * bietet die Instanz dieser Rolle an", nicht „was steht bei jemand anderem
+   * drin".
+   */
+  const requested = (await searchParams).preview;
+  const previewRole =
+    canAdminister(user.role) && isRestrictableRole(requested) ? requested : null;
+  const effectiveRole = previewRole ?? user.role;
 
   /*
    * The reporter's own reminders, formatted server-side.
@@ -83,12 +115,12 @@ export default async function CustomerPortalPage() {
    * gelten muss. Dieselbe Ableitung wie in `/customer/new` — beide fragen, ob es
    * unter dem Reiter etwas gibt.
    */
-  const areas = visibleAreas(user.role);
+  const areas = visibleAreas(effectiveRole);
   const intakeOpen = areas.customer_new;
   const intake = {
     ai: intakeOpen && areas.intake_ai,
-    catalog: intakeOpen && listCatalogSchemasFor(user.role).length > 0,
-    quick: intakeOpen && Boolean(quickTicketSchemaFor(user.role)),
+    catalog: intakeOpen && listCatalogSchemasFor(effectiveRole).length > 0,
+    quick: intakeOpen && Boolean(quickTicketSchemaFor(effectiveRole)),
   };
 
   // Just the given name: "Hallo Jana" reads like a colleague, the full address
@@ -134,6 +166,10 @@ export default async function CustomerPortalPage() {
       <AppHeader />
       <main className="bg-aurora flex flex-1 flex-col items-center px-6 py-12">
         <div className="grid w-full max-w-4xl gap-8">
+          {previewRole && (
+            <RolePreviewBanner active={previewRole} basePath="/customer" />
+          )}
+
           <section>
             <h1 className="text-3xl font-normal tracking-tight sm:text-4xl">
               {fillPortalText(config.hero_title, firstName)}
@@ -157,6 +193,11 @@ export default async function CustomerPortalPage() {
             showAi={intake.ai}
             showCatalog={intake.catalog}
             showQuick={intake.quick}
+            // Nur an der Bereichs-Sichtbarkeit, nicht am Widget darunter: die
+            // eigene Ticketliste war ausschließlich als abschaltbares Widget
+            // erreichbar, und mit ihm aus führte der einzige Weg über das
+            // Benutzermenü.
+            myTicketsHref={areas.customer_tickets ? "/customer/tickets" : null}
           />
 
           {/*

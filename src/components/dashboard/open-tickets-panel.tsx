@@ -12,7 +12,7 @@ import { useTimezone } from "@/components/providers/timezone-provider";
 import {
   MITSTicketSchema,
   TICKET_PRIORITY_LABELS,
-  TICKET_STATUS_LABELS,
+  CUSTOMER_STATUS,
   formatTicketNumber,
   isElevatedPriority,
   isOpenStatus,
@@ -153,7 +153,8 @@ export function OpenTicketsPanel({
                 <Badge
                   className={cn("rounded-full", STATUS_STYLES[ticket.status])}
                 >
-                  {TICKET_STATUS_LABELS[ticket.status]}
+                  {/* Melder-Vokabular: das Panel steht nur auf `/customer`. */}
+                  {CUSTOMER_STATUS[ticket.status].short}
                 </Badge>
                 <span className="w-24 shrink-0 text-right text-xs text-muted-foreground">
                   {ticket.created_at.toLocaleDateString("de-DE", {

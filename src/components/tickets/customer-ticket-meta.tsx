@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   CUSTOMER_META_FIELDS,
   CUSTOMER_META_FIELD_LABELS,
-  TICKET_STATUS_LABELS,
+  CUSTOMER_STATUS,
   type CustomerMetaField,
   type MITSTicket,
 } from "@/types/mits";
@@ -73,7 +73,7 @@ export function CustomerTicketMeta({
                   variant="secondary"
                   className="h-auto rounded-full px-2.5 py-0.5 text-xs font-normal"
                 >
-                  {TICKET_STATUS_LABELS[ticket.status]}
+                  {CUSTOMER_STATUS[ticket.status].long}
                 </Badge>
               ) : (
                 /*

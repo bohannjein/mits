@@ -383,6 +383,10 @@ export default async function AgentQueuePage({
                     locations={locations}
                     detailBase="/mits/tickets"
                     sort={sort}
+                    // Der Desk liest die internen Statusnamen: „Wartet auf
+                    // Anwender" sagt hier, dass das Ticket nicht die eigene
+                    // Baustelle ist.
+                    customerLabels={false}
                   />
                 </section>
               )}
@@ -413,6 +417,7 @@ export default async function AgentQueuePage({
                     locations={locations}
                     detailBase="/mits/tickets"
                     sort={sort}
+                    customerLabels={false}
                     sortBasePath="/mits"
                     // Passed whole, so a sort click keeps the tab, the scope and any
                     // deep filter that is already narrowing the list.

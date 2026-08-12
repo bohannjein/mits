@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/table";
 import {
   TICKET_PRIORITY_LABELS,
+  CUSTOMER_STATUS,
   TICKET_STATUS_LABELS,
   formatTicketNumber,
   isElevatedPriority,
@@ -110,6 +111,20 @@ export function TicketTable({
    * the same reason the composer lost its own outline inside `TicketFrame`.
    */
   accent = false,
+  /**
+   * Welches Statusvokabular die Zeilen tragen.
+   *
+   * Der Desk und der Melder lesen dieselbe Spalte und brauchen zwei
+   * verschiedene Wörter: „Wartet auf Anwender" sagt einem Agenten, dass das
+   * Ticket nicht seine Baustelle ist, und dem Melder gar nichts — obwohl es ihn
+   * betrifft und er der Grund ist.
+   *
+   * Standard ist die Melderansicht, wie bei jedem anderen Schalter hier
+   * (`showOwner`, `showPin`, `detailBase`): die Agentenseite setzt ihre Props
+   * ohnehin alle ausdrücklich, die Melderseite bekommt die schmale Variante
+   * geschenkt.
+   */
+  customerLabels = true,
 }: {
   tickets: MITSTicket[];
   showOwner?: boolean;
@@ -121,6 +136,7 @@ export function TicketTable({
   showTime?: boolean;
   showPin?: boolean;
   accent?: boolean;
+  customerLabels?: boolean;
 }) {
   const timezone = getSystemTimezone();
   // One clock for every row, read once. Calling Date.now() per row would let a
@@ -370,7 +386,9 @@ export function TicketTable({
                 </TableCell>
                 <TableCell className="w-px whitespace-nowrap">
                   <Badge variant="secondary" className="rounded-full">
-                    {TICKET_STATUS_LABELS[ticket.status]}
+                    {customerLabels
+                      ? CUSTOMER_STATUS[ticket.status].short
+                      : TICKET_STATUS_LABELS[ticket.status]}
                   </Badge>
                 </TableCell>
                 {showTime && (

@@ -315,6 +315,57 @@ export function TicketSidebar({
       title: "Status & Zuweisung",
       content: (
         <div className="grid gap-4">
+          {/*
+            Die zwei Entscheidungen, die nach dem Ballbesitz-Umbau noch von einem
+            Menschen kommen — ganz oben und als Knöpfe.
+
+            Vorher standen hier vier Auswahllisten in einer Reihe, und drei davon
+            entscheidet inzwischen `nextStatusAfterReply`: der Status folgt der
+            Antwort, die Zuweisung ebenfalls. Was übrig blieb, ist „die Arbeit ist
+            getan" und „das Gespräch ist zu Ende", und das waren zwei Klicks in
+            einem Dropdown für die zwei häufigsten Handlungen der Seite.
+
+            `Gelöst` trägt das Kürzel, `Schließen` nicht: gelöst bleibt für den
+            Melder wiederöffenbar, geschlossen ist das Archiv, und eine
+            versehentlich gedrückte Taste darf das Erste tun und nicht das Zweite.
+          */}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button
+              type="button"
+              onClick={() => {
+                setStatus("resolved");
+                dispatch(statusAction, {
+                  ticketId: ticket.id,
+                  status: "resolved",
+                });
+              }}
+              disabled={busy || status === "resolved" || status === "closed"}
+              className="h-10 rounded-full bg-inverse-surface px-4 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+            >
+              {changingStatus ? (
+                <Loader2Icon className="animate-spin" />
+              ) : (
+                <CheckCircle2Icon strokeWidth={1.5} />
+              )}
+              Gelöst
+              <Kbd keys={["E"]} className="opacity-60" />
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setStatus("closed");
+                dispatch(statusAction, {
+                  ticketId: ticket.id,
+                  status: "closed",
+                });
+              }}
+              disabled={busy || status === "closed"}
+              className="h-10 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
+            >
+              Schließen
+            </Button>
+          </div>
+
           <div className="grid gap-1.5">
             <Label htmlFor="sb-status" className="text-xs text-muted-foreground">
               Status
@@ -399,29 +450,37 @@ export function TicketSidebar({
             </Select>
           </div>
 
-          {/* Self-assign stays a button: it is the common case and should not
-              require finding your own name in a list. Same dispatch, so it goes
-              through the same pending state as the dropdown above it. */}
-          <Button
-            type="button"
-            onClick={() => {
-              setAssignee(currentUserId);
-              dispatch(assignAction, {
-                ticketId: ticket.id,
-                assigneeId: currentUserId,
-              });
-            }}
-            className="h-9 w-full rounded-full bg-inverse-surface px-4 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
-            disabled={busy || mine}
-          >
-            {assigning ? (
-              <Loader2Icon className="animate-spin" />
-            ) : (
-              <UserCheckIcon strokeWidth={1.5} />
-            )}
-            {mine ? "Dir zugewiesen" : "Mir zuweisen"}
-            {!mine && <Kbd keys={["M"]} className="opacity-60" />}
-          </Button>
+          {/*
+            Nur wenn das Ticket frei ist oder jemand anderem gehört.
+
+            Vorher stand hier auf einem eigenen Ticket ein abgeschalteter Knopf
+            mit „Dir zugewiesen" — eine Zeile, die dasselbe sagt wie die
+            Auswahlliste direkt darüber, und die nichts tun kann. Seit eine
+            öffentliche Antwort ein herrenloses Ticket ohnehin übernimmt, ist der
+            Knopf der Ausnahmefall und nicht der Regelweg.
+          */}
+          {!mine && (
+            <Button
+              type="button"
+              onClick={() => {
+                setAssignee(currentUserId);
+                dispatch(assignAction, {
+                  ticketId: ticket.id,
+                  assigneeId: currentUserId,
+                });
+              }}
+              className="h-9 w-full rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
+              disabled={busy}
+            >
+              {assigning ? (
+                <Loader2Icon className="animate-spin" />
+              ) : (
+                <UserCheckIcon strokeWidth={1.5} />
+              )}
+              Mir zuweisen
+              <Kbd keys={["M"]} className="opacity-60" />
+            </Button>
+          )}
 
           {/*
             Nur wenn auf dieser Instanz überhaupt eine Frist läuft. Ein Schalter

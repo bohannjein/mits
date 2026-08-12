@@ -139,6 +139,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     title: "Ticket",
     items: [
       { keys: ["R"], description: "In die Antwortzeile springen" },
+      { keys: ["E"], description: "Als gelöst markieren" },
       { keys: ["M"], description: "Mir zuweisen" },
       { keys: ["I"], description: "Interne Notiz umschalten" },
       { keys: ["P"], description: "Als Fenster anpinnen" },

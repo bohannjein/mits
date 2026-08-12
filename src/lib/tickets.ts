@@ -1117,6 +1117,42 @@ export function listUnassignedTickets(): MITSTicket[] {
   return rows.map(rowToTicket);
 }
 
+/**
+ * Das nächste herrenlose Ticket im Eingang, außer diesem.
+ *
+ * Triage war: Queue öffnen, Ticket anklicken, antworten, zurück zur Queue, die
+ * nächste Zeile suchen. Vier Schritte, von denen zwei Navigation sind — und die
+ * Queue hat sich zwischenzeitlich neu sortiert, also sucht man die Stelle, an der
+ * man war.
+ *
+ * `LIMIT 1` und nicht `listUnassignedTickets()[0]`: die Liste kann auf einer
+ * belebten Instanz dreistellig sein, und gebraucht wird eine Zeile. Ältestes
+ * zuerst, dieselbe Reihenfolge wie der Eingang selbst — sonst führte der Knopf an
+ * eine andere Stelle als der Tab, aus dem man kommt.
+ *
+ * `null`, wenn der Eingang leer ist. Der Aufrufer zeigt dann keinen Knopf: einer,
+ * der nirgends hinführt, ist die schlechtere Antwort als keiner.
+ */
+export function nextInboxTicket(
+  exceptId: string,
+): { id: string; ticket_number: number | null } | null {
+  const row = db
+    .prepare(
+      `SELECT id, ticket_number FROM mits_ticket
+        WHERE ${ALIVE}
+          AND assigned_to IS NULL
+          AND id <> ?
+          AND status IN (${OPEN_PLACEHOLDERS})
+        ORDER BY created_at ASC
+        LIMIT 1`,
+    )
+    .get(exceptId, ...OPEN_TICKET_STATUSES) as
+    | { id: string; ticket_number: number | null }
+    | undefined;
+
+  return row ?? null;
+}
+
 /** Open tickets this agent has taken. */
 export function listAssignedTickets(agentId: string): MITSTicket[] {
   const rows = db
