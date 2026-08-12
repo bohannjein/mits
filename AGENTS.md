@@ -313,6 +313,25 @@ die dieser Leser **nicht** verursacht hat. Ein gespeichertes Boolean müsste jed
 Schreiber für jeden anderen Benutzer zurücksetzen, und der erste, der es vergisst,
 hinterlässt ein Ticket, das sich nie wieder meldet.
 
+**Der Status sagt, wer am Zug ist, und ergibt sich aus dem Schreiben.** Eine
+öffentliche Antwort beansprucht ein herrenloses Ticket und schaltet den Status
+um; die Regel ist `nextStatusAfterReply` in `types/mits.ts` — eine reine
+Funktion, damit sie in `test:forms` offline geprüft werden kann. Durchgesetzt in
+`addComment` und nicht in der Server Action, damit der Mail-Ingest es mitbekommt.
+Details in `.claude/rules/tickets.md`; was überall gilt:
+
+- **`lib/ticket-workflow.ts` ist die Senke.** `lib/tickets.ts` und
+  `lib/ticket-comments.ts` sind Geschwister und kennen einander nicht; beide
+  importieren sie, sie importiert keines von beiden. Der Sweeper braucht das
+  Gegenteil und liegt deshalb getrennt in `lib/ticket-sweeper.ts`.
+- **`applyStatusChange` ist die einzige Stelle, die `status` schreibt.** An ihr
+  hängen zwei Uhren (`status_changed_at`, `waiting_reminder_at`); ein Schreiber
+  daneben ließe sie stehen, und das Fehlerbild ist ein Ticket, das nie oder
+  sofort verfällt.
+- **Alle drei Verfallsfristen stehen im Auslieferungszustand auf `0` = aus.** Ein
+  Update, das anfängt, Kundentickets zu schließen und Mail zu verschicken, ist
+  die eine Richtung, die niemand bemerkt, bis ein Kunde anruft.
+
 **Priorität ist eine Agenten-Entscheidung, und der Startwert steht je Rolle.**
 `createTicket` klemmt den Entwurf einer melderseitigen Anfrage auf den Wert, der
 unter `/admin/settings/roles` für diese Rolle eingestellt ist (Default `medium`) —
@@ -373,6 +392,7 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /admin/macros           Makros
 /admin/categories       Kategoriebaum: Haupt- und Unterkategorien, Kachel-Symbol
 /admin/settings/routing Stichwort-Regeln: Kategorie, Mindestpriorität, FAQ-Vorschläge
+/admin/settings/workflow Ballbesitz beim Antworten, Fristen fürs automatische Schließen
 /admin/settings/roles   Sichtbarkeit je Rolle: welche Formulare, welche Bereiche
 /admin/settings/storage Dateispeicher (Platte oder S3)
 /admin/settings/api-keys API-Keys je System, Token nur einmal sichtbar
@@ -388,6 +408,7 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /api/tickets/[id]/activity  Fingerabdruck, Ersatzweg wenn der Stream fehlt
 /api/notifications/digest   Sammelmeldung ab der eingestellten Schwelle
 /api/cron/reminders     Fällige Erinnerungen anstoßen, Service-Token **oder** Admin-Sitzung
+/api/cron/workflow      Stillstehende Tickets aufräumen — **schreibt**, einmal täglich
 /api/analytics          Kennzahlen als JSON oder `?format=csv` (Agenten)
 /api/mail/poll          Postfach abrufen, Service-Token **oder** Admin-Sitzung
 /api/v1/cmdb/…          REST-Schnittstelle, Token **oder** Agenten-Sitzung

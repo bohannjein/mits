@@ -14,6 +14,7 @@ import {
 } from "@/lib/sanitize";
 import { withinRetractWindow } from "@/lib/retract-window";
 import { UploadError, linkUploadsToTicket } from "@/lib/storage";
+import { applyReplyWorkflow } from "@/lib/ticket-workflow";
 import {
   TicketCommentSchema,
   type CommentBodyFormat,
@@ -203,6 +204,20 @@ export function addComment(
    */
   format: CommentBodyFormat = "text",
   origin?: MailAuthorOrigin,
+  /**
+   * Die Automatik aus Ballbesitz und Zuweisung überspringen.
+   *
+   * Genau eine Aufrufstelle: „Antworten & Ticket schließen". Dieser Knopf setzt
+   * den Endzustand selbst, und ohne das Auslassen schriebe er zwei
+   * Historienzeilen für einen Vorgang — `open → waiting_user → closed`, wobei
+   * die mittlere nie jemand gesehen hat.
+   *
+   * Ein Boolean und kein Options-Objekt: `origin` daneben trägt eine Identität
+   * und darf niemals aus einem Request stammen, deshalb bleiben die Parameter
+   * dieser Funktion einzeln sichtbar statt in einem Bündel, in das sich etwas
+   * hineinreichen lässt.
+   */
+  skipReplyWorkflow = false,
 ): TicketComment {
   /*
    * A mailed-in reply is never staff, whatever account it is filed under.
@@ -325,21 +340,22 @@ export function addComment(
    * that is a round trip that also reveals the note's timing.
    */
   /*
-   * A reporter writing into a closed ticket reopens it.
+   * Ballbesitz: eine öffentliche Antwort beansprucht das Ticket und schaltet den
+   * Status um.
    *
-   * Here rather than in the action, so the mail ingest gets it too — the most
-   * common way this happens is somebody replying to the closing notification,
-   * which never touches a Server Action. A reply that lands on a closed ticket
-   * and leaves it closed is a question nobody is looking at: it is in no queue,
-   * it raises no unread badge for the desk, and the person who wrote it has every
-   * reason to believe somebody will answer.
+   * Hier und nicht in der Action, damit der Mail-Ingest es mitbekommt — der
+   * häufigste Fall ist eine Antwort auf die Schließungsmail, die nie eine Server
+   * Action berührt. Das ist derselbe Grund, aus dem an dieser Stelle vorher
+   * `reopenIfClosed` stand; die Regel dort ist in `nextStatusAfterReply`
+   * aufgegangen, weil zwei Stellen, die den Status nach einem Beitrag setzen,
+   * zwei Stellen sind, die sich widersprechen können.
    *
-   * Only for a reporter and only for a public message. An agent writing on a
-   * closed ticket is filing a note after the fact, and reopening on that would
-   * mean the desk cannot annotate its own archive without resurrecting it.
+   * Nur öffentlich. Eine interne Notiz ist Werkstattgespräch: sie sagt weder dem
+   * Melder noch der Queue, dass jemand am Zug ist, und ein Kollege, der
+   * „kenne ich, siehe TCK-x" danebenschreibt, reißt das Ticket nicht an sich.
    */
-  if (!isAgent && visibility === "public") {
-    reopenIfClosed(ticketId, user);
+  if (visibility === "public" && !skipReplyWorkflow) {
+    applyReplyWorkflow(ticketId, user, isAgent);
   }
 
   publish({
@@ -356,34 +372,16 @@ export function addComment(
   return rowToComment(row);
 }
 
-/**
- * Put a closed ticket back in the queue.
+/*
+ * `reopenIfClosed` stand hier und ist in `nextStatusAfterReply`
+ * (`types/mits.ts`) aufgegangen.
  *
- * `open` and not the status it had before: what it was doing three weeks ago is
- * not what it is doing now, and restoring "Wartet auf Anwender" on a ticket the
- * user just wrote into would be actively wrong. The assignment is left alone —
- * whoever handled it last is the obvious person to look at it again, and taking
- * that away would drop it into the pool anonymously.
- *
- * Audited, because a status change nobody made by hand is exactly the kind that
- * needs to be explainable afterwards.
+ * Es holte `closed` und `resolved` auf `open` zurück, wenn ein Melder schrieb —
+ * und ließ `waiting_user` unberührt. Genau das war der teuerste Defekt des alten
+ * Modells: der Tab „Wartend" füllte sich mit Tickets, die längst beantwortet
+ * waren. Die Nachfolgeregel deckt beide Fälle ab und hat eine Zeile mehr, in der
+ * die Zuweisung über `open` und `in_progress` entscheidet.
  */
-function reopenIfClosed(ticketId: string, actor: SessionUser): void {
-  const row = db
-    .prepare("SELECT status FROM mits_ticket WHERE id = ? AND deleted_at IS NULL")
-    .get(ticketId) as { status: string } | undefined;
-
-  if (!row) return;
-  if (row.status !== "closed" && row.status !== "resolved") return;
-
-  db.prepare("UPDATE mits_ticket SET status = 'open' WHERE id = ?").run(ticketId);
-
-  recordAudit(ticketId, actor, "status_changed", {
-    field: "status",
-    from: row.status,
-    to: "open",
-  });
-}
 
 /**
  * Load one comment with the same visibility rule the listing uses.

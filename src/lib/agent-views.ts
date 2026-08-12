@@ -79,9 +79,20 @@ export function filterFor(
 
   switch (view) {
     case "inbox":
-      // Unassigned by definition, so the scope's assignee clause is dropped
-      // rather than combined into a contradiction.
-      return { unassignedOnly: true, status: "open" };
+      /*
+       * Unassigned by definition, so the scope's assignee clause is dropped
+       * rather than combined into a contradiction.
+       *
+       * **Jeder offene Status, nicht nur `open`.** Vorher stand hier
+       * `status: "open"`, und damit fiel ein unzugewiesenes Ticket aus dem Pool,
+       * sobald es irgendetwas anderes hieß — es stand dann in keiner Liste mehr:
+       * nicht im Eingang, weil der Status nicht passte, und nicht in „Mein
+       * Bereich", weil es niemandem gehörte. Seit der Status dem Schreiben folgt,
+       * ist das kein Randfall mehr: eine Melderantwort auf ein herrenloses
+       * geschlossenes Ticket macht es `open`, aber `waiting_major` und ein von
+       * Hand geleerter Bearbeiter treffen genauso.
+       */
+      return { unassignedOnly: true, statusIn: OPEN_TICKET_STATUSES };
     case "open":
       return { ...base, statusIn: OPEN_TICKET_STATUSES };
     case "waiting":

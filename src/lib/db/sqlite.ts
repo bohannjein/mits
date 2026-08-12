@@ -798,6 +798,39 @@ function addColumns(database: Database.Database): void {
      * tickets that referenced it, and a ticket whose category is gone still opens.
      */
     { table: "mits_ticket", column: "category_id", definition: "TEXT" },
+    /*
+     * Wann der Status zuletzt gewechselt hat — die Uhr für beide Verfallsfristen.
+     *
+     * Nullable und **nicht** aus `created_at` abgeleitet. Die Ableitung wäre der
+     * naheliegende Backfill und der teure Fehler: sie machte jedes seit Monaten
+     * gelöste Ticket sofort überfällig, und der erste Cron-Lauf nach dem Update
+     * schlösse den ganzen Bestand auf einmal — mit einer Mail je Ticket.
+     * Stattdessen füllt `backfillStatusChangedAt` mit dem Zeitpunkt des Updates:
+     * die Uhr beginnt beim Upgrade, nichts schließt rückwirkend.
+     */
+    { table: "mits_ticket", column: "status_changed_at", definition: "TEXT" },
+    /*
+     * Wann die Erinnerung an den Melder rausging. NULL heißt „noch nicht".
+     *
+     * Eine eigene Spalte und nicht „`status_changed_at` plus Frist": die zweite
+     * Wartephase zählt **ab der Erinnerung**, nicht ab dem Statuswechsel. Ohne
+     * den Stempel gäbe es keinen Zeitpunkt, ab dem sie läuft — und die Erinnerung
+     * ginge bei jedem Lauf erneut raus.
+     */
+    { table: "mits_ticket", column: "waiting_reminder_at", definition: "TEXT" },
+    /*
+     * Der Schalter des Agenten: dieses eine Ticket schließt die Automatik nicht.
+     *
+     * Default 0, also „Automatik gilt". Die andere Richtung wäre sicherer und
+     * wäre trotzdem falsch: ein Bestand, in dem jedes alte Ticket ausgenommen
+     * ist, macht eine eingeschaltete Frist wirkungslos, und das Fehlerbild ist
+     * eine Einstellung, die nichts tut.
+     */
+    {
+      table: "mits_ticket",
+      column: "auto_close_off",
+      definition: "INTEGER NOT NULL DEFAULT 0",
+    },
   ];
 
   for (const { table, column, definition } of additions) {
@@ -841,6 +874,50 @@ function addColumns(database: Database.Database): void {
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_mits_ticket_category
        ON mits_ticket (category_id) WHERE category_id IS NOT NULL`,
+  );
+
+  /*
+   * Der Index, auf dem der Verfalls-Sweeper läuft: Status zuerst, weil er die
+   * Menge auf ein paar Prozent des Bestands schneidet, die Uhr danach.
+   */
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_mits_ticket_status_changed
+       ON mits_ticket (status, status_changed_at)`,
+  );
+
+  backfillStatusChangedAt(database);
+}
+
+/**
+ * Die Verfallsuhr auf „jetzt" stellen, einmal, für alles was sie noch nicht hat.
+ *
+ * Der Zeitpunkt des Upgrades und **nicht** `created_at`: mit dem Erstelldatum
+ * wäre jedes ältere gelöste Ticket im selben Moment überfällig, und der erste
+ * Lauf des Sweepers schlösse den Bestand in einem Rutsch — inklusive einer
+ * Erinnerungsmail je wartendem Ticket, an echte Empfänger. Ein Ticket, das
+ * wirklich seit einem Jahr gelöst ist, schließt damit einen Zyklus später als
+ * mathematisch korrekt wäre. Das ist der billige Fehler von beiden.
+ *
+ * Kein `WHERE status IN (…)`: die Uhr gilt für jede Zeile, und ein Ticket, das
+ * später einmal `resolved` wird, bekommt seinen Stempel ohnehin beim Wechsel.
+ */
+function backfillStatusChangedAt(database: Database.Database): void {
+  const pending = database
+    .prepare(
+      "SELECT COUNT(*) AS count FROM mits_ticket WHERE status_changed_at IS NULL",
+    )
+    .get() as { count: number };
+
+  if (pending.count === 0) return;
+
+  database
+    .prepare(
+      "UPDATE mits_ticket SET status_changed_at = ? WHERE status_changed_at IS NULL",
+    )
+    .run(new Date().toISOString());
+
+  console.info(
+    `[MITS] Verfallsuhr gestellt: ${pending.count} Ticket(s) ab jetzt gerechnet.`,
   );
 }
 

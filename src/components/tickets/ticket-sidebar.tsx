@@ -21,6 +21,7 @@ import {
 
 import {
   assignTicketAction,
+  setTicketAutoCloseAction,
   setTicketPriorityAction,
   setTicketStatusAction,
   softDeleteTicketAction,
@@ -54,6 +55,7 @@ import {
 import { formatMinutes } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -152,6 +154,16 @@ export function TicketSidebar({
    * empty — same rule as every other optional block here.
    */
   resources = { files: [], links: [] },
+  /**
+   * Ob auf dieser Instanz überhaupt eine Verfallsfrist läuft.
+   *
+   * Vom Server aufgelöst (`hasAutoClose`), weil die Einstellung eine
+   * Datenbankzeile ist. Steht sie auf aus, erscheint der Schalter nicht: ein
+   * Schalter gegen eine abgeschaltete Automatik schaltet nichts ab und lädt
+   * trotzdem dazu ein, ihn für die Erklärung zu halten, warum ein Ticket
+   * offensteht.
+   */
+  autoCloseAvailable = false,
 }: {
   ticket: MITSTicket;
   agents: { id: string; name: string }[];
@@ -176,6 +188,7 @@ export function TicketSidebar({
     resolved: boolean;
   } | null;
   resources?: { files: SharedFile[]; links: SharedLink[] };
+  autoCloseAvailable?: boolean;
 }) {
   /*
    * Assembled here so the card can decide whether there is an address at all. A
@@ -203,6 +216,10 @@ export function TicketSidebar({
   );
   const [assignResult, assignAction, assigning] = useActionState(
     assignTicketAction,
+    null,
+  );
+  const [autoCloseResult, autoCloseAction, changingAutoClose] = useActionState(
+    setTicketAutoCloseAction,
     null,
   );
   const [deleteResult, deleteAction, deleting] = useActionState(
@@ -247,7 +264,8 @@ export function TicketSidebar({
     setAssignee(ticket.assigned_to ?? UNASSIGNED);
   }, [ticket.status, ticket.priority, ticket.assigned_to, statusResult, priorityResult, assignResult]);
 
-  const busy = changingStatus || changingPriority || assigning;
+  const busy =
+    changingStatus || changingPriority || assigning || changingAutoClose;
   const mine = ticket.assigned_to === currentUserId;
 
   /*
@@ -270,6 +288,9 @@ export function TicketSidebar({
   useEffect(() => {
     if (assignResult) setFeedback(assignResult);
   }, [assignResult]);
+  useEffect(() => {
+    if (autoCloseResult) setFeedback(autoCloseResult);
+  }, [autoCloseResult]);
 
   const result = feedback;
 
@@ -401,6 +422,33 @@ export function TicketSidebar({
             {mine ? "Dir zugewiesen" : "Mir zuweisen"}
             {!mine && <Kbd keys={["M"]} className="opacity-60" />}
           </Button>
+
+          {/*
+            Nur wenn auf dieser Instanz überhaupt eine Frist läuft. Ein Schalter
+            gegen eine abgeschaltete Automatik schaltet nichts ab — und wäre
+            trotzdem das Erste, worauf jemand zeigt, wenn ein Ticket lange
+            offensteht.
+          */}
+          {autoCloseAvailable && (
+            <div className="flex items-start gap-3 rounded-xl border border-border p-3">
+              <Switch
+                id="sb-auto-close"
+                checked={!ticket.auto_close_off}
+                disabled={busy}
+                onCheckedChange={(next) => {
+                  dispatch(
+                    autoCloseAction,
+                    next
+                      ? { ticketId: ticket.id, autoClose: "on" }
+                      : { ticketId: ticket.id },
+                  );
+                }}
+              />
+              <Label htmlFor="sb-auto-close" className="font-normal">
+                Automatisch schließen
+              </Label>
+            </div>
+          )}
 
           {result && (
             <Alert

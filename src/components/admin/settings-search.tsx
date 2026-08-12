@@ -28,6 +28,7 @@ import {
   UserPlusIcon,
   UsersIcon,
   WandSparklesIcon,
+  WorkflowIcon,
   XIcon,
   ZapIcon,
   type LucideIcon,
@@ -207,6 +208,13 @@ const ENTRIES: SettingsEntry[] = [
     label: "Anwender",
     icon: UsersIcon,
     keywords: "kunden melder benutzer konten endanwender",
+  },
+  {
+    href: "/admin/settings/workflow",
+    label: "Ticket-Ablauf",
+    icon: WorkflowIcon,
+    keywords:
+      "zuweisung übernehmen status ballbesitz automatisch schließen erinnerung wartend gelöst frist verfall cron",
   },
   {
     href: "/admin/security",

@@ -18,6 +18,104 @@ paths:
 -->
 
 # Ticket-Detailseite, Chatverlauf, Antwortzeile, Textbausteine
+
+## Ballbesitz: Zuweisung und Status folgen dem Schreiben
+
+Vorher war beides Handarbeit, und das Ergebnis stimmte deshalb selten. Ein Agent
+antwortete einem Melder, und das Ticket lag danach weiter unzugewiesen und
+„Offen" im Eingang — für jeden anderen sah es unbearbeitet aus.
+
+**Die Regel ist eine reine Funktion**: `nextStatusAfterReply(current, byAgent,
+hasAssignee)` in `types/mits.ts`, offline geprüft in `npm run test:forms`. Die
+Serverseite reicht nur die Zeile herein.
+
+| aktuell | Agent antwortet öffentlich | Melder antwortet öffentlich |
+|---|---|---|
+| `open` | `waiting_user` | — |
+| `in_progress` | `waiting_user` | — |
+| `waiting_user` | — | `in_progress` / `open` |
+| `waiting_major` | — | — |
+| `resolved` | — | `in_progress` / `open` |
+| `closed` | — | `in_progress` / `open` |
+
+Drei Zeilen sind Entscheidungen, keine Mechanik:
+
+- **`waiting_major` wird nie angefasst.** Das Ticket hängt an einer Hauptstörung;
+  eine Zwischenmeldung darf es nicht aus der Kopplung lösen, sonst fehlt es in
+  der Kinderliste und niemand bemerkt das.
+- **Der Agent hebt `resolved` und `closed` nicht auf.** Bestehende Regel: eine
+  Nachtragsmail auf einem geschlossenen Ticket ist Archivarbeit. Nur der Melder
+  holt zurück.
+- **`in_progress` nur mit Bearbeiter, sonst `open`.** Ein zurückgeholtes Ticket
+  ohne Bearbeiter muss in einem Status landen, den der Eingang zeigt.
+
+**Beansprucht wird nur bei öffentlicher Antwort, und nur wenn das Ticket frei
+ist.** Wer es hält, behält es — ein Kollege, der „kenne ich, siehe TCK-x"
+danebenschreibt, reißt es nicht an sich. Eine interne Notiz bewegt nichts: sie
+sagt weder dem Melder noch der Queue, dass jemand am Zug ist.
+
+**`reopenIfClosed` gibt es nicht mehr.** Es fing nur `closed` und `resolved` und
+ließ `waiting_user` unberührt — der teuerste Defekt des alten Modells, weil sich
+der Tab „Wartend" mit Tickets füllte, die längst beantwortet waren.
+
+**Der Eingang filtert `statusIn: OPEN_TICKET_STATUSES`, nicht `status: "open"`.**
+Vorher fiel ein unzugewiesenes Ticket aus dem Pool, sobald es anders hieß: nicht
+im Eingang, weil der Status nicht passte, und nicht in „Mein Bereich", weil es
+niemandem gehörte.
+
+**„Antworten & Schließen" überspringt die Automatik** (`skipReplyWorkflow`).
+Sonst stünde in der Historie `open → waiting_user → closed` für einen Vorgang,
+und die mittlere Zeile hat nie jemand gesehen.
+
+### Wo das liegt, und warum getrennt
+
+`lib/tickets.ts` und `lib/ticket-comments.ts` sind Geschwister: keines importiert
+das andere, die Action-Schicht holt aus beiden. Deshalb:
+
+| Datei | Rolle |
+|---|---|
+| `lib/ticket-workflow.ts` | die **Senke** — beide importieren sie, sie keines von beiden |
+| `lib/ticket-sweeper.ts` | das Gegenteil: braucht `lib/tickets.ts` und `addComment`, wird nur vom Cron gerufen |
+
+**`applyStatusChange` ist die einzige Stelle, die `status` schreibt.** Auch
+`setTicketStatus` und das rohe `UPDATE` in `services/ai/clustering.ts` gehen
+darüber bzw. stellen dieselben Uhren. An dem Schreibvorgang hängen
+`status_changed_at` und das Leeren von `waiting_reminder_at`; ein Schreiber
+daneben ließe beide stehen, und das Fehlerbild wäre ein Ticket, das nie oder
+sofort verfällt — ein halbes Jahr alter Zeitstempel an einem Status von heute.
+
+### Verfall
+
+Drei Regeln unter `/admin/settings/workflow`, Setting-Key `workflow`, angestoßen
+von `POST /api/cron/workflow` (Service-Token **oder** Admin-Sitzung, wie
+`/api/cron/reminders` — nur schreibt dieser hier).
+
+1. `resolved` schließt nach N Tagen.
+2. `waiting_user` erinnert den Melder einmal per Mail.
+3. `waiting_user` schließt N Tage **nach der Erinnerung**, nicht nach dem
+   Statuswechsel — dafür gibt es `waiting_reminder_at` als eigene Spalte.
+
+- **Alle drei stehen auf `0` = aus.** Ein Update, das Kundentickets schließt und
+  Mail verschickt, ist die eine Richtung, die niemand bemerkt, bis ein Kunde
+  anruft.
+- **`auto_close_off` je Ticket**, Schalter in der Sidebar, sichtbar nur wenn
+  überhaupt eine Frist läuft (`hasAutoClose`). Default `0` heißt „Automatik
+  gilt"; die andere Richtung hätte jedes bestehende Ticket beim Update
+  ausgenommen und die erste eingeschaltete Frist wirkungslos gemacht.
+- **`status_changed_at` wird beim Upgrade auf „jetzt" gesetzt**, nicht aus
+  `created_at` abgeleitet. Die Ableitung wäre der naheliegende Backfill und der
+  teure Fehler: der erste Cron-Lauf schlösse den ganzen Bestand auf einmal, mit
+  einer Mail je Ticket.
+- **Die Erinnerung trägt `[TCK-…]` im Betreff**, vorangestellt von
+  `ticketReminderMail` und nicht aus dem Admin-Text — sonst fände der Ingest die
+  Antwort nicht wieder und legte ein neues Ticket an.
+- **Beim Schließen geht keine Mail raus**, nur eine öffentliche Notiz ins Ticket.
+  Die Erinnerung hat es angekündigt; eine zweite Nachricht wäre eine Mail für das
+  Ausbleiben einer Antwort.
+- **Ein Fehlschlag je Ticket beendet den Lauf nicht.** Ein Sweeper, der beim
+  vierzigsten abbricht, lässt die restlichen ohne Meldung liegen — und der
+  nächste Lauf bricht an derselben Zeile wieder ab.
+
 ## Der Verlauf beginnt beim Melder
 
 **Die Erstnachricht ist eine abgeleitete Bubble, keine gespeicherte.**

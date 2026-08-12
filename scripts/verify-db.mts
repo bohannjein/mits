@@ -116,8 +116,12 @@ try {
   const now = new Date().toISOString();
   const agentId = randomUUID();
   const reporterId = randomUUID();
+  // Ein zweiter Mensch mit Zugriff, für den Fall „ein Kollege schreibt auf einem
+  // Ticket, das mir gehört" — die Zuweisung darf dabei nicht wandern.
+  const adminId = randomUUID();
   insertUser.run(agentId, "Bea Schulz", "bea@firma.de", now, now, "agent");
   insertUser.run(reporterId, "Anna Meier", "anna@firma.de", now, now, "user");
+  insertUser.run(adminId, "Carl Weber", "carl@firma.de", now, now, "admin");
 
   const agent = {
     id: agentId,
@@ -132,6 +136,14 @@ try {
     name: "Anna Meier",
     email: "anna@firma.de",
     role: "user" as const,
+    emailVerified: false,
+    mustChangePassword: false,
+  };
+  const admin = {
+    id: adminId,
+    name: "Carl Weber",
+    email: "carl@firma.de",
+    role: "admin" as const,
     emailVerified: false,
     mustChangePassword: false,
   };
@@ -783,17 +795,70 @@ try {
   check("reporter comment", () =>
     comments.addComment(ticketId, reporter, "Ist immer noch kaputt.", "public"),
   );
-  check("agent reply", () =>
-    comments.addComment(ticketId, agent, "<p>Wir schauen.</p>", "public", "html"),
-  );
+
+  /*
+   * Ballbesitz, Fall 1: der Agent antwortet auf ein herrenloses offenes Ticket.
+   *
+   * Zwei Wirkungen in einem Aufruf, und beide sind der Punkt der Änderung — vor
+   * ihr lag das Ticket nach einer Antwort weiter unzugewiesen im Eingang.
+   */
+  check("agent reply claims the ticket and hands the ball back", () => {
+    comments.addComment(ticketId, agent, "<p>Wir schauen.</p>", "public", "html");
+    const ticket = tickets.getTicketFor(ticketId, agent);
+    if (ticket?.assigned_to !== agentId) {
+      throw new Error(`Bearbeiter ist ${ticket?.assigned_to}`);
+    }
+    if (ticket.status !== "waiting_user") {
+      throw new Error(`Status ist ${ticket.status}`);
+    }
+    return ticket.status;
+  });
+
+  // Fall 3: die Einbahnstraße, die es vorher war. Ein Melder, der auf „Wartet auf
+  // Anwender" antwortet, gibt den Ball zurück — mit Bearbeiter heißt das
+  // `in_progress`.
+  check("a reporter reply on waiting_user hands the ball back", () => {
+    comments.addComment(ticketId, reporter, "Hier ist ein Foto.", "public");
+    const ticket = tickets.getTicketFor(ticketId, agent);
+    if (ticket?.status !== "in_progress") {
+      throw new Error(`Status ist ${ticket?.status}`);
+    }
+    return ticket.status;
+  });
+
+  // Fall 2: wer es hält, behält es. Ein zweiter Agent, der dazwischenschreibt,
+  // reißt das Ticket nicht an sich.
+  check("a second agent's reply leaves the assignment alone", () => {
+    comments.addComment(ticketId, admin, "Ich kenne das.", "public");
+    const ticket = tickets.getTicketFor(ticketId, agent);
+    if (ticket?.assigned_to !== agentId) {
+      throw new Error(`Bearbeiter ist ${ticket?.assigned_to}`);
+    }
+    return ticket.assigned_to;
+  });
+
   check("internal note", () =>
     comments.addComment(ticketId, agent, "Toner bestellt.", "internal"),
   );
+  // Eine interne Notiz ist Werkstattgespräch: sie bewegt nichts. Nach der
+  // öffentlichen Antwort des zweiten Agenten steht das Ticket auf
+  // `waiting_user`, und dort bleibt es.
+  check("an internal note moves nothing", () => {
+    const ticket = tickets.getTicketFor(ticketId, agent);
+    if (ticket?.status !== "waiting_user") {
+      throw new Error(`Status ist ${ticket?.status}`);
+    }
+    return ticket.status;
+  });
 
   let commentId = "";
   check("list comments", () => {
+    // Fünf: Melder, Agent, Melder, zweiter Agent, interne Notiz — die drei
+    // Ballbesitz-Prüfungen darüber schreiben mit.
     const rows = comments.listCommentsFor(ticketId, agent);
-    if (rows.length !== 3) throw new Error(`expected 3, got ${rows.length}`);
+    if (rows.length !== 5) throw new Error(`expected 5, got ${rows.length}`);
+    // Der älteste, und er gehört dem Melder: die zwei Prüfungen darunter
+    // bearbeiten und ziehen ihn zurück, und beides darf nur der Verfasser.
     commentId = rows[0].id;
   });
   check("edit a comment", () =>
@@ -810,12 +875,19 @@ try {
   check("status", () => tickets.setTicketStatus(ticketId, "in_progress", agent));
   check("priority", () => tickets.setTicketPriority(ticketId, "high", agent));
   check("close", () => tickets.setTicketStatus(ticketId, "closed", agent));
-  // The reopen path runs inside addComment and touches its own UPDATE + audit row.
-  check("a reporter reply reopens it", () => {
+  /*
+   * Ein geschlossenes Ticket holt der Melder zurück — und zwar auf
+   * `in_progress`, weil es einen Bearbeiter hat.
+   *
+   * Vorher stand hier `open`, weil `reopenIfClosed` nichts anderes kannte. Das
+   * war die Stelle, an der ein zurückgeholtes Ticket die Zuweisung behielt und
+   * trotzdem aussah wie ein neues.
+   */
+  check("a reporter reply reopens it, to the assignee", () => {
     comments.addComment(ticketId, reporter, "Doch noch ein Problem.", "public");
     const ticket = tickets.getTicketFor(ticketId, agent);
-    if (ticket?.status !== "open") {
-      throw new Error(`expected open, got ${ticket?.status}`);
+    if (ticket?.status !== "in_progress") {
+      throw new Error(`expected in_progress, got ${ticket?.status}`);
     }
   });
 
@@ -1427,6 +1499,76 @@ try {
     users.resetTwoFactor(carla.id);
     return users.hasTwoFactor(carla.id);
   });
+
+  console.log("verfalls-sweeper");
+  {
+    const workflowSettings = await import("../src/lib/workflow-settings");
+    const sweeper = await import("../src/lib/ticket-sweeper");
+
+    const backdate = db.prepare(
+      "UPDATE mits_ticket SET status = ?, status_changed_at = ?, auto_close_off = ? WHERE id = ?",
+    );
+    const longAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+    const statusOf = (id: string) =>
+      (db.prepare("SELECT status FROM mits_ticket WHERE id = ?").get(id) as {
+        status: string;
+      }).status;
+
+    check("eine Frist einstellen", () =>
+      workflowSettings.setWorkflowSettings(
+        mits.WorkflowSettingsSchema.parse({ resolvedCloseDays: 7 }),
+      ),
+    );
+
+    /*
+     * Der Zustand wird von Hand gesetzt statt über `setTicketStatus`: die Uhr
+     * soll zurückdatiert sein, und genau das kann kein Schreibpfad — er stempelt
+     * immer „jetzt". Ohne das Zurückdatieren prüfte der Test nur, dass ein
+     * gerade gelöstes Ticket *nicht* geschlossen wird.
+     */
+    await checkAsync("Gelöst schließt nach der Frist", async () => {
+      backdate.run("resolved", longAgo, 0, ticketId);
+      const result = await sweeper.sweepWorkflow();
+      if (result.closedResolved !== 1) {
+        throw new Error(`geschlossen: ${result.closedResolved}`);
+      }
+      const after = statusOf(ticketId);
+      if (after !== "closed") throw new Error(after);
+      return after;
+    });
+
+    await checkAsync("der Schalter am Ticket sticht die Frist", async () => {
+      backdate.run("resolved", longAgo, 1, ticketId);
+      const result = await sweeper.sweepWorkflow();
+      if (result.closedResolved !== 0) {
+        throw new Error(`geschlossen: ${result.closedResolved}`);
+      }
+      const after = statusOf(ticketId);
+      if (after !== "resolved") throw new Error(after);
+      return after;
+    });
+
+    await checkAsync("frisch gelöst bleibt offen", async () => {
+      backdate.run("resolved", new Date().toISOString(), 0, ticketId);
+      const result = await sweeper.sweepWorkflow();
+      if (result.closedResolved !== 0) {
+        throw new Error(`geschlossen: ${result.closedResolved}`);
+      }
+      return statusOf(ticketId);
+    });
+
+    // Ohne Frist läuft gar nichts — der Auslieferungszustand, und der Grund,
+    // warum ein Update keine Kundentickets schließt.
+    await checkAsync("ohne Frist rührt der Sweeper nichts an", async () => {
+      workflowSettings.setWorkflowSettings(mits.WorkflowSettingsSchema.parse({}));
+      backdate.run("resolved", longAgo, 0, ticketId);
+      const result = await sweeper.sweepWorkflow();
+      if (result.closedResolved + result.remindersSent + result.closedWaiting !== 0) {
+        throw new Error(JSON.stringify(result));
+      }
+      return statusOf(ticketId);
+    });
+  }
 
   console.log("auth log");
   const authLog = await import("../src/lib/auth-log");

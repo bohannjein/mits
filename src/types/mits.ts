@@ -82,6 +82,69 @@ export const OPEN_TICKET_STATUSES: TicketStatus[] = [
 export const isOpenStatus = (status: TicketStatus): boolean =>
   OPEN_TICKET_STATUSES.includes(status);
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Ballbesitz: der Status sagt, wer am Zug ist.
+
+   Vorher war er Handbuchhaltung. `in_progress` unterschied sich von `open` nur
+   dadurch, ob jemand daran gedacht hatte, und `waiting_user` war eine
+   Einbahnstraße — ein Melder, der darauf antwortete, änderte nichts, also füllte
+   sich der Tab „Wartend" mit Tickets, die längst beantwortet waren.
+
+   Eine reine Funktion, damit sie offline prüfbar ist (`npm run test:forms`); die
+   Serverseite reicht nur die Zeile herein. Dieselbe Aufteilung wie bei
+   `roleSeesArea` und `priorityForRole`.
+
+   Drei Zeilen der Tabelle sind Entscheidungen und keine Mechanik:
+
+   - **`waiting_major` wird nie angefasst.** Das Ticket hängt an einer
+     Hauptstörung; eine Zwischenmeldung an den Melder darf es nicht aus dieser
+     Kopplung lösen — es fiele aus der Kinderliste der Störung und niemand
+     bemerkte, dass es dort fehlt.
+   - **Der Agent hebt `resolved` und `closed` nicht auf.** Das ist die bestehende
+     Regel und sie bleibt: eine Nachtragsmail auf einem geschlossenen Ticket ist
+     Archivarbeit. Nur der Melder holt ein Ticket zurück.
+   - **`in_progress` nur mit Bearbeiter, sonst `open`.** Ein zurückgeholtes Ticket
+     ohne Bearbeiter muss in einem Status landen, den der Eingang zeigt — sonst
+     ist es wieder da und trotzdem in keiner Liste.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Wohin ein Ticket nach einer **öffentlichen** Antwort wechselt.
+ *
+ * `null` heißt „nichts ändern" und nicht „auf den aktuellen Wert setzen": der
+ * Aufrufer schreibt dann gar nicht, es gibt also keine Historienzeile und kein
+ * Signal für einen Vorgang, der nichts bewegt hat.
+ *
+ * Interne Notizen kommen hier nie an — die Sichtbarkeit prüft der Aufrufer, weil
+ * sie schon darüber entscheidet, ob überhaupt jemand am Zug ist.
+ */
+export function nextStatusAfterReply(
+  current: TicketStatus,
+  byAgent: boolean,
+  hasAssignee: boolean,
+): TicketStatus | null {
+  // Geparkt hinter einer Hauptstörung: unantastbar für beide Seiten.
+  if (current === "waiting_major") return null;
+
+  if (byAgent) {
+    // Nur aus einem laufenden Zustand heraus. `resolved` und `closed` bleiben,
+    // wo sie sind.
+    if (current === "open" || current === "in_progress") return "waiting_user";
+    return null;
+  }
+
+  // Der Melder ist am Zug gewesen und hat geantwortet — zurück zum Team.
+  if (
+    current === "waiting_user" ||
+    current === "resolved" ||
+    current === "closed"
+  ) {
+    return hasAssignee ? "in_progress" : "open";
+  }
+
+  return null;
+}
+
 /**
  * Ticket priority.
  *
@@ -420,6 +483,15 @@ export const MITSTicketSchema = z.object({
    * worked even if its last child gets unlinked.
    */
   major_incident: z.boolean().default(false),
+  /**
+   * Dieses eine Ticket nimmt die Verfallsautomatik aus.
+   *
+   * Eine Agenten-Entscheidung am einzelnen Fall: „hier warte ich bewusst länger".
+   * Defaultet auf `false`, also „Automatik gilt" — die andere Richtung wäre
+   * sicherer und wäre trotzdem falsch, weil ein Bestand voller Ausnahmen aus
+   * einer eingeschalteten Frist eine Einstellung macht, die nichts tut.
+   */
+  auto_close_off: z.boolean().default(false),
   /** Coerced: the API and Ollama both hand us ISO strings, not Date objects. */
   created_at: z.coerce.date(),
 });
@@ -456,6 +528,10 @@ export const MITSTicketDraftSchema = MITSTicketSchema.omit({
   // agent respectively. Neither is a client's to state.
   tags: true,
   major_incident: true,
+  // Ein Schalter am Betriebsablauf, den ein Agent umlegt — nicht etwas, das mit
+  // dem Formular hereinkommt. Ein Entwurf, der ihn setzen könnte, wäre ein
+  // Melder, der sein Ticket von der Aufräumregel ausnimmt.
+  auto_close_off: true,
   /*
    * Nor is this one. A CC address means every future answer on this ticket
    * lands in that mailbox; accepting it from whoever posts the form would let a
@@ -912,6 +988,90 @@ export const DataSettingsSchema = z.object({
 });
 export type DataSettings = z.infer<typeof DataSettingsSchema>;
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Workflow: was beim Antworten passiert, und was mit stillstehenden Tickets.
+
+   Eigener Setting-Key (`workflow`) und keine Erweiterung von `data` — zwei
+   Masken auf einem Blob überschreiben sich gegenseitig Abschnitte, dieselbe
+   Begründung wie bei den fünf `portal_*`-Keys.
+
+   **Alle drei Fristen stehen im Auslieferungszustand auf `0` = aus.** Ein
+   Update, das anfängt, Kundentickets zu schließen und Mail zu verschicken, ist
+   die eine Richtung, die niemand bemerkt, bis ein Kunde anruft. Die beiden
+   Schalter darüber sind dagegen an: sie ändern nur, wie ein Status heißt, den
+   sonst niemand pflegt.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** Tage. `0` heißt aus und steht deshalb vorn, nicht hinten. */
+export const AUTO_CLOSE_DAY_CHOICES = [0, 1, 3, 7, 14, 30, 60, 90] as const;
+
+/**
+ * Eine Frist in Tagen, geklemmt statt geprüft.
+ *
+ * Dieselbe Regel wie bei `sessionLifetimeDays` und `hidden_areas`: ein Wert, den
+ * dieser Build nicht kennt, wird zu `0` und nicht zum Ausfall der ganzen
+ * Konfiguration. Und `0` ist hier die sichere Richtung — aus, nicht „sofort".
+ */
+export function toAutoCloseDays(value: unknown): number {
+  const days = Number(value);
+  return (AUTO_CLOSE_DAY_CHOICES as readonly number[]).includes(days) ? days : 0;
+}
+
+export const DEFAULT_WAITING_REMINDER_SUBJECT =
+  "Erinnerung zu Ihrem Ticket {{ticket.nummer}}";
+
+/*
+ * Vorgabetexte mit denselben Platzhaltern wie Textbausteine und Makros
+ * (`TEMPLATE_TOKENS` weiter unten), aufgelöst über `templateValuesFor` auf der
+ * Serverseite. Kein zweiter Platzhalter-Satz: ein Admin, der die Tokens aus
+ * einem Baustein kennt, soll sie hier nicht neu lernen — und ein Token, das es
+ * nur hier gäbe, stünde beim ersten Versand wörtlich im Postfach eines Kunden.
+ *
+ * Der Titel steht bewusst in keinem Token: die Mail-Vorlage setzt ihn ohnehin
+ * als Zeile unter die Überschrift.
+ */
+export const DEFAULT_WAITING_REMINDER_BODY = [
+  "Guten Tag {{kunde.vorname}},",
+  "",
+  "zu Ihrem Ticket {{ticket.nummer}} warten wir noch auf eine Rückmeldung.",
+  "",
+  "Wenn sich die Sache erledigt hat, brauchen Sie nichts zu tun — das Ticket",
+  "schließt sich dann von selbst.",
+].join("\n");
+
+export const DEFAULT_AUTO_CLOSE_NOTE =
+  "Dieses Ticket wurde ohne weitere Rückmeldung automatisch geschlossen. Eine Antwort hier öffnet es wieder.";
+
+export const WorkflowSettingsSchema = z.object({
+  /** Eine öffentliche Antwort übernimmt ein unzugewiesenes Ticket. */
+  claimOnReply: z.boolean().default(true),
+  /** Der Status folgt dem Schreiben — siehe `nextStatusAfterReply`. */
+  statusFollowsReply: z.boolean().default(true),
+
+  /** `resolved` → `closed`, gerechnet ab dem Statuswechsel. */
+  resolvedCloseDays: z.unknown().optional().transform(toAutoCloseDays),
+  /** Erinnerung an den Melder, gerechnet ab dem Wechsel auf `waiting_user`. */
+  waitingReminderDays: z.unknown().optional().transform(toAutoCloseDays),
+  /** `waiting_user` → `closed`, gerechnet **ab der Erinnerung**, nicht ab dem Statuswechsel. */
+  waitingCloseDays: z.unknown().optional().transform(toAutoCloseDays),
+
+  waitingReminderSubject: z
+    .string()
+    .default(DEFAULT_WAITING_REMINDER_SUBJECT),
+  waitingReminderBody: z.string().default(DEFAULT_WAITING_REMINDER_BODY),
+  /** Was als öffentlicher Beitrag im Ticket steht, wenn die Automatik schließt. */
+  autoCloseNote: z.string().default(DEFAULT_AUTO_CLOSE_NOTE),
+});
+export type WorkflowSettings = z.infer<typeof WorkflowSettingsSchema>;
+
+export const DEFAULT_WORKFLOW_SETTINGS: WorkflowSettings =
+  WorkflowSettingsSchema.parse({});
+
+/** Läuft überhaupt eine Automatik? Entscheidet, ob der Schalter am Ticket erscheint. */
+export const hasAutoClose = (settings: WorkflowSettings): boolean =>
+  settings.resolvedCloseDays > 0 ||
+  (settings.waitingReminderDays > 0 && settings.waitingCloseDays > 0);
+
 /** `1,4 GB`, `312 MB`, `18 KB` — for a statistics panel, not a report. */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -1160,6 +1320,7 @@ export const AuditAction = z.enum([
   "checklist_set",
   "cc_changed",
   "category_changed",
+  "auto_close_changed",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
@@ -1182,6 +1343,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   checklist_set: "Checkliste beantwortet",
   cc_changed: "Beteiligte geändert",
   category_changed: "Kategorie geändert",
+  auto_close_changed: "Automatisches Schließen geändert",
 };
 
 /**

@@ -211,6 +211,40 @@ export function ticketReplyMail(
   return { subject: `[${number}] Neue Antwort: ${ticket.title}`, html, text };
 }
 
+/**
+ * Die Erinnerung an einen Melder, der auf „Wartet auf Anwender" nicht antwortet.
+ *
+ * Betreff und Text kommen vom Admin (`workflow`-Einstellungen) und sind hier
+ * schon aufgelöst — die Platzhalter füllt der Aufrufer über `templateValuesFor`,
+ * weil der die Datenbank hat und dieses Modul absichtlich keine sieht.
+ *
+ * **Der Betreff wird trotzdem geklammert.** `[TCK-…]` ist das, woran der
+ * Mail-Ingest die Antwort wiederfindet (`ticketNumberFromSubject`); ohne die
+ * Klammer landete die Rückmeldung auf die Erinnerung als neues Ticket statt im
+ * alten. Ein Admin, der die Nummer im Betreffsfeld weglässt, darf das nicht
+ * kaputt machen können — deshalb steht sie hier davor und nicht in der Vorgabe.
+ */
+export function ticketReminderMail(
+  ticket: MITSTicket,
+  subject: string,
+  body: string,
+  url: string | null,
+) {
+  const number = formatTicketNumber(ticket.ticket_number);
+  const heading = subject.trim() || `Erinnerung zu ${number}`;
+
+  const { html, text } = layout({
+    heading,
+    intro: ticket.title,
+    sections: [{ text: body }],
+    url,
+    footer:
+      "Diese Nachricht wurde automatisch erzeugt. Antworten Sie bitte im Ticket, nicht auf diese E-Mail.",
+  });
+
+  return { subject: `[${number}] ${heading}`, html, text };
+}
+
 /** The "send test mail" button in the settings mask. */
 export function testMail(recipient: string, url: string | null) {
   const { html, text } = layout({

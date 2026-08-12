@@ -1,6 +1,13 @@
 import { SHORTCUT_GROUPS, isPlainKey, swallowsKeys } from "../src/lib/shortcuts";
 import { fillCannedResponse, firstNameOf } from "../src/types/mits";
 import {
+  TicketStatus,
+  WorkflowSettingsSchema,
+  hasAutoClose,
+  nextStatusAfterReply,
+  toAutoCloseDays,
+} from "../src/types/mits";
+import {
   RECONNECT_BASE_MS,
   RECONNECT_MAX_MS,
   reconnectDelay,
@@ -4568,6 +4575,117 @@ console.log("\nvisibility presets");
       name: "Alles",
       role: "admin",
     }).success,
+  );
+}
+
+console.log("\nballbesitz: status nach einer antwort");
+{
+  /*
+   * Die ganze Tabelle, beide Schreiber, mit und ohne Bearbeiter.
+   *
+   * Das ist die Prüfung, die zählt: die Regel ist eine reine Funktion, und eine
+   * falsche Zeile darin ist ein Ticket, das im falschen Tab liegt — sichtbar
+   * erst, wenn jemand es dort sucht.
+   */
+  const agent = (from: (typeof TicketStatus.options)[number], assigned = true) =>
+    nextStatusAfterReply(from, true, assigned);
+  const reporter = (
+    from: (typeof TicketStatus.options)[number],
+    assigned = true,
+  ) => nextStatusAfterReply(from, false, assigned);
+
+  check("agent auf offen -> wartet auf anwender", agent("open") === "waiting_user");
+  check(
+    "agent auf in bearbeitung -> wartet auf anwender",
+    agent("in_progress") === "waiting_user",
+  );
+  check("agent auf wartend -> nichts", agent("waiting_user") === null);
+  check("agent auf geloest -> nichts", agent("resolved") === null);
+  check("agent auf geschlossen -> nichts", agent("closed") === null);
+
+  check("melder auf offen -> nichts", reporter("open") === null);
+  check("melder auf in bearbeitung -> nichts", reporter("in_progress") === null);
+  check(
+    "melder auf wartend -> in bearbeitung",
+    reporter("waiting_user") === "in_progress",
+  );
+  check("melder auf geloest -> in bearbeitung", reporter("resolved") === "in_progress");
+  check(
+    "melder auf geschlossen -> in bearbeitung",
+    reporter("closed") === "in_progress",
+  );
+
+  // Ohne Bearbeiter landet die Rueckkehr auf `open` — sonst stuende das Ticket in
+  // keiner Liste: nicht im Eingang, weil der Status nicht passt, und nicht in
+  // "Mein Bereich", weil es niemandem gehoert.
+  check(
+    "melder auf geschlossen ohne bearbeiter -> offen",
+    reporter("closed", false) === "open",
+  );
+  check(
+    "melder auf wartend ohne bearbeiter -> offen",
+    reporter("waiting_user", false) === "open",
+  );
+
+  // Die eine Zeile, die beide Seiten unberuehrt lassen muessen.
+  check("agent ruehrt eine hauptstoerung nicht an", agent("waiting_major") === null);
+  check("melder ebenso wenig", reporter("waiting_major") === null);
+
+  // Jeder Status ist abgedeckt: eine neue Lebenszyklus-Stufe soll hier auffallen
+  // und nicht erst dadurch, dass sie sich nie bewegt.
+  check(
+    "die tabelle kennt jeden status",
+    TicketStatus.options.every(
+      (status) =>
+        agent(status) !== undefined && reporter(status) !== undefined,
+    ),
+  );
+}
+
+console.log("\nverfallsfristen");
+{
+  check("eine unbekannte frist wird zu aus", toAutoCloseDays(4) === 0);
+  check("und ein tippfehler ebenfalls", toAutoCloseDays("sieben") === 0);
+  check("ein angebotener wert bleibt", toAutoCloseDays("14") === 14);
+
+  const defaults = WorkflowSettingsSchema.parse({});
+  check("beide schalter sind an", defaults.claimOnReply && defaults.statusFollowsReply);
+  check(
+    "aber keine frist laeuft",
+    defaults.resolvedCloseDays === 0 &&
+      defaults.waitingReminderDays === 0 &&
+      defaults.waitingCloseDays === 0,
+  );
+  check("also schliesst nichts", !hasAutoClose(defaults));
+
+  // Wartend ohne Erinnerung schliesst nie — die Maske sagt das, und hier steht,
+  // dass es auch stimmt.
+  check(
+    "wartend ohne erinnerung zaehlt nicht als automatik",
+    !hasAutoClose(
+      WorkflowSettingsSchema.parse({ waitingCloseDays: 7, waitingReminderDays: 0 }),
+    ),
+  );
+  check(
+    "mit erinnerung schon",
+    hasAutoClose(
+      WorkflowSettingsSchema.parse({ waitingCloseDays: 7, waitingReminderDays: 3 }),
+    ),
+  );
+
+  // Eine kaputte Zeile darf die Texte nicht mitnehmen: ohne sie ginge eine Mail
+  // mit leerem Betreff an einen Kunden.
+  const salvaged = WorkflowSettingsSchema.parse({
+    resolvedCloseDays: "morgen",
+    waitingReminderSubject: "Kurze Nachfrage",
+  });
+  check("eine unlesbare frist nimmt den betreff nicht mit", (
+    salvaged.resolvedCloseDays === 0 &&
+    salvaged.waitingReminderSubject === "Kurze Nachfrage"
+  ));
+  check(
+    "und die vorgabetexte stehen",
+    defaults.waitingReminderBody.length > 0 && defaults.autoCloseNote.length > 0,
   );
 }
 

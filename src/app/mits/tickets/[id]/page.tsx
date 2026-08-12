@@ -36,6 +36,7 @@ import {
 import { getLocation } from "@/lib/locations";
 import { formatDateTime } from "@/lib/format";
 import { getSystemTimezone } from "@/lib/system-settings";
+import { getWorkflowSettings } from "@/lib/workflow-settings";
 import { listAuditFor } from "@/lib/audit";
 import {
   categoryLabel,
@@ -85,6 +86,7 @@ import {
   fillCannedResponse,
   formatInventoryNumber,
   formatTicketNumber,
+  hasAutoClose,
   isAIFeatureOn,
   isElevatedPriority,
 } from "@/types/mits";
@@ -601,6 +603,10 @@ export default async function AgentTicketPage({
                   canAdminister(user.role) ? listAuditFor(id) : null
                 }
                 timezone={getSystemTimezone()}
+                // Hier aufgelöst, weil die Einstellung eine Datenbankzeile ist
+                // und die Sidebar eine Client-Komponente. Steht keine Frist, gibt
+                // es den Schalter nicht.
+                autoCloseAvailable={hasAutoClose(getWorkflowSettings())}
                 assets={assets}
                 // Only past the point where reading the thread is slower than
                 // reading a summary of it — and only when an admin turned it on.

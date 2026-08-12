@@ -29,6 +29,7 @@ import {
   TicketUpdateError,
   assignTicket,
   getTicketFor,
+  setTicketAutoClose,
   setTicketCategory,
   setTicketCc,
   setTicketPriority,
@@ -272,6 +273,46 @@ export async function setTicketStatusAction(
   return { ok: true, message: "Status geändert." };
 }
 
+/**
+ * Dieses eine Ticket von der Verfallsautomatik ausnehmen — oder zurückholen.
+ *
+ * Die Entscheidung am Einzelfall neben den Fristen, die für alle gelten: „hier
+ * warte ich bewusst länger" ist etwas, das der Agent weiß und die Einstellung
+ * nicht. Agenten vorbehalten wie jeder Workflow-Schalter; ein Melder, der sein
+ * Ticket aus der Aufräumregel nimmt, wäre eine Queue, die nie leer wird.
+ */
+export async function setTicketAutoCloseAction(
+  _previous: TicketActionResult | null,
+  formData: FormData,
+): Promise<TicketActionResult> {
+  const ticketId = String(formData.get("ticketId") ?? "");
+  const auth = await authorize(ticketId, true);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  // `on` ist, was ein Formular für einen gesetzten Haken schickt. Der Schalter
+  // heißt „automatisch schließen", die Spalte speichert das Gegenteil — hier ist
+  // die eine Stelle, die das dreht.
+  const enabled = formData.get("autoClose") === "on";
+
+  try {
+    setTicketAutoClose(ticketId, enabled, auth.user);
+  } catch (error) {
+    if (error instanceof TicketUpdateError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+
+  revalidateTicket(ticketId);
+
+  return {
+    ok: true,
+    message: enabled
+      ? "Automatisches Schließen gilt wieder."
+      : "Dieses Ticket schließt nicht automatisch.",
+  };
+}
+
 export async function setTicketPriorityAction(
   _previous: TicketActionResult | null,
   formData: FormData,
@@ -379,6 +420,14 @@ export async function replyAndCloseAction(
       String(formData.get("body") ?? ""),
       "public",
       claimedFormat(formData),
+      undefined,
+      /*
+       * Die Ballbesitz-Automatik überspringen: dieser Knopf setzt den
+       * Endzustand zwei Zeilen weiter unten selbst. Ohne das stünde in der
+       * Historie `open → waiting_user → closed` für einen Vorgang, und die
+       * mittlere Zeile hat nie jemand gesehen.
+       */
+      true,
     );
   } catch (error) {
     if (error instanceof CommentError) return { ok: false, error: error.message };

@@ -371,8 +371,24 @@ export function promoteToMajorIncident(
          (id, from_ticket, to_ticket, kind, created_by, created_at)
        VALUES (?, ?, ?, 'parent_of', ?, ?)`,
     );
+    /*
+     * `status_changed_at` wird mitgeschrieben, obwohl `waiting_major` von keiner
+     * Verfallsregel angefasst wird.
+     *
+     * Nicht aus Symmetrie: das Ticket verlässt diesen Status irgendwann wieder,
+     * und der Sweeper rechnet dann gegen die Uhr, die *hier* stehengeblieben
+     * wäre. Ein Kind, das eine Woche hinter einer Störung geparkt war, wäre in
+     * dem Moment überfällig, in dem es auf „Gelöst" geht.
+     *
+     * `waiting_reminder_at` wird aus demselben Grund geleert wie in
+     * `applyStatusChange`: der Stempel gehört zu einer Wartephase, und diese
+     * hier ist eine andere.
+     */
     const park = db.prepare(
-      "UPDATE mits_ticket SET status = 'waiting_major' WHERE id = ?",
+      `UPDATE mits_ticket
+          SET status = 'waiting_major', status_changed_at = ?,
+              waiting_reminder_at = NULL
+        WHERE id = ?`,
     );
     const audit = db.prepare(
       `INSERT INTO mits_audit_log
@@ -383,7 +399,7 @@ export function promoteToMajorIncident(
 
     for (const child of children) {
       link.run(randomUUID(), parentId, child.id, user.id, now);
-      park.run(child.id);
+      park.run(now, child.id);
       // Written here rather than through `setTicketStatus`: that function reads the
       // row back after each write, and this loop would then do three queries per
       // child inside a transaction for a value it already knows.

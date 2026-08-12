@@ -27,6 +27,7 @@ import {
   type TicketSort,
 } from "@/lib/ticket-sort";
 import { TICKETS_PER_PAGE } from "@/lib/ticket-paging";
+import { applyStatusChange } from "@/lib/ticket-workflow";
 import { defaultPriorityFor } from "@/lib/role-visibility";
 import { getUserOrganizationId, isOrgAdmin } from "@/lib/user-profile";
 import {
@@ -72,6 +73,7 @@ interface TicketRow {
   tags?: string | null;
   cc_emails?: string | null;
   major_incident?: number | null;
+  auto_close_off?: number | null;
   /** From the LEFT JOIN on `user`. Null when unassigned or the account is gone. */
   assigned_to_name?: string | null;
   /*
@@ -113,6 +115,7 @@ function rowToTicket(row: TicketRow): MITSTicket {
     // something that is not an array of strings.
     cc_emails: safeTags(row.cc_emails),
     major_incident: row.major_incident === 1,
+    auto_close_off: row.auto_close_off === 1,
     // The empty string is the SQL "no activity for this reader" sentinel — see the
     // MAX(...) expression in `searchTickets`. Passing it to `z.coerce.date()` would
     // produce an Invalid Date, which renders as "NaN" rather than as nothing.
@@ -442,7 +445,7 @@ const TICKET_COLUMNS = `
   mits_ticket.form_schema_id, mits_ticket.title, mits_ticket.payload,
   mits_ticket.status, mits_ticket.priority, mits_ticket.assigned_to,
   mits_ticket.created_at, mits_ticket.tags, mits_ticket.major_incident,
-  mits_ticket.cc_emails,
+  mits_ticket.auto_close_off, mits_ticket.cc_emails,
   COALESCE(NULLIF(owner.name, ''), owner.email) AS assigned_to_name
 `;
 
@@ -1355,22 +1358,63 @@ export function setTicketStatus(
 ): MITSTicket {
   const before = requireTicket(ticketId);
 
-  db.prepare("UPDATE mits_ticket SET status = ? WHERE id = ?").run(
-    status,
-    ticketId,
-  );
+  /*
+   * Durch `applyStatusChange` und nicht mit eigenem UPDATE.
+   *
+   * Dort hängen zwei Uhren an dem Schreibvorgang — `status_changed_at` und das
+   * Leeren von `waiting_reminder_at` —, und ein zweiter Schreiber daneben ließe
+   * sie stehen. Das Fehlerbild wäre ein Ticket, das nie oder sofort verfällt:
+   * ein halbes Jahr alter Zeitstempel an einem Status von heute.
+   *
+   * Es prüft selbst auf eine echte Änderung und schreibt auch die Historienzeile
+   * — ein Dropdown, das auf seinen eigenen Wert zurückgesetzt wird, füllt den
+   * Verlauf sonst mit Einträgen, die nichts sagen.
+   */
+  applyStatusChange(ticketId, before.status, status, actor);
 
-  // Only a real change is logged. A dropdown re-set to its current value would
-  // otherwise fill the history with entries that say nothing happened.
   if (before.status !== status) {
-    recordAudit(ticketId, actor, "status_changed", {
-      field: "status",
-      from: before.status,
-      to: status,
-    });
     // Only on a real change, for the same reason the audit entry is: a signal
     // that fires when nothing happened teaches every listener to distrust it.
     announce(ticketId, actor.id);
+  }
+
+  return requireTicket(ticketId);
+}
+
+/**
+ * Die Verfallsautomatik für dieses Ticket ein- oder ausschalten.
+ *
+ * `enabled` ist, was der Schalter sagt („automatisch schließen"); gespeichert
+ * wird das Gegenteil. Die Umkehrung steckt in der Spalte und nicht in der Maske,
+ * weil der Default `0` dann „Automatik gilt" heißt — eine Spalte namens
+ * `auto_close_on` mit Default `0` hätte jedes bestehende Ticket beim Update
+ * ausgenommen und die erste eingeschaltete Frist wirkungslos gemacht.
+ *
+ * Protokolliert wie jede andere Workflow-Entscheidung: dass ein Ticket seit
+ * Wochen offen steht, *weil* jemand das so wollte, ist genau die Auskunft, die
+ * hinterher fehlt.
+ */
+export function setTicketAutoClose(
+  ticketId: string,
+  enabled: boolean,
+  actor: SessionUser,
+): MITSTicket {
+  const before = requireTicket(ticketId);
+  const wasEnabled = !before.auto_close_off;
+
+  db.prepare("UPDATE mits_ticket SET auto_close_off = ? WHERE id = ?").run(
+    enabled ? 0 : 1,
+    ticketId,
+  );
+
+  // Nur eine echte Änderung, wie überall sonst: ein Schalter, der auf seinen
+  // eigenen Wert gesetzt wird, füllt die Historie mit Zeilen ohne Aussage.
+  if (wasEnabled !== enabled) {
+    recordAudit(ticketId, actor, "auto_close_changed", {
+      field: "Automatisches Schließen",
+      from: wasEnabled ? "an" : "aus",
+      to: enabled ? "an" : "aus",
+    });
   }
 
   return requireTicket(ticketId);
@@ -1477,6 +1521,26 @@ function requireTicket(ticketId: string): MITSTicket {
     .get(ticketId) as TicketRow | undefined;
   if (!row) throw new TicketUpdateError("Ticket nicht gefunden.");
   return rowToTicket(row);
+}
+
+/**
+ * Ein Ticket ohne Sichtbarkeitsprüfung.
+ *
+ * **Nicht für einen Request.** Die einzige Aufrufstelle ist der Verfalls-Sweeper
+ * (`lib/ticket-sweeper.ts`), der aus einem Cron kommt und keine Sitzung hat — die
+ * Frage, die `getTicketFor` beantwortet, lautet „darf *diese Person* das sehen",
+ * und es gibt hier keine Person. Der Name sagt das an der Aufrufstelle, damit
+ * niemand ihn als bequemere Variante von `getTicketFor` liest.
+ *
+ * Gelöschte Tickets bleiben ausgeschlossen: `ALIVE` gilt weiter. Ein Sweeper,
+ * der Papierkorb-Tickets anfasst, schriebe Historie an etwas, das niemand mehr
+ * sieht.
+ */
+export function getTicketUnchecked(ticketId: string): MITSTicket | null {
+  const row = db
+    .prepare(`${SELECT_TICKET} WHERE ${ALIVE} AND mits_ticket.id = ?`)
+    .get(ticketId) as TicketRow | undefined;
+  return row ? rowToTicket(row) : null;
 }
 
 /**

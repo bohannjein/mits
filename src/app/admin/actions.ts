@@ -68,6 +68,7 @@ import { classifyDefenderAlert } from "@/lib/mail/defender";
 import { planSecurityIncident } from "@/lib/mail/incident-rule";
 import { queryNtp } from "@/lib/ntp";
 import { normaliseDomains, setAuthSettings } from "@/lib/settings";
+import { setWorkflowSettings } from "@/lib/workflow-settings";
 import {
   SystemSettingsError,
   setSystemSettings,
@@ -114,6 +115,7 @@ import {
   SESSION_LIFETIME_LABELS,
   TWO_FACTOR_ROLES,
   TWO_FACTOR_ROLE_LABELS,
+  toAutoCloseDays,
   toSessionLifetimeDays,
   toTwoFactorRoles,
   VisibilityPresetSchema,
@@ -238,6 +240,70 @@ export async function updateAuthSettingsAction(
   return {
     ok: true,
     message: `${policy} Angemeldet bleiben: ${SESSION_LIFETIME_LABELS[sessionLifetimeDays].toLowerCase()}, ab der nächsten Anmeldung.${secondFactor}`,
+  };
+}
+
+/**
+ * Ballbesitz und Verfall.
+ *
+ * Die drei Fristen laufen durch `toAutoCloseDays`, also nie ungeprüft aus dem
+ * Formular: sie entscheiden, wann Kundentickets zugehen, und ein Wert, den
+ * dieser Build nicht kennt, wird zu `0` — aus, nicht „sofort".
+ *
+ * Die Texte werden nicht validiert und auch nicht bereinigt. Sie gehen als
+ * *Text* in eine Mail (`ticketReminderMail` escaped) und als `body_format:
+ * "text"` in den Verlauf; es gibt keinen Pfad, auf dem sie als Markup landen.
+ */
+export async function saveWorkflowSettingsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const settings = setWorkflowSettings({
+    claimOnReply: formData.get("claimOnReply") === "on",
+    statusFollowsReply: formData.get("statusFollowsReply") === "on",
+    resolvedCloseDays: toAutoCloseDays(formData.get("resolvedCloseDays")),
+    waitingReminderDays: toAutoCloseDays(formData.get("waitingReminderDays")),
+    waitingCloseDays: toAutoCloseDays(formData.get("waitingCloseDays")),
+    waitingReminderSubject: String(
+      formData.get("waitingReminderSubject") ?? "",
+    ).trim(),
+    waitingReminderBody: String(formData.get("waitingReminderBody") ?? "").trim(),
+    autoCloseNote: String(formData.get("autoCloseNote") ?? "").trim(),
+  });
+
+  revalidatePath("/admin/settings/workflow");
+  // Der Schalter am Ticket erscheint nur, wenn eine Frist läuft — beide
+  // Detailansichten müssen das mitbekommen.
+  revalidatePath("/mits/tickets", "layout");
+
+  /*
+   * Gemeldet wird, was ab jetzt gilt, und nicht „gespeichert". Eine Frist ohne
+   * die zweite Hälfte tut nichts, und das ist der Fall, den ein Admin sonst erst
+   * in einer Woche bemerkt.
+   */
+  const parts: string[] = [];
+  if (settings.resolvedCloseDays > 0) {
+    parts.push(`Gelöst schließt nach ${settings.resolvedCloseDays} Tagen`);
+  }
+  if (settings.waitingReminderDays > 0) {
+    parts.push(`Erinnerung nach ${settings.waitingReminderDays} Tagen`);
+  }
+  if (settings.waitingReminderDays > 0 && settings.waitingCloseDays > 0) {
+    parts.push(
+      `Wartend schließt ${settings.waitingCloseDays} Tage danach`,
+    );
+  } else if (settings.waitingCloseDays > 0) {
+    parts.push("Wartend schließt nicht — dafür fehlt die Erinnerung");
+  }
+
+  return {
+    ok: true,
+    message:
+      parts.length > 0
+        ? `${parts.join(". ")}.`
+        : "Gespeichert. Es schließt nichts automatisch.",
   };
 }
 
