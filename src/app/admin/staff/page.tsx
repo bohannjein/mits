@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { CreateUserForm } from "@/components/admin/create-user-form";
+import { TwoFactorResetForm } from "@/components/admin/two-factor-reset-form";
 import { UserRoleForm } from "@/components/admin/user-role-form";
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
@@ -23,7 +24,7 @@ import {
 } from "@/components/ui/table";
 import { ROLE_LABELS, canViewBoard } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
-import { countAdmins, listUsers } from "@/lib/users";
+import { countAdmins, hasTwoFactor, listUsers } from "@/lib/users";
 
 export const metadata: Metadata = {
   title: "Agenten & Administration — MITS",
@@ -105,6 +106,7 @@ export default async function AdminStaffPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>E-Mail</TableHead>
                   <TableHead>Rolle</TableHead>
+                  <TableHead>Zwei-Faktor</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -136,6 +138,16 @@ export default async function AdminStaffPage() {
                                 ? "letzter Administrator"
                                 : undefined
                           }
+                        />
+                      </TableCell>
+                      {/* Der Weg zurück, wenn das Telefon weg ist. Steht hier
+                          und nicht in einer eigenen Maske, weil die Frage
+                          „welches Konto" schon durch die Zeile beantwortet
+                          ist. */}
+                      <TableCell>
+                        <TwoFactorResetForm
+                          userId={user.id}
+                          enabled={hasTwoFactor(user.id)}
                         />
                       </TableCell>
                     </TableRow>

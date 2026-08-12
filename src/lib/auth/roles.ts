@@ -81,6 +81,9 @@ export const ROLE_LABELS_PLURAL: Record<MITSRole, string> = {
 export const CUSTOMER_HOME = "/customer";
 export const AGENT_HOME = "/mits";
 
+/** Die Anmeldemaske des Personals. Liegt bei dem Bereich, den sie öffnet. */
+export const STAFF_LOGIN = "/mits/login";
+
 export const PROTECTED_PREFIXES: {
   prefix: string;
   role: MITSRole;
@@ -93,7 +96,24 @@ export const PROTECTED_PREFIXES: {
   { prefix: "/settings", role: "user" },
 ];
 
+/**
+ * Öffentliche Pfade, die innerhalb eines geschützten Präfixes liegen.
+ *
+ * Genau einer, und ohne ihn wäre die Personalmaske unerreichbar: `/mits/login`
+ * fällt unter die `/mits`-Regel, ein abgemeldeter Aufruf würde also auf
+ * `/login?next=/mits/login` umgeleitet — die Maske schickt zur Maske. Der
+ * Ausschluss steht **hier** und nicht im `config.matcher` des Proxys, weil
+ * `requiredRoleFor` beide Seiten bedient: den Proxy und die Seiten-Guards. Zwei
+ * Listen wären zwei Orte, an denen dieselbe Ausnahme gelten muss.
+ *
+ * Exakte Pfade, kein Präfix: `/mits/login/…` gibt es nicht, und ein Präfix wäre
+ * eine offene Tür für jede Seite, die dort später jemand anlegt.
+ */
+const PUBLIC_PATHS: string[] = [STAFF_LOGIN];
+
 function matchPrefix(pathname: string) {
+  if (PUBLIC_PATHS.includes(pathname)) return undefined;
+
   return PROTECTED_PREFIXES.find(
     ({ prefix }) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );

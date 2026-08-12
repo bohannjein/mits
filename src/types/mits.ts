@@ -3081,6 +3081,47 @@ export function sessionLifetimeSeconds(days: SessionLifetimeDays): number {
   return days === 0 ? SESSION_LIFETIME_FOREVER_SECONDS : days * 60 * 60 * 24;
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Zwei-Faktor-Pflicht je Rolle.
+
+   Die Einrichtung selbst steht **jedem** Konto offen und braucht keinen
+   Schalter — was der Admin hier entscheidet, ist, für wen sie Pflicht wird.
+
+   Alle drei Rollen und nicht `RESTRICTABLE_ROLES`: das dort ist eine Liste
+   dessen, wem man etwas *wegnehmen* kann, und einen Administrator vor der
+   eigenen Maske auszusperren wäre eine Instanz ohne Weg zurück. Ein zweiter
+   Faktor nimmt nichts weg, und ein Konto, das die Instanz verwaltet, ist genau
+   das, für das er zuerst gelten sollte.
+
+   Als eigene Liste geführt statt aus `lib/auth/roles` importiert — aus dem
+   Grund, der schon bei `RESTRICTABLE_ROLES` steht: diese Datei bleibt frei von
+   Importen aus der Auth-Schicht.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const TWO_FACTOR_ROLES = ["user", "agent", "admin"] as const;
+export type TwoFactorRole = (typeof TWO_FACTOR_ROLES)[number];
+
+export const TWO_FACTOR_ROLE_LABELS: Record<TwoFactorRole, string> = {
+  user: "Melder",
+  agent: "Agenten",
+  admin: "Administration",
+};
+
+/**
+ * Die Rollen, für die ein zweiter Faktor Pflicht ist.
+ *
+ * Filtert Unbekanntes heraus, statt es abzulehnen — dieselbe Regel wie bei
+ * `hidden_areas`: ein Rollenname, den dieser Build nicht kennt, darf nicht die
+ * ganze Auth-Konfiguration mitnehmen. Was übrig bleibt, ist dedupliziert und in
+ * der Reihenfolge von `TWO_FACTOR_ROLES`, damit die gespeicherte Zeile nicht
+ * davon abhängt, in welcher Reihenfolge die Maske ihre Schalter abschickt.
+ */
+export function toTwoFactorRoles(value: unknown): TwoFactorRole[] {
+  if (!Array.isArray(value)) return [];
+  const named = new Set(value.filter((entry) => typeof entry === "string"));
+  return TWO_FACTOR_ROLES.filter((role) => named.has(role));
+}
+
 export const AuthSettingsSchema = z.object({
   registrationEnabled: z.boolean().default(true),
   allowedEmailDomains: z.array(z.string()).default([]),
@@ -3097,6 +3138,11 @@ export const AuthSettingsSchema = z.object({
     .unknown()
     .optional()
     .transform(toSessionLifetimeDays),
+  /* Gefiltert statt geprüft — siehe `toTwoFactorRoles`. */
+  twoFactorRequiredRoles: z
+    .unknown()
+    .optional()
+    .transform(toTwoFactorRoles),
 });
 export type AuthSettings = z.infer<typeof AuthSettingsSchema>;
 
@@ -3104,6 +3150,12 @@ export const DEFAULT_AUTH_SETTINGS: AuthSettings = {
   registrationEnabled: true,
   allowedEmailDomains: [],
   sessionLifetimeDays: DEFAULT_SESSION_LIFETIME_DAYS,
+  /*
+   * Leer, und das ist die tragende Vorgabe: ein Update, das die Pflicht
+   * einschaltet, sperrt jede laufende Instanz aus — niemand hat einen zweiten
+   * Faktor eingerichtet, den er noch nicht haben konnte.
+   */
+  twoFactorRequiredRoles: [],
 };
 
 /* ──────────────────────────────────────────────────────────────────────────

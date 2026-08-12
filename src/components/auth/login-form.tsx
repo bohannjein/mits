@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2Icon, LogInIcon } from "lucide-react";
+import { Loader2Icon, LogInIcon, ShieldCheckIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -20,7 +20,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { signIn } from "@/lib/auth/client";
+import { Label } from "@/components/ui/label";
+import { signIn, twoFactor } from "@/lib/auth/client";
 import { CUSTOMER_HOME } from "@/lib/auth/roles";
 import {
   SESSION_LIFETIME_LABELS,
@@ -63,6 +64,45 @@ function describeSignInError(status: number): string {
 }
 
 /**
+ * Dasselbe für den zweiten Schritt.
+ *
+ * Eigene Funktion, weil „E-Mail oder Passwort ist falsch" dort schlicht nicht
+ * stimmt: das Passwort war richtig, sonst gäbe es diesen Schritt nicht. Ein
+ * falscher Satz an dieser Stelle schickt Leute zurück auf das Passwortfeld, das
+ * in Ordnung ist.
+ */
+function describeChallengeError(status: number): string {
+  if (status === 401 || status === 400) {
+    return "Der Code stimmt nicht oder ist abgelaufen.";
+  }
+  if (status === 403) {
+    return "Zu viele Fehlversuche. Das Konto ist vorübergehend gesperrt.";
+  }
+  if (status === 429) {
+    return "Zu viele Versuche. Bitte einen Moment warten.";
+  }
+  if (status >= 500) {
+    return `Serverfehler bei der Prüfung (HTTP ${status}). Details stehen im Server-Log.`;
+  }
+  return `Prüfung fehlgeschlagen (HTTP ${status}).`;
+}
+
+/**
+ * Ob die Anmeldung nach einem zweiten Faktor verlangt.
+ *
+ * Als Prüfung auf dem Wert und nicht über den Antworttyp: `twoFactorRedirect`
+ * kommt aus einem Plugin, und ein `data`-Typ, der es kennt, hinge daran, dass die
+ * Client-Instanz an dieser Datei sichtbar ist. Die Frage ist ohnehin binär.
+ */
+function needsSecondFactor(data: unknown): boolean {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as { twoFactorRedirect?: unknown }).twoFactorRedirect === true
+  );
+}
+
+/**
  * @param next Where to go after signing in. Empty means the customer portal, which
  *   is also where the root sends people — the front door is the same for everyone.
  *   A caller that came from a guarded page passes that page instead, so the redirect
@@ -78,12 +118,32 @@ export function LoginForm({
    * Haken, dessen Dauer man nicht kennt, ist eine Zusage ohne Frist.
    */
   sessionLifetimeDays,
+  /**
+   * Der Weg zur Selbstregistrierung. Aus auf der Personalmaske: dort entstehen
+   * keine Konten — ein Agentenzugang kommt über `/admin/staff`, und eine
+   * Selbstregistrierung an dieser Stelle wäre in jedem Fall ein Melderkonto.
+   */
+  showRegisterLink = true,
 }: {
   next: string;
   sessionLifetimeDays: SessionLifetimeDays;
+  showRegisterLink?: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+
+  /*
+   * Der zweite Schritt lebt in derselben Karte.
+   *
+   * `challenge` ist der Zustand zwischen „Passwort akzeptiert" und „angemeldet";
+   * Better Auth hält ihn serverseitig in einem eigenen Cookie mit zehn Minuten
+   * Frist. Eine eigene Seite hätte denselben Zustand aus diesem Cookie
+   * rekonstruieren müssen, und ein Reload darauf wäre eine Seite ohne Frage.
+   */
+  const [challenge, setChallenge] = useState(false);
+  const [code, setCode] = useState("");
+  const [useBackupCode, setUseBackupCode] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   const form = useForm({
     resolver: zodResolver(LoginSchema),
@@ -100,7 +160,7 @@ export function LoginForm({
 
   const submit = form.handleSubmit(async (values) => {
     setError(null);
-    const { error: signInError } = await signIn.email({
+    const { data, error: signInError } = await signIn.email({
       email: values.email,
       password: values.password,
       rememberMe: values.rememberMe,
@@ -108,6 +168,17 @@ export function LoginForm({
 
     if (signInError) {
       setError(describeSignInError(signInError.status));
+      return;
+    }
+
+    /*
+     * Passwort akzeptiert, Sitzung noch nicht vergeben. Kein `router.push` hier:
+     * das Ziel wäre eine geschützte Seite, die den Besucher als abgemeldet
+     * ansieht und ihn zurück auf die Anmeldung schickt — was aussieht, als hätte
+     * das richtige Passwort nicht funktioniert.
+     */
+    if (needsSecondFactor(data)) {
+      setChallenge(true);
       return;
     }
 
@@ -127,7 +198,111 @@ export function LoginForm({
     router.refresh();
   });
 
+  async function verifySecondFactor() {
+    setError(null);
+    setVerifying(true);
+    try {
+      const trimmed = code.trim();
+      const { error: verifyError } = useBackupCode
+        ? await twoFactor.verifyBackupCode({ code: trimmed })
+        : await twoFactor.verifyTotp({ code: trimmed });
+
+      if (verifyError) {
+        setError(describeChallengeError(verifyError.status));
+        return;
+      }
+
+      router.push(next || CUSTOMER_HOME);
+      router.refresh();
+    } finally {
+      setVerifying(false);
+    }
+  }
+
   const busy = form.formState.isSubmitting;
+
+  /* ── Zweiter Schritt ── */
+  if (challenge) {
+    return (
+      <div className="grid gap-5">
+        <Alert className="rounded-2xl border-border px-4 py-3">
+          <ShieldCheckIcon />
+          <AlertTitle>Zweiter Faktor</AlertTitle>
+          <AlertDescription>
+            {useBackupCode
+              ? "Einen der Ersatzcodes eingeben. Jeder gilt einmal."
+              : "Den aktuellen Code aus der Authenticator-App eingeben."}
+          </AlertDescription>
+        </Alert>
+
+        <div className="grid gap-2">
+          <Label htmlFor="challengeCode">
+            {useBackupCode ? "Ersatzcode" : "Code"}
+          </Label>
+          <Input
+            id="challengeCode"
+            autoFocus
+            inputMode={useBackupCode ? "text" : "numeric"}
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            onKeyDown={(event) => {
+              // Kein <form> um dieses Feld: der Enter-Default wäre ein Submit
+              // ohne Action, und der leert das Feld statt zu senden.
+              if (event.key === "Enter" && code.trim() !== "" && !verifying) {
+                event.preventDefault();
+                void verifySecondFactor();
+              }
+            }}
+            disabled={verifying}
+            placeholder={useBackupCode ? "" : "123456"}
+            className="h-10 rounded-xl font-mono"
+          />
+        </div>
+
+        {error && (
+          <Alert
+            variant="destructive"
+            className="rounded-2xl border-border px-4 py-3"
+          >
+            <AlertTitle>Nicht angemeldet</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        <Button
+          type="button"
+          size="lg"
+          onClick={verifySecondFactor}
+          disabled={verifying || code.trim() === ""}
+          className="h-11 rounded-full bg-inverse-surface px-6 text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+        >
+          {verifying ? (
+            <Loader2Icon className="animate-spin" />
+          ) : (
+            <LogInIcon />
+          )}
+          {verifying ? "Prüfen …" : "Anmelden"}
+        </Button>
+
+        <Button
+          type="button"
+          variant="link"
+          onClick={() => {
+            setUseBackupCode((previous) => !previous);
+            setCode("");
+            setError(null);
+          }}
+          disabled={verifying}
+          className="h-auto justify-start p-0 text-sm"
+        >
+          {useBackupCode
+            ? "Doch den Code aus der App verwenden"
+            : "Kein Zugriff auf die App? Ersatzcode verwenden"}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <Form {...form}>
@@ -209,12 +384,14 @@ export function LoginForm({
           {busy ? "Anmelden …" : "Anmelden"}
         </Button>
 
-        <p className="text-sm text-muted-foreground">
-          Noch kein Konto?{" "}
-          <Link href="/register" className="text-primary underline-offset-4 hover:underline">
-            Registrieren
-          </Link>
-        </p>
+        {showRegisterLink && (
+          <p className="text-sm text-muted-foreground">
+            Noch kein Konto?{" "}
+            <Link href="/register" className="text-primary underline-offset-4 hover:underline">
+              Registrieren
+            </Link>
+          </p>
+        )}
       </form>
     </Form>
   );

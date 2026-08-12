@@ -5,6 +5,7 @@ import {
   PaletteIcon,
   RefreshCwIcon,
   ShieldAlertIcon,
+  ShieldCheckIcon,
   UserIcon,
 } from "lucide-react";
 
@@ -12,6 +13,7 @@ import { PasswordChangeForm } from "@/components/auth/password-change-form";
 import { ContactDetailsForm } from "@/components/auth/contact-details-form";
 import { ProfileForm } from "@/components/auth/profile-form";
 import { RefreshPreferenceForm } from "@/components/auth/refresh-preference-form";
+import { TwoFactorForm } from "@/components/auth/two-factor-form";
 import { ThemeToggle } from "@/components/branding/theme-toggle";
 import { AppHeader } from "@/components/layout/app-header";
 import { BackLink } from "@/components/layout/back-link";
@@ -26,8 +28,10 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ROLE_LABELS, canViewBoard, homeFor } from "@/lib/auth/roles";
-import { requireUserForPasswordChange } from "@/lib/auth/session";
+import { requireUserForAccountSetup } from "@/lib/auth/session";
+import { twoFactorRequiredFor } from "@/lib/auth/two-factor";
 import { listActiveLocations } from "@/lib/locations";
+import { hasTwoFactor } from "@/lib/users";
 import {
   getSystemSettings,
   getUserRefreshMinutes,
@@ -39,25 +43,38 @@ export const metadata: Metadata = {
 };
 
 /**
- * Own profile and password.
+ * Own profile, password and second factor.
  *
- * The one page that uses `requireUserForPasswordChange` instead of `requireUser`:
- * an account with `must_change_password` is redirected here by every other
- * guard, so this page must be reachable while the gate is closed — otherwise the
- * redirect would loop.
+ * The one page that uses `requireUserForAccountSetup` instead of `requireUser`:
+ * an account with `must_change_password` — or one whose role now requires a
+ * second factor it has not set up — is redirected here by every other guard, so
+ * this page must be reachable while a gate is closed, otherwise the redirect
+ * would loop.
  */
 export default async function ProfilePage() {
-  const user = await requireUserForPasswordChange();
+  const user = await requireUserForAccountSetup();
+
+  const twoFactorEnabled = hasTwoFactor(user.id);
+  const twoFactorRequired = twoFactorRequiredFor(user.role);
+
+  /*
+   * Ein geschlossenes Gate — egal welches — heißt: dieses Konto darf hier nur das
+   * Gate auflösen. Die übrigen Karten verschwinden dann nicht aus Kosmetik,
+   * sondern weil ihre Server Actions durch `requireUser` laufen und ein Speichern
+   * von dort umgehend hierher zurückgeleitet würde.
+   */
+  const gated =
+    user.mustChangePassword || (twoFactorRequired && !twoFactorEnabled);
 
   return (
     <>
       <AppHeader />
       <main className="bg-aurora flex flex-1 flex-col items-center px-6 py-12">
         <div className="w-full max-w-2xl">
-          {/* Hidden while the password gate is closed: `requireUser` sends every
-              other page straight back here, so the link would bounce. A visible
-              link that runs into a redirect is worse than no link. */}
-          {!user.mustChangePassword && (
+          {/* Hidden while a gate is closed: `requireUser` sends every other page
+              straight back here, so the link would bounce. A visible link that
+              runs into a redirect is worse than no link. */}
+          {!gated && (
             <BackLink href={homeFor(user.role)} label="Zurück zur Startseite" />
           )}
           <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
@@ -95,10 +112,10 @@ export default async function ProfilePage() {
             </Alert>
           )}
 
-          {/* Not while the gate is closed: a gated session may change its password
-              and nothing else, so a name field there would only be refused by
+          {/* Not while a gate is closed: a gated session may resolve the gate and
+              nothing else, so a name field there would only be refused by
               `changeOwnName`. */}
-          {!user.mustChangePassword && (
+          {!gated && (
             <Card className="mb-6 rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
               <CardHeader>
                 <span className="grid size-11 place-items-center rounded-full bg-surface-elevated text-muted-foreground">
@@ -114,7 +131,7 @@ export default async function ProfilePage() {
             </Card>
           )}
 
-          {!user.mustChangePassword && (
+          {!gated && (
             <Card className="mb-6 rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
               <CardHeader>
                 <span className="grid size-11 place-items-center rounded-full bg-surface-elevated text-muted-foreground">
@@ -163,7 +180,7 @@ export default async function ProfilePage() {
           {/* Staff only. A reporter follows the instance-wide interval the admin
               set — see `resolveRefreshMinutes`. The action refuses one too, since
               hiding a card is not a check. */}
-          {!user.mustChangePassword && canViewBoard(user.role) && (
+          {!gated && canViewBoard(user.role) && (
             <Card className="mb-6 rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
               <CardHeader>
                 <span className="grid size-11 place-items-center rounded-full bg-surface-elevated text-muted-foreground">
@@ -177,6 +194,43 @@ export default async function ProfilePage() {
                 <RefreshPreferenceForm
                   own={getUserRefreshMinutes(user.id)}
                   global={getSystemSettings().refreshMinutes}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/*
+            Erst das Passwort, dann der zweite Faktor — dieselbe Reihenfolge wie
+            im Guard. Ein zweiter Faktor auf einem Konto, dessen erstes Passwort
+            in diesem Repository steht, sichert die falsche Hälfte.
+          */}
+          {!user.mustChangePassword && (
+            <Card
+              className={`mb-6 rounded-3xl border border-border bg-card ring-0 ${
+                twoFactorRequired && !twoFactorEnabled
+                  ? "shadow-elev-2"
+                  : "shadow-elev-1"
+              }`}
+            >
+              <CardHeader>
+                <span className="grid size-11 place-items-center rounded-full bg-surface-elevated text-muted-foreground">
+                  <ShieldCheckIcon
+                    className="size-5"
+                    strokeWidth={1.5}
+                    aria-hidden
+                  />
+                </span>
+                <CardTitle className="mt-4 text-lg font-medium">
+                  Zwei-Faktor-Anmeldung
+                </CardTitle>
+                <CardDescription className="mt-1 leading-relaxed">
+                  Ein Code aus einer Authenticator-App, zusätzlich zum Passwort.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <TwoFactorForm
+                  enabled={twoFactorEnabled}
+                  required={twoFactorRequired}
                 />
               </CardContent>
             </Card>

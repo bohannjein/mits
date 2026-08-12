@@ -195,6 +195,7 @@ try {
       registrationEnabled: true,
       allowedEmailDomains: ["firma.de"],
       sessionLifetimeDays: 14,
+      twoFactorRequiredRoles: ["agent", "admin"],
     }),
   );
   // The session lifetime survives the round trip. It decides how long a cookie
@@ -207,6 +208,14 @@ try {
     }
     return stored.sessionLifetimeDays;
   });
+  // Die Zwei-Faktor-Pflicht überlebt den Rundlauf. Ein Wert, der still auf leer
+  // zurückfällt, ist eine Instanz, die glaubt, sie verlange einen zweiten Faktor.
+  check("two-factor policy round-trips", () => {
+    const stored = settings.getAuthSettings();
+    const roles = stored.twoFactorRequiredRoles.join(",");
+    if (roles !== "agent,admin") throw new Error(roles || "(leer)");
+    return roles;
+  });
   check("an unknown lifetime falls back instead of throwing", () => {
     const saved = settings.setAuthSettings({
       registrationEnabled: true,
@@ -214,12 +223,18 @@ try {
       // Not one of the offered values — the mask cannot produce it, a hand-edited
       // row can. It must not take the whole auth blob down with it.
       sessionLifetimeDays: 3 as never,
+      // Dasselbe für die Rollenliste: ein Name, den dieser Build nicht kennt,
+      // wird herausgefiltert und nimmt die Domain-Whitelist nicht mit.
+      twoFactorRequiredRoles: ["agent", "technician"] as never,
     });
     if (saved.sessionLifetimeDays !== 30) {
       throw new Error(String(saved.sessionLifetimeDays));
     }
     if (saved.allowedEmailDomains.length !== 1) {
       throw new Error("the domain whitelist was lost");
+    }
+    if (saved.twoFactorRequiredRoles.join(",") !== "agent") {
+      throw new Error(saved.twoFactorRequiredRoles.join(",") || "(leer)");
     }
     return saved.sessionLifetimeDays;
   });
@@ -1391,6 +1406,55 @@ try {
       .get(created.id) as { count: number };
     if (row.count !== 1) throw new Error("keine credential-Zeile");
     return created;
+  });
+  /*
+   * Der zweite Faktor, beide Richtungen.
+   *
+   * Genau der Vertrag, den ein Typechecker nicht sieht: `twoFactorEnabled` ist
+   * eine Spalte, die das Plugin anlegt, und `twoFactor` eine Tabelle, deren Name
+   * nur in einem String steht. Ein frisch angelegtes Konto hat keinen Faktor —
+   * und wenn die Spalte fehlte, wäre das hier kein `false`, sondern ein Wurf.
+   */
+  check("a fresh account has no second factor", () => {
+    const carla = users.findUserByEmail("carla@firma.de");
+    if (!carla) throw new Error("Konto nicht gefunden");
+    if (users.hasTwoFactor(carla.id)) throw new Error("Faktor aus dem Nichts");
+    return false;
+  });
+  check("resetting a second factor that is not there is harmless", () => {
+    const carla = users.findUserByEmail("carla@firma.de");
+    if (!carla) throw new Error("Konto nicht gefunden");
+    users.resetTwoFactor(carla.id);
+    return users.hasTwoFactor(carla.id);
+  });
+
+  console.log("auth log");
+  const authLog = await import("../src/lib/auth-log");
+  check("record and read back", () => {
+    const before = authLog.countAuthEvents();
+    authLog.recordAuthEvent(
+      "role_changed",
+      { id: "admin-1", email: "admin@firma.de" },
+      "carla@firma.de: user → agent",
+    );
+    if (authLog.countAuthEvents() !== before + 1) {
+      throw new Error("nichts geschrieben");
+    }
+    const [newest] = authLog.listAuthEvents(1);
+    if (newest?.action !== "role_changed") {
+      throw new Error(String(newest?.action));
+    }
+    return newest.detail;
+  });
+  // Die Anmeldung selbst hängt in `databaseHooks.session.create.after`; hier wird
+  // geprüft, dass der Schreibpfad, den sie benutzt, mit einer Sitzung ohne
+  // Adresse zurechtkommt — der Hook liest die Adresse aus der Tabelle und findet
+  // sie nicht immer.
+  check("an event without an account still lands", () => {
+    authLog.recordAuthEvent("sign_in", { id: null, email: null });
+    const [newest] = authLog.listAuthEvents(1);
+    if (newest?.action !== "sign_in") throw new Error(String(newest?.action));
+    return newest.actorEmail === "" ? "(leer)" : newest.actorEmail;
   });
   await checkAsync("the address is refused twice", async () => {
     try {

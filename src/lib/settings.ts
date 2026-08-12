@@ -38,6 +38,7 @@ export function setAuthSettings(next: AuthSettings): AuthSettings {
     registrationEnabled: next.registrationEnabled,
     allowedEmailDomains: normaliseDomains(next.allowedEmailDomains),
     sessionLifetimeDays: next.sessionLifetimeDays,
+    twoFactorRequiredRoles: next.twoFactorRequiredRoles,
   });
 
   db.prepare(

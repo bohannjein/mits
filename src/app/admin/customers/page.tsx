@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { TwoFactorResetForm } from "@/components/admin/two-factor-reset-form";
 import { UserRecordForm } from "@/components/admin/user-record-form";
 import { UserRoleForm } from "@/components/admin/user-role-form";
 import { AppHeader } from "@/components/layout/app-header";
@@ -17,7 +18,7 @@ import { requireRole } from "@/lib/auth/session";
 import { listActiveLocations, listLocations } from "@/lib/locations";
 import { listActiveOrganizations, listOrganizations } from "@/lib/organizations";
 import { getUserProfile } from "@/lib/user-profile";
-import { listUsers } from "@/lib/users";
+import { hasTwoFactor, listUsers } from "@/lib/users";
 
 export const metadata: Metadata = {
   title: "Anwender — MITS",
@@ -141,6 +142,18 @@ export default async function AdminCustomersPage() {
                       <div className="grid gap-2 border-t border-border pt-4">
                         <span className="label-industrial">Rolle</span>
                         <UserRoleForm userId={user.id} currentRole={user.role} />
+                      </div>
+
+                      {/* Ein Melder hat keinen Kollegen mit Datenbankzugriff
+                          neben sich sitzen — ohne diesen Knopf wäre ein
+                          verlorenes Telefon ein Konto, das niemand mehr
+                          öffnen kann. */}
+                      <div className="grid gap-2 border-t border-border pt-4">
+                        <span className="label-industrial">Zwei-Faktor</span>
+                        <TwoFactorResetForm
+                          userId={user.id}
+                          enabled={hasTwoFactor(user.id)}
+                        />
                       </div>
                     </AccordionContent>
                   </AccordionItem>

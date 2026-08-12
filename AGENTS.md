@@ -364,6 +364,7 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /                       öffentlicher Einstieg: Login-Maske, angemeldet -> /customer
 /customer/…             Anwender: Portal, Ticket-Erstellung, eigene Tickets, schlanke Detailansicht
 /mits/                  Agenten: Live-Queue mit Tabs, Präsenz + Statistik als Spalte
+/mits/login             Anmeldung fürs Personal — dieselbe Auth, anderer Einstieg
 /mits/tickets/[id]      Agenten-Detailansicht mit Workflow-Panel
 /mits/tickets/[id]/popout  nur der Verlauf: eigenes Fenster und iframe-Inhalt
 /mits/cmdb/…            Bestand, Lizenzen, Objekt-Detailansicht (Agenten)
@@ -375,6 +376,7 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /admin/settings/roles   Sichtbarkeit je Rolle: welche Formulare, welche Bereiche
 /admin/settings/storage Dateispeicher (Platte oder S3)
 /admin/settings/api-keys API-Keys je System, Token nur einmal sichtbar
+/admin/security         Zugriffsprotokoll: Anmeldungen, Rollenwechsel, Kontoanlage, 2FA-Reset
 /admin/status           Systemzustand: was eingerichtet ist, plus Live-Verbindung
 /admin/settings/tickets  Wo die Antworten eines Formulars stehen, plus die drei Spalten der Melderansicht
 /admin/settings/analytics Widget-Schalter und Default-Intervall
@@ -402,6 +404,22 @@ Seite schlägt beides — ein Deep-Link auf ein Ticket landet nach der Anmeldung
 diesem Ticket.
 
 `/tickets`, `/board` und `/agent` existieren **nicht mehr** und werden nicht umgeleitet.
+
+**Zwei Anmeldemasken, eine Anmeldung.** `/mits/login` ist ein Einstiegspunkt und
+keine zweite Auth: ein Cookie, eine Better-Auth-Instanz, eine `user`-Tabelle. Was
+sich unterscheidet, sind Überschrift, das fehlende „Registrieren" und das
+Standardziel (`/mits` statt `/customer`).
+
+Zwei Dinge tragen das:
+
+- **Der Pfad liegt in `PUBLIC_PATHS`** (`lib/auth/roles.ts`). Er fällt sonst unter
+  die `/mits`-Regel, und ein abgemeldeter Aufruf liefe auf `/login?next=/mits/login`
+  — die Anmeldemaske schickt zur Anmeldemaske. Die Ausnahme steht dort und nicht im
+  `config.matcher` des Proxys, weil `requiredRoleFor` beide Seiten bedient.
+- **Sie ist kein Rollen-Orakel.** Ein Melder mit korrektem Passwort meldet sich hier
+  an und landet über `homeFor(role)` in `/customer`; ein falsches Passwort gibt
+  denselben Satz wie überall. Eine eigene Meldung für „richtige Zugangsdaten,
+  falsche Rolle" wäre ein Weg, Adressen nach Rolle durchzuprobieren.
 
 **Ein `user` auf `/mits/*` landet auf `/customer`, nicht auf `/forbidden`.** Das steuert
 `deniedPathFor` in `lib/auth/roles.ts`; alles ohne kleinere Sicht behält `/forbidden`.
@@ -619,8 +637,10 @@ Nachrichten; wer unten steht, scrollt automatisch mit.
 
   - `requireUser` leitet **jede** geschützte Seite auf `/settings/profile` um.
   - `requireApiUser` antwortet in **jedem** Route Handler mit `403`.
-  - Nur `requireUserForPasswordChange` überspringt das Gate — der Name macht die
+  - Nur `requireUserForAccountSetup` überspringt das Gate — der Name macht die
     Ausnahme an der Aufrufstelle sichtbar, und nur `/settings/profile` benutzt ihn.
+    Er überspringt **beide** Gates, weil die Seite beide auflöst: das Passwort und
+    den zweiten Faktor.
   - Das Flag wird aus der **Datenbank** gelesen, nicht aus dem Session-Cookie: der
     Cookie-Cache lebt 60 s, das Konto wäre nach dem Wechsel noch eine Minute gesperrt.
   - `input: false` wie bei `role` — ein Client kann sein eigenes Gate nicht räumen.
@@ -673,6 +693,52 @@ Nachrichten; wer unten steht, scrollt automatisch mit.
   vertrauenswürdig und die Prüfung wirkungslos. Host-Header-Injection greift hier nicht:
   MITS verschickt keine Mail, es gibt also keinen aus dem Host gebauten Link, den ein
   gefälschter Wert umlenken könnte.
+- **Zwei Faktoren: einrichten darf jeder, Pflicht wird es je Rolle.** Unter
+  „Anmeldung" in `/admin` steht ein Schalter pro Rolle — **einschließlich
+  Melder**. `twoFactorRequiredRoles` ist standardmäßig **leer**; alles andere
+  hätte jede laufende Instanz mit dem Update ausgesperrt.
+
+  Nur TOTP plus Ersatzcodes, kein OTP per Mail: der zweite Faktor darf nicht an
+  demselben SMTP hängen, dessen Fehlen schon die Adressverifikation verhindert.
+
+  **Durchgesetzt wird in `requireUser` und `requireApiUser`, nicht im Login.**
+  Ein Konto, das erst durch eine Einstellung in die Pflicht rutscht, hat eine
+  gültige Sitzung — das Gate muss also dort greifen, wo die Sitzung *benutzt*
+  wird. Reihenfolge: Passwort-Gate zuerst, dann der Faktor. Andersherum säße ein
+  geseedeter Admin einen zweiten Faktor auf ein Passwort, das in diesem
+  Repository steht.
+
+  **`twoFactorRequiredRoles` wird gefiltert, nicht geprüft** (`toTwoFactorRoles`)
+  — dieselbe Falle wie bei `hidden_areas` und `sessionLifetimeDays`: ein
+  Rollenname, den dieser Build nicht kennt, nähme sonst die ganze
+  Auth-Konfiguration mit, inklusive Domain-Whitelist.
+
+  **Zurücksetzen kann nur ein Admin**, in `/admin/staff` und `/admin/customers`.
+  Seit die Pflicht auch für Melder gilt, ist ein verlorenes Telefon der Regelfall
+  und kein Randfall — ohne diesen Weg wäre es ein Eingriff in die Datenbank.
+  `resetTwoFactor` löscht die Zeile mit Geheimnis und Ersatzcodes, nicht nur das
+  Flag: ein stehengelassenes Geheimnis käme beim Neueinrichten zurück.
+- **Das Zugriffsprotokoll ist eine eigene Tabelle.** `mits_auth_event`
+  (`lib/auth-log.ts`, Ansicht unter `/admin/security`) hält Anmeldungen,
+  Rollenwechsel, Kontoanlagen und 2FA-Resets. **Nicht** `mits_audit_log`: dort
+  hängt jede Zeile an einem `ticket_id NOT NULL` und wird nur über
+  `listAuditFor(ticketId)` gelesen — eine Anmeldung gehört zu keinem Ticket.
+
+  Geschrieben wird die Anmeldung in `databaseHooks.session.create.after`, also an
+  der Sitzung und nicht am Endpunkt: ein künftiger zweiter Weg hinein ist damit
+  ohne Zutun mit erfasst. `recordAuthEvent` **wirft nie** — ein Protokoll, das
+  eine Anmeldung scheitern lassen kann, ist schlimmer als kein Protokoll.
+
+  **Gescheiterte Anmeldeversuche stehen nicht darin**, und das ist eine Lücke mit
+  Grund: Better Auth wirft dabei einen `APIError`, und der einzige Haken
+  (`onAPIError.onError`) bekommt den `AuthContext` statt des Requests — es ist
+  also nicht feststellbar, welche Anmeldung gescheitert ist. Der Weg über
+  `hooks.before` auf `/sign-in/email` protokollierte den Versuch statt sein
+  Ergebnis und säße im Anmeldepfad; er gehört einmal gegen eine laufende Instanz
+  geprüft, bevor er hineinkommt.
+
+  **Nicht in `lib/purge.ts`.** „Bestand löschen" leert Tickets und CMDB; ein
+  Zugriffsprotokoll, das der Protokollierte mitlöschen kann, ist keines.
 - **Registrierung:** E-Mail + Passwort (min. 10 Zeichen), keine E-Mail-Verifikation
   (es ist kein Mailversand konfiguriert — eine aktivierte Verifikation würde alle
   aussperren). Das **erste** Konto einer Instanz wird immer angelegt und erhält

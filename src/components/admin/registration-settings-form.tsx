@@ -24,9 +24,12 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
 import {
   SESSION_LIFETIME_DAYS,
   SESSION_LIFETIME_LABELS,
+  TWO_FACTOR_ROLES,
+  TWO_FACTOR_ROLE_LABELS,
   type AuthSettings,
 } from "@/types/mits";
 
@@ -52,8 +55,8 @@ export function RegistrationSettingsForm({
         <CardHeader>
           <CardTitle className="text-lg font-medium">Anmeldung</CardTitle>
           <CardDescription>
-            Wer sich selbst anlegen darf, aus welchen E-Mail-Domains, und wie lange
-            eine Anmeldung gilt.
+            Wer sich selbst anlegen darf, aus welchen E-Mail-Domains, wie lange
+            eine Anmeldung gilt, und wer einen zweiten Faktor braucht.
           </CardDescription>
         </CardHeader>
 
@@ -110,6 +113,45 @@ export function RegistrationSettingsForm({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <Separator className="mt-2 bg-border" />
+
+          {/*
+            Die Pflicht, nicht die Verfügbarkeit: einrichten darf jedes Konto den
+            zweiten Faktor ohnehin, unter „Profil". Hier steht nur, für wen er
+            keine Wahl mehr ist.
+
+            Melder stehen mit in der Liste, und das ist eine Entscheidung mit
+            Folgen: ein Melder ohne Diensthandy braucht einen Authenticator auf
+            einem privaten Gerät, und ein verlorenes Gerät wird zum Supportfall,
+            den nur ein Admin auflösen kann. Der Satz darunter steht deshalb da —
+            er ist keine Erklärung der Funktion, sondern die Folge des Schalters.
+          */}
+          <div className="grid gap-3">
+            <Label>Zwei-Faktor-Anmeldung verpflichtend</Label>
+            {TWO_FACTOR_ROLES.map((role) => (
+              <div
+                key={role}
+                className="flex items-start gap-3 rounded-2xl border border-border p-4"
+              >
+                <Switch
+                  id={`twoFactor.${role}`}
+                  name={`twoFactor.${role}`}
+                  defaultChecked={settings.twoFactorRequiredRoles.includes(role)}
+                  disabled={pending}
+                />
+                <div className="grid gap-1">
+                  <Label htmlFor={`twoFactor.${role}`}>
+                    {TWO_FACTOR_ROLE_LABELS[role]}
+                  </Label>
+                </div>
+              </div>
+            ))}
+            <p className="text-sm text-muted-foreground">
+              Betroffene Konten kommen bis zur Einrichtung nur noch auf ihre
+              Profilseite. Ein verlorenes Gerät setzt die Administration zurück.
+            </p>
           </div>
 
           {result && (

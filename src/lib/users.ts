@@ -122,6 +122,53 @@ export function mustChangePassword(userId: string): boolean {
   return row ? Boolean(row.flag) : false;
 }
 
+/**
+ * Whether this account has a verified second factor.
+ *
+ * Aus derselben Quelle und aus demselben Grund wie `mustChangePassword`: der
+ * Wert reist auch im Sitzungs-Cookie mit, und das lebt 60 Sekunden. Ein Konto,
+ * das seinen Faktor gerade eingerichtet hat, säße sonst bis zu einer Minute
+ * weiter auf der Einrichtungsseite — und ein gerade zurückgesetzter Faktor
+ * bliebe genauso lange wirksam.
+ *
+ * Die Spalte legt der `two-factor`-Plugin an; `ensureAuthSchema` läuft in
+ * `getSessionUser`, bevor irgendein Aufrufer hier landet. `twoFactorEnabled` ist
+ * camelCase, weil Better Auth Feldnamen unverändert als Spaltennamen nimmt —
+ * `must_change_password` daneben hat nur deshalb Unterstriche, weil dort ein
+ * `fieldName` gesetzt ist.
+ */
+export function hasTwoFactor(userId: string): boolean {
+  const row = db
+    .prepare("SELECT twoFactorEnabled AS flag FROM user WHERE id = ?")
+    .get(userId) as { flag: unknown } | undefined;
+
+  // SQLite has no boolean type: the column comes back as 0 or 1.
+  return row ? Boolean(row.flag) : false;
+}
+
+/**
+ * Take the second factor off an account.
+ *
+ * Der Weg zurück, wenn das Telefon weg ist und die Ersatzcodes mit ihm. Ohne ihn
+ * wäre jedes verlorene Gerät ein Eingriff in die Datenbank — und seit die Pflicht
+ * auch für Melder gilt, ist das kein Randfall mehr, sondern der Regelfall im
+ * Support.
+ *
+ * Löscht die Zeile mit Geheimnis und Ersatzcodes und nicht nur das Flag: ein
+ * stehengelassenes Geheimnis würde beim nächsten Einrichten weiterbenutzt, und
+ * dann trüge ein zurückgesetzter Faktor denselben Schlüssel wie der alte.
+ *
+ * Der Aufrufer ist dafür verantwortlich, dass der *Handelnde* Admin ist — wie bei
+ * `setUserRole`, siehe `app/admin/actions.ts`.
+ */
+export function resetTwoFactor(userId: string): void {
+  const clear = db.transaction((id: string) => {
+    db.prepare("DELETE FROM twoFactor WHERE userId = ?").run(id);
+    db.prepare("UPDATE user SET twoFactorEnabled = 0 WHERE id = ?").run(id);
+  });
+  clear(userId);
+}
+
 /** Number of accounts that currently hold the admin role. */
 export function countAdmins(): number {
   const row = db

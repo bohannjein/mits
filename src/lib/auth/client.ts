@@ -1,7 +1,10 @@
 "use client";
 
 import { createAuthClient } from "better-auth/react";
-import { inferAdditionalFields } from "better-auth/client/plugins";
+import {
+  inferAdditionalFields,
+  twoFactorClient,
+} from "better-auth/client/plugins";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Browser auth client.
@@ -16,6 +19,16 @@ import { inferAdditionalFields } from "better-auth/client/plugins";
 
 export const authClient = createAuthClient({
   plugins: [
+    /*
+     * Ohne `twoFactorPage` und ohne `onTwoFactorRedirect`.
+     *
+     * Beide Optionen schicken den Browser bei `twoFactorRedirect` von selbst
+     * woandershin. Hier bleibt der zweite Schritt in derselben Karte, in der der
+     * erste stand: eine eigene Seite müsste den Zwischenzustand aus einem Cookie
+     * wiederherstellen, und ein Reload darauf wäre eine Seite, die nach nichts
+     * mehr fragt. `LoginForm` liest `data.twoFactorRedirect` selbst.
+     */
+    twoFactorClient(),
     inferAdditionalFields({
       // `input: false` mirrors the server fields. Besides matching reality, it
       // keeps both out of the sign-up argument type — the client must not be
@@ -28,4 +41,4 @@ export const authClient = createAuthClient({
   ],
 });
 
-export const { signIn, signUp, signOut, useSession } = authClient;
+export const { signIn, signUp, signOut, useSession, twoFactor } = authClient;

@@ -3,7 +3,9 @@ import "server-only";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
+import { twoFactor } from "better-auth/plugins/two-factor";
 
+import { recordAuthEvent } from "@/lib/auth-log";
 import { provisionedRole } from "@/lib/auth/bootstrap";
 import { DEFAULT_ROLE } from "@/lib/auth/roles";
 import { authSecret } from "@/lib/auth/secret";
@@ -172,6 +174,37 @@ const baseAuthOptions = {
   },
 
   databaseHooks: {
+    session: {
+      create: {
+        /**
+         * Jede vergebene Sitzung ist eine Anmeldung.
+         *
+         * An der Sitzung und nicht am Endpunkt, damit auch ein künftiger zweiter
+         * Weg hinein — ein sozialer Anbieter, ein Magic Link — mit erfasst ist,
+         * ohne dass jemand daran denken muss.
+         *
+         * Der Zweifaktor-Fall zählt hier genau einmal, obwohl er zwei Sitzungen
+         * anfasst: `verify-totp` legt die Sitzung erst nach dem Code an. Was beim
+         * *Einrichten* passiert, ist der Ausreißer — dort wird eine bestehende
+         * Sitzung getauscht, das erzeugt also eine zweite Zeile. Eine Anmeldung
+         * zu viel im Protokoll ist die harmlose Richtung.
+         *
+         * `recordAuthEvent` wirft nie; ein Fehlschlag beim Protokollieren darf
+         * keine Anmeldung scheitern lassen.
+         */
+        after: async (session) => {
+          const row = db
+            .prepare("SELECT email FROM user WHERE id = ?")
+            .get(session.userId) as { email?: string } | undefined;
+
+          recordAuthEvent(
+            "sign_in",
+            { id: session.userId, email: row?.email ?? "" },
+            session.ipAddress ?? "",
+          );
+        },
+      },
+    },
     user: {
       create: {
         /**
@@ -227,8 +260,27 @@ const baseAuthOptions = {
     },
   },
 
-  // Must stay last: it forwards Set-Cookie through Next's cookie API.
-  plugins: [nextCookies()],
+  plugins: [
+    /*
+     * Zweiter Faktor: TOTP plus Ersatzcodes.
+     *
+     * Nur TOTP und keine OTP-per-Mail: der Faktor soll auch dann tragen, wenn
+     * SMTP nicht eingerichtet ist — sonst hinge die Anmeldung an demselben
+     * Mailserver, dessen Fehlen schon die Verifikation der Adresse verhindert.
+     *
+     * `skipVerificationOnEnable` bleibt aus (Default). Damit steht
+     * `twoFactorEnabled` erst auf `true`, wenn ein Code aus der App einmal
+     * durchgelaufen ist — wer die App falsch einrichtet, sperrt sich nicht selbst
+     * aus, weil das Konto bis dahin ohne zweiten Faktor anmeldbar bleibt.
+     *
+     * `issuer` ist der Name, den die Authenticator-App anzeigt. Ohne ihn stünde
+     * dort "Better Auth", und auf einem Telefon mit einem Dutzend Einträgen ist
+     * der Name das Einzige, woran der Eintrag wiederzuerkennen ist.
+     */
+    twoFactor({ issuer: "MITS" }),
+    // Must stay last: it forwards Set-Cookie through Next's cookie API.
+    nextCookies(),
+  ],
 } satisfies BetterAuthOptions;
 
 export function authOptionsFor(sessionSeconds: number) {

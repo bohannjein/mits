@@ -188,6 +188,30 @@ function migrateAppTables(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_mits_audit_ticket
       ON mits_audit_log (ticket_id, created_at);
 
+    -- Zugriffsprotokoll: Anmeldungen und Eingriffe an Konten.
+    --
+    -- Eine eigene Tabelle und nicht mits_audit_log, obwohl beide "Protokoll"
+    -- heißen. Dort hängt jede Zeile an einem ticket_id NOT NULL und wird nur über
+    -- listAuditFor(ticketId) gelesen — eine Anmeldung gehört zu keinem Ticket,
+    -- und sie mit einer leeren Id hineinzuschreiben hieße, eine Tabelle mit zwei
+    -- Bedeutungen zu haben, von denen die Hälfte der Leser nur eine kennt.
+    --
+    -- Ebenfalls append-only: kein UPDATE und kein DELETE in lib/auth-log.ts.
+    --
+    -- (Keine Backticks in diesem Block: der ganze SQL-Text steht in einem
+    --  Template-Literal, ein Backtick im Kommentar beendet es mittendrin.)
+    CREATE TABLE IF NOT EXISTS mits_auth_event (
+      id          TEXT PRIMARY KEY,
+      actor_id    TEXT NOT NULL DEFAULT '',
+      actor_email TEXT NOT NULL DEFAULT '',
+      action      TEXT NOT NULL,
+      detail      TEXT NOT NULL DEFAULT '',
+      created_at  TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mits_auth_event_time
+      ON mits_auth_event (created_at DESC);
+
     -- The company an asset belongs to and a reporter works for. Not a site: see the
     -- comment on MITSOrganizationSchema for why the two are separate tables.
     CREATE TABLE IF NOT EXISTS mits_organization (

@@ -9,6 +9,7 @@ import {
   setAISettings,
 } from "@/lib/ai-settings";
 import { AIProviderError, verifyAIProvider } from "@/lib/services/ai/provider";
+import { recordAuthEvent } from "@/lib/auth-log";
 import { AccountCreateError, createAccount } from "@/lib/auth/create-account";
 import { ROLE_LABELS, isRole } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
@@ -82,6 +83,8 @@ import {
   ProfileError,
   RoleChangeError,
   findUser,
+  hasTwoFactor,
+  resetTwoFactor,
   setUserName,
   setUserRole,
 } from "@/lib/users";
@@ -109,7 +112,10 @@ import {
   RESTRICTABLE_ROLES,
   RoleVisibilitySchema,
   SESSION_LIFETIME_LABELS,
+  TWO_FACTOR_ROLES,
+  TWO_FACTOR_ROLE_LABELS,
   toSessionLifetimeDays,
+  toTwoFactorRoles,
   VisibilityPresetSchema,
   MITSLocationSchema,
   MITSOrganizationSchema,
@@ -180,15 +186,36 @@ export async function updateAuthSettingsAction(
     formData.get("sessionLifetimeDays"),
   );
 
+  /*
+   * Ein Schalter je Rolle, gelesen als Liste der Angehakten.
+   *
+   * `formData.get` statt `getAll`, weil ein `<Switch>` genau einen Wert schickt
+   * oder gar keinen. Durch `toTwoFactorRoles` gefiltert und nicht geprüft: ein
+   * Rollenname, den dieser Build nicht kennt, darf nicht die ganze
+   * Auth-Konfiguration mitnehmen — dieselbe Regel wie bei der Sitzungsdauer.
+   */
+  const twoFactorRequiredRoles = toTwoFactorRoles(
+    TWO_FACTOR_ROLES.filter(
+      (role) => formData.get(`twoFactor.${role}`) === "on",
+    ),
+  );
+
   setAuthSettings({
     registrationEnabled,
     allowedEmailDomains: domains,
     sessionLifetimeDays,
+    twoFactorRequiredRoles,
   });
   revalidatePath("/admin");
   revalidatePath("/register");
   // Die Anmeldemaske nennt die Dauer neben dem Haken „Angemeldet bleiben".
   revalidatePath("/login");
+  /*
+   * Und die Profilseite: dort steht die Karte, die die Pflicht auflöst, und ihr
+   * Zustand kommt aus genau dieser Einstellung. Ohne das sähe ein Konto, das
+   * gerade in die Pflicht gerutscht ist, eine Karte ohne Hinweis darauf.
+   */
+  revalidatePath("/settings/profile");
 
   const policy = registrationEnabled
     ? domains.length > 0
@@ -201,9 +228,16 @@ export async function updateAuthSettingsAction(
    * für die Sitzung, in der man das gerade eingestellt hat — ohne den Satz sieht
    * es aus, als hätte der Wechsel nichts getan.
    */
+  const secondFactor =
+    twoFactorRequiredRoles.length > 0
+      ? ` Zweiter Faktor Pflicht für: ${twoFactorRequiredRoles
+          .map((role) => TWO_FACTOR_ROLE_LABELS[role])
+          .join(", ")}.`
+      : "";
+
   return {
     ok: true,
-    message: `${policy} Angemeldet bleiben: ${SESSION_LIFETIME_LABELS[sessionLifetimeDays].toLowerCase()}, ab der nächsten Anmeldung.`,
+    message: `${policy} Angemeldet bleiben: ${SESSION_LIFETIME_LABELS[sessionLifetimeDays].toLowerCase()}, ab der nächsten Anmeldung.${secondFactor}`,
   };
 }
 
@@ -228,12 +262,21 @@ export async function setUserRoleAction(
     };
   }
 
+  const previousRole = findUser(userId)?.role;
+
   try {
     setUserRole(userId, role);
   } catch (error) {
     if (error instanceof RoleChangeError) return { ok: false, error: error.message };
     throw error;
   }
+
+  // Nach dem Schreiben und nicht davor: protokolliert wird, was passiert ist.
+  recordAuthEvent(
+    "role_changed",
+    actor,
+    `${findUser(userId)?.email ?? userId}: ${previousRole ?? "?"} → ${role}`,
+  );
 
   /*
    * Beide Listen und das Layout.
@@ -256,6 +299,52 @@ export async function setUserRoleAction(
 }
 
 /**
+ * Den zweiten Faktor eines Kontos entfernen.
+ *
+ * Der Weg zurück, wenn das Telefon weg ist und die Ersatzcodes mit ihm. Seit die
+ * Pflicht auch für Melder gilt, ist das kein Randfall mehr: ein Melder hat keinen
+ * Kollegen mit Datenbankzugriff neben sich sitzen.
+ *
+ * **Das ist eine Herabsetzung des Schutzes, und deshalb steht sie unter
+ * `requireRole("admin")` und wird gemeldet.** Wer sie auslöst, muss vorher
+ * wissen, dass das Konto danach mit dem Passwort allein anmeldbar ist — bis es
+ * einen neuen Faktor einrichtet, wozu der Guard es bei bestehender Pflicht sofort
+ * auffordert.
+ *
+ * Kein Sonderfall für das eigene Konto: einen Admin, der seinen eigenen Faktor
+ * loswerden will, hindert nichts daran, ihn unter „Profil" zu entfernen — und bei
+ * bestehender Pflicht führt beides zur selben Einrichtungsseite.
+ */
+export async function resetTwoFactorAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const actor = await requireRole("admin");
+
+  const userId = String(formData.get("userId") ?? "");
+  const target = userId ? findUser(userId) : null;
+  if (!target) return { ok: false, error: "Benutzer nicht gefunden." };
+
+  if (!hasTwoFactor(target.id)) {
+    return {
+      ok: false,
+      error: "Für dieses Konto ist kein zweiter Faktor eingerichtet.",
+    };
+  }
+
+  resetTwoFactor(target.id);
+  recordAuthEvent("two_factor_reset", actor, target.email);
+
+  revalidatePath("/admin/staff");
+  revalidatePath("/admin/customers");
+
+  return {
+    ok: true,
+    message: `Zweiter Faktor für ${target.email} entfernt. Das Konto meldet sich bis zur Neueinrichtung mit dem Passwort allein an.`,
+  };
+}
+
+/**
  * Ein neues Konto mit Rolle, angelegt von einem Administrator.
  *
  * Die Rolle kommt aus dem Formular, und das ist hier richtig: das ist der Zweck
@@ -270,7 +359,7 @@ export async function createUserAccountAction(
   _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  await requireRole("admin");
+  const actor = await requireRole("admin");
 
   const role = String(formData.get("role") ?? "");
   if (!isRole(role)) return { ok: false, error: "Unbekannte Rolle." };
@@ -283,6 +372,12 @@ export async function createUserAccountAction(
       role,
       mustChangePassword: formData.get("mustChangePassword") === "on",
     });
+
+    recordAuthEvent(
+      "account_created",
+      actor,
+      `${created.email} als ${ROLE_LABELS[created.role]}`,
+    );
 
     // Beide Listen, weil die Rolle entscheidet, in welcher das Konto auftaucht.
     revalidatePath("/admin/staff");

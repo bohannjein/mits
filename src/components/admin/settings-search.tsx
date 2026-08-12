@@ -22,6 +22,7 @@ import {
   SearchIcon,
   ServerIcon,
   ShieldAlertIcon,
+  ShieldCheckIcon,
   SparklesIcon,
   ToggleRightIcon,
   UserPlusIcon,
@@ -206,6 +207,13 @@ const ENTRIES: SettingsEntry[] = [
     label: "Anwender",
     icon: UsersIcon,
     keywords: "kunden melder benutzer konten endanwender",
+  },
+  {
+    href: "/admin/security",
+    label: "Zugriffsprotokoll",
+    icon: ShieldCheckIcon,
+    keywords:
+      "anmeldungen login protokoll audit sicherheit zugriff rollenwechsel zwei-faktor 2fa nachweis revision",
   },
   {
     href: "/admin/status",

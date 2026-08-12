@@ -1,4 +1,4 @@
-import { MITSLogo } from "@/components/branding/mits-logo";
+import { AuthShell } from "@/components/auth/auth-shell";
 
 /** Shared frame for login and registration: no header, no navigation, just the form. */
 export default function AuthLayout({
@@ -6,14 +6,5 @@ export default function AuthLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <main className="bg-aurora flex flex-1 items-center justify-center px-6 py-16">
-      <div className="w-full max-w-md">
-        <div className="mb-8 flex justify-center">
-          <MITSLogo showTagline />
-        </div>
-        {children}
-      </div>
-    </main>
-  );
+  return <AuthShell>{children}</AuthShell>;
 }

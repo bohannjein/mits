@@ -12,6 +12,7 @@ import {
   type MITSRole,
 } from "@/lib/auth/roles";
 import { ensureAuthSchema, getAuth } from "@/lib/auth/server";
+import { needsTwoFactorSetup } from "@/lib/auth/two-factor";
 import { canSeeArea } from "@/lib/role-visibility";
 import { mustChangePassword } from "@/lib/users";
 import type { NavArea } from "@/types/mits";
@@ -25,8 +26,14 @@ import type { NavArea } from "@/types/mits";
    one of these helpers, which hit the database rather than trusting a cookie.
    ────────────────────────────────────────────────────────────────────────── */
 
-/** Where a gated session is allowed to go, and nowhere else. */
-export const PASSWORD_CHANGE_PATH = "/settings/profile";
+/**
+ * Where a gated session is allowed to go, and nowhere else.
+ *
+ * Zwei Gates zeigen hierher — das Standardpasswort und die Zwei-Faktor-Pflicht —,
+ * deshalb heißt die Konstante nach dem Ziel und nicht mehr nach dem einen Gate,
+ * das sie zuerst hatte.
+ */
+export const ACCOUNT_SETUP_PATH = "/settings/profile";
 
 export interface SessionUser {
   id: string;
@@ -101,11 +108,18 @@ export async function getSessionUserFor(
 /**
  * Page guard: redirects to the login form, preserving where the user wanted to go.
  *
- * Also enforces the password-change gate. That is on purpose in the *shared*
- * guard rather than in each page: an account with a published default password
- * must not be able to reach anything by virtue of a page author forgetting the
- * check. The one page that may skip it calls `requireUserForPasswordChange`,
- * which is named so the exception is visible at the call site.
+ * Also enforces the two account gates. That is on purpose in the *shared* guard
+ * rather than in each page: an account with a published default password must
+ * not be able to reach anything by virtue of a page author forgetting the check,
+ * and the same holds for a role whose second factor an admin has made mandatory.
+ * The one page that may skip both calls `requireUserForAccountSetup`, which is
+ * named so the exception is visible at the call site.
+ *
+ * Das Passwort-Gate steht **vor** dem Zwei-Faktor-Gate. Ein geseedeter Admin
+ * würde sonst zuerst einen zweiten Faktor auf ein Konto legen, dessen Passwort in
+ * diesem Repository steht — ein zweiter Faktor auf einem öffentlich bekannten
+ * ersten ist die Reihenfolge, in der man beides einmal einrichtet und den
+ * schwachen Teil danach vergisst.
  */
 export async function requireUser(returnTo?: string): Promise<SessionUser> {
   const user = await getSessionUser();
@@ -114,18 +128,24 @@ export async function requireUser(returnTo?: string): Promise<SessionUser> {
     redirect(`/login${target}`);
   }
   if (user.mustChangePassword) {
-    redirect(PASSWORD_CHANGE_PATH);
+    redirect(ACCOUNT_SETUP_PATH);
+  }
+  if (needsTwoFactorSetup(user)) {
+    redirect(ACCOUNT_SETUP_PATH);
   }
   return user;
 }
 
 /**
- * The gated variant, for `/settings/profile` only. Returns the user even when
- * `mustChangePassword` is set — otherwise the redirect above would loop.
+ * The gated variant, for `/settings/profile` only. Returns the user even when a
+ * gate is closed — otherwise the redirects above would loop.
+ *
+ * Deckt beide Gates ab, weil die Seite beide auflöst: dort steht das
+ * Passwortformular und dort steht die Einrichtung des zweiten Faktors.
  */
-export async function requireUserForPasswordChange(): Promise<SessionUser> {
+export async function requireUserForAccountSetup(): Promise<SessionUser> {
   const user = await getSessionUser();
-  if (!user) redirect(`/login?next=${encodeURIComponent(PASSWORD_CHANGE_PATH)}`);
+  if (!user) redirect(`/login?next=${encodeURIComponent(ACCOUNT_SETUP_PATH)}`);
   return user;
 }
 
@@ -151,7 +171,26 @@ export async function requireApiUser(
         {
           error:
             "Das Passwort dieses Kontos muss zuerst geändert werden.",
-          redirect: PASSWORD_CHANGE_PATH,
+          redirect: ACCOUNT_SETUP_PATH,
+        },
+        { status: 403 },
+      ),
+    };
+  }
+
+  /*
+   * Dieselbe Antwort wie beim Passwort-Gate, und aus demselben Grund: ein Route
+   * Handler kann nicht sinnvoll umleiten, also bekommt der Client den Status und
+   * das Ziel. Ohne diese Prüfung hätte die Pflicht ein Loch genau in der Größe
+   * der API — jede Seite umgeleitet, jeder Endpunkt offen.
+   */
+  if (needsTwoFactorSetup(user)) {
+    return {
+      response: Response.json(
+        {
+          error:
+            "Für dieses Konto ist ein zweiter Faktor erforderlich und noch nicht eingerichtet.",
+          redirect: ACCOUNT_SETUP_PATH,
         },
         { status: 403 },
       ),

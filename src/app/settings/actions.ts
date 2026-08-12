@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 import { canViewBoard } from "@/lib/auth/roles";
 import { getAuth } from "@/lib/auth/server";
 import { clearMustChangePassword } from "@/lib/auth/seed-admin";
-import { requireUser, requireUserForPasswordChange } from "@/lib/auth/session";
+import { requireUser, requireUserForAccountSetup } from "@/lib/auth/session";
 import { getLocation } from "@/lib/locations";
 import { setUserRefreshMinutes } from "@/lib/system-settings";
 import { UserProfileError, setUserProfile } from "@/lib/user-profile";
@@ -38,9 +38,9 @@ export async function changeOwnPassword(
   _previous: PasswordChangeResult | null,
   formData: FormData,
 ): Promise<PasswordChangeResult> {
-  // Authoritative: the action re-reads the session itself. `...ForPasswordChange`
+  // Authoritative: the action re-reads the session itself. `...ForAccountSetup`
   // is the gated variant, since this is the one thing a gated session may do.
-  const user = await requireUserForPasswordChange();
+  const user = await requireUserForAccountSetup();
 
   const currentPassword = String(formData.get("currentPassword") ?? "");
   const newPassword = String(formData.get("newPassword") ?? "");
