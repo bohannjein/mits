@@ -411,6 +411,44 @@
   }
   html {
     @apply font-sans;
+    /*
+       Der Platz für den Scrollbalken ist immer reserviert, auch auf einer Seite,
+       die keinen braucht.
+
+       Ohne das ist die Fensterbreite eine Eigenschaft der *einzelnen* Seite: die
+       sechs App-Shell-Seiten (beide Ticketansichten, die drei CMDB-Ansichten, der
+       FAQ-Leser) scrollen in einer inneren Fläche und haben deshalb nie einen
+       Fenster-Scrollbalken, jede Admin- und Listenseite über Viewporthöhe hat
+       einen. Beim Wechsel zwischen beiden verschiebt sich der ganze Inhalt um die
+       Scrollbalkenbreite — sichtbar am Logo im Header, weil das die eine Fläche
+       ist, die auf jeder Seite an derselben Stelle steht. Kurze und lange Seiten
+       derselben Art springen aus demselben Grund gegeneinander.
+
+       `stable` und nicht `overflow-y: scroll`: der Balken bleibt weg, wo er nichts
+       zu tun hat, statt als toter Trog dazustehen. Browser ohne Unterstützung
+       (Safari < 18.2) ignorieren die Zeile und verhalten sich wie bisher — dort
+       sind die Scrollbalken ohnehin überlagert und nehmen keine Breite weg.
+    */
+    scrollbar-gutter: stable;
+  }
+  /*
+     Und die Gegenbuchung dazu.
+
+     Radix' Scroll-Lock (`react-remove-scroll-bar`, aktiv sobald ein Dialog oder
+     ein Dropdown offen ist) misst `innerWidth - documentElement.clientWidth` und
+     legt die Differenz als `margin-right` auf den Body, damit der Inhalt nicht
+     nachrutscht, wenn der Scrollbalken verschwindet. Mit reserviertem Gutter
+     verschwindet er aber nicht, die Reserve bleibt stehen — die Kompensation
+     zöge den Inhalt beim Öffnen jedes Dialogs um genau diese Breite nach links.
+     Das ist derselbe Sprung wie vorher, nur mit einem anderen Auslöser.
+
+     `html body[…]` statt `body[…]`: die Regel der Bibliothek trägt `!important`
+     und wird zur Laufzeit hinter dieses Stylesheet in den `<head>` gehängt. Bei
+     gleicher Spezifität gewönne die spätere. Der zusätzliche Typselektor hebt
+     unsere darüber, unabhängig von der Reihenfolge.
+  */
+  html body[data-scroll-locked] {
+    margin-right: 0 !important;
   }
   /* Section headings read as machine labels, not prose. */
   h1,
