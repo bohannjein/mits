@@ -20,6 +20,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { FileDropzone } from "@/components/ui/file-dropzone";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -65,7 +66,6 @@ export function CMDBImportForm() {
   const [text, setText] = useState("");
   const [table, setTable] = useState<DelimitedTable | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
-  const [dragging, setDragging] = useState(false);
   const [result, formAction, importing] = useActionState(importCMDBAction, null);
 
   const load = (raw: string) => {
@@ -101,36 +101,34 @@ export function CMDBImportForm() {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <label
-            onDragOver={(event) => {
-              event.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(event) => {
-              event.preventDefault();
-              setDragging(false);
-              void readFile(event.dataTransfer.files[0]);
-            }}
-            className={`flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed p-8 text-center transition-colors ${
-              dragging
-                ? "border-foreground/40 bg-accent/40"
-                : "border-border hover:border-foreground/20"
-            }`}
-          >
-            <FileSpreadsheetIcon
-              className="size-8 text-muted-foreground"
-              strokeWidth={1.5}
-              aria-hidden
-            />
-            <span className="text-sm">Datei hierher ziehen oder auswählen</span>
-            <input
-              type="file"
-              accept=".csv,.txt,.tsv,text/csv,text/plain"
-              className="sr-only"
-              onChange={(event) => void readFile(event.target.files?.[0])}
-            />
-          </label>
+          {/*
+            `FileDropzone` rather than three drag handlers here.
+
+            The hand-written version had the bug the primitive exists to fix: a bare
+            `onDragLeave={() => setDragging(false)}` also fires when the pointer
+            crosses onto a *child*, so the highlight dropped out the moment the
+            cursor passed over the icon or the label text — which is most of the
+            target. It also had no "does this drag carry files" test, so dragging
+            selected text across the card offered to import it.
+          */}
+          <FileDropzone onFiles={(files) => void readFile(files[0])}>
+            <label className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-border p-8 text-center transition-colors hover:border-foreground/20">
+              <FileSpreadsheetIcon
+                className="size-8 text-muted-foreground"
+                strokeWidth={1.5}
+                aria-hidden
+              />
+              <span className="text-sm">
+                Datei hierher ziehen oder auswählen
+              </span>
+              <input
+                type="file"
+                accept=".csv,.txt,.tsv,text/csv,text/plain"
+                className="sr-only"
+                onChange={(event) => void readFile(event.target.files?.[0])}
+              />
+            </label>
+          </FileDropzone>
 
           <div className="grid gap-2">
             <Label htmlFor="import-text">Oder einfügen</Label>

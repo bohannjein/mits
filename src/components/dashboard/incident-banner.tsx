@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useLatestResult } from "@/hooks/use-latest-result";
 import type { ClusterMember } from "@/lib/services/ai/clustering";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -64,7 +65,14 @@ export function IncidentBanner({
 
   const ids = members.map((member) => member.id).join(",");
   const busy = creating || dismissing;
-  const result = createResult ?? dismissResult;
+
+  /*
+   * `createResult ?? dismissResult` pinned the first result that ever arrived: a
+   * refused "Hauptstörung anlegen" masked the successful dismiss that followed, so
+   * `setGone(true)` below never fired and the banner stayed above the queue —
+   * exactly the second click the comment underneath warns about.
+   */
+  const result = useLatestResult(createResult, dismissResult);
 
   /*
    * Removed from the page on success rather than waiting for the revalidation to

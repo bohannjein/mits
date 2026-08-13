@@ -126,7 +126,9 @@ export function AIFeaturesForm({
 
             <div
               className={cn(
-                "grid gap-5 transition-opacity",
+                // `gap-4` wie die Geschwister-CardContents; `gap-5` war Luft für
+                // Hilfetexte, die es hier nicht mehr gibt.
+                "grid gap-4 transition-opacity",
                 !enabled && "pointer-events-none opacity-50",
               )}
               aria-hidden={!enabled}

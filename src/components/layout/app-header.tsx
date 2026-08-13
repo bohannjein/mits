@@ -76,7 +76,7 @@ export async function AppHeader() {
      * Its own `min-height: auto` happens to save it today — that is not something
      * to rely on for the one element present on every page.
      */
-    <header className="shrink-0 border-b border-border bg-card">
+    <header className="shrink-0 border-b border-border bg-card print:hidden">
       {trackPresence && <PresenceHeartbeat />}
       {/* The channel switches and the poll interval come from the admin settings;
           the watcher applies them client-side to decide what is shown, never to

@@ -1,7 +1,14 @@
 "use client";
 
 import { DownloadIcon } from "lucide-react";
-import { useState, type MouseEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -50,8 +57,90 @@ interface Viewed {
   kind: "image" | "pdf";
 }
 
+/**
+ * What this element would open, or `null` when it is not a previewable upload.
+ *
+ * Split out of the click handler so the keyboard path cannot drift from it. Two
+ * copies of "is this a PDF" would be two answers to the question of which
+ * attachments have a preview at all.
+ */
+function previewFor(element: Element): Viewed | null {
+  const source =
+    element instanceof HTMLImageElement
+      ? element.getAttribute("src")
+      : element.getAttribute("href");
+  const fileId = source?.match(UPLOAD_HREF)?.[1];
+  if (!fileId) return null;
+
+  if (element instanceof HTMLImageElement) {
+    return {
+      fileId,
+      // `alt` when the markup carries one — a mailed-in image usually does, an
+      // inserted screenshot does not. The dialog needs a title either way.
+      name: element.getAttribute("alt")?.trim() || "Bild",
+      kind: "image",
+    };
+  }
+
+  /*
+   * A link's file type comes from its name, and the name is `title` when the
+   * anchor carries one.
+   *
+   * `textContent` alone was wrong the moment an anchor held more than the file
+   * name: the attachment strip in the opening bubble puts the size beside it, so
+   * the text reads "bericht.pdf1,2 MB" and the `.pdf` test failed at the end of a
+   * string that no longer ended there. The composer's own links carry no `title`
+   * and keep falling through to the text, which is exactly the file name.
+   *
+   * Checked rather than assumed either way: everything that is not a PDF stays an
+   * ordinary download, so a wrong guess here costs nothing.
+   */
+  const name =
+    element.getAttribute("title")?.trim() ||
+    element.textContent?.trim() ||
+    "Datei";
+  if (!/\.pdf$/i.test(name)) return null;
+  return { fileId, name, kind: "pdf" };
+}
+
 export function AttachmentViewer({ children }: { children: ReactNode }) {
   const [viewed, setViewed] = useState<Viewed | null>(null);
+  const container = useRef<HTMLDivElement>(null);
+
+  /*
+   * Upload images are given focus and a button role, because otherwise the preview
+   * is mouse-only.
+   *
+   * The anchors need nothing: Enter on a focused `<a>` fires a click, which reaches
+   * the delegated handler by bubbling like any other. A bare `<img>` is not
+   * focusable at all, and images are exactly the case the viewer exists for — an
+   * error dialog whose text is the point.
+   *
+   * Annotated in the DOM rather than in the markup, which is the same reason the
+   * click handler is delegated: the body is stored HTML from `dangerouslySetInnerHTML`
+   * and may have been written by a mail client. React does not manage children it
+   * did not create, so these attributes survive its re-renders.
+   *
+   * No dependency list on purpose — new messages arrive by `router.refresh()`, and
+   * there is no prop here that changes when they do. `data-previewable` keeps the
+   * pass idempotent, so the cost per render is one `querySelectorAll` over a
+   * message list.
+   */
+  useEffect(() => {
+    const root = container.current;
+    if (!root) return;
+    for (const image of root.querySelectorAll("img")) {
+      if (image.dataset.previewable) continue;
+      if (!previewFor(image)) continue;
+      image.dataset.previewable = "1";
+      image.tabIndex = 0;
+      image.setAttribute("role", "button");
+      image.setAttribute(
+        "aria-label",
+        `${image.getAttribute("alt")?.trim() || "Bild"} groß anzeigen`,
+      );
+    }
+  });
 
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
     // Anything but a plain left click keeps the meaning the browser gives it.
@@ -62,49 +151,38 @@ export function AttachmentViewer({ children }: { children: ReactNode }) {
     const element = target?.closest?.("img, a");
     if (!element) return;
 
-    const source =
-      element instanceof HTMLImageElement
-        ? element.getAttribute("src")
-        : element.getAttribute("href");
-    const fileId = source?.match(UPLOAD_HREF)?.[1];
-    if (!fileId) return;
+    const preview = previewFor(element);
+    if (!preview) return;
 
-    if (element instanceof HTMLImageElement) {
-      event.preventDefault();
-      setViewed({
-        fileId,
-        // `alt` when the markup carries one — a mailed-in image usually does, an
-        // inserted screenshot does not. The dialog needs a title either way.
-        name: element.getAttribute("alt")?.trim() || "Bild",
-        kind: "image",
-      });
-      return;
-    }
-
-    /*
-     * A link's file type comes from its name, and the name is `title` when the
-     * anchor carries one.
-     *
-     * `textContent` alone was wrong the moment an anchor held more than the file
-     * name: the attachment strip in the opening bubble puts the size beside it, so
-     * the text reads "bericht.pdf1,2 MB" and the `.pdf` test failed at the end of a
-     * string that no longer ended there. The composer's own links carry no `title`
-     * and keep falling through to the text, which is exactly the file name.
-     *
-     * Checked rather than assumed either way: everything that is not a PDF stays an
-     * ordinary download, so a wrong guess here costs nothing.
-     */
-    const name =
-      element.getAttribute("title")?.trim() ||
-      element.textContent?.trim() ||
-      "Datei";
-    if (!/\.pdf$/i.test(name)) return;
     event.preventDefault();
-    setViewed({ fileId, name, kind: "pdf" });
+    setViewed(preview);
+  };
+
+  /*
+   * Enter and Space on a focused image, which is the half the click handler cannot
+   * reach.
+   *
+   * Anchors are deliberately absent: a browser turns Enter on a link into a click,
+   * so they arrive at `onClick` already. Space is included because these images now
+   * announce themselves as buttons, and Space is what a button answers to —
+   * `preventDefault` stops it from scrolling the thread instead.
+   */
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (event.defaultPrevented) return;
+
+    const target = event.target;
+    if (!(target instanceof HTMLImageElement)) return;
+
+    const preview = previewFor(target);
+    if (!preview) return;
+
+    event.preventDefault();
+    setViewed(preview);
   };
 
   return (
-    <div onClick={onClick}>
+    <div ref={container} onClick={onClick} onKeyDown={onKeyDown}>
       {children}
 
       <Dialog
@@ -132,7 +210,7 @@ export function AttachmentViewer({ children }: { children: ReactNode }) {
            */
           <DialogContent
             className={cn(
-              "flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl",
+              "flex w-full flex-col gap-0 overflow-hidden rounded-3xl border border-border bg-card p-0 shadow-elev-3 sm:max-w-5xl",
               /*
                * A PDF gets a fixed height, an image a ceiling.
                *

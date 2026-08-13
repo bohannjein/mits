@@ -177,8 +177,12 @@ export function SchemaForm({
             </p>
           )}
 
+          {/* `gap-4`, nicht `gap-5`: der größere Abstand war Luft für zweizeilige
+              Hilfetexte unter den Feldern, damit sie nicht in die nächste
+              Beschriftung liefen. Die sind weg, das umgebende `<form>` ist `gap-6`
+              für den Abstand zwischen Gruppen. */}
           {groups.map(({ group, entries }) => (
-            <fieldset key={group ?? "__ungrouped"} className="grid gap-5">
+            <fieldset key={group ?? "__ungrouped"} className="grid gap-4">
               {group && (
                 <legend className="label-industrial mb-1">{group}</legend>
               )}

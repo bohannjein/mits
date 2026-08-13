@@ -124,7 +124,9 @@ export function TicketWorkspace({
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 pb-3">
+      {/* The action bar holds the print button itself, among other controls that
+          do nothing on paper. */}
+      <div className="flex flex-wrap items-center gap-2 pb-3 print:hidden">
         <BarButton
           icon={<ArrowRightLeftIcon strokeWidth={1.5} />}
           label="Dispatch"

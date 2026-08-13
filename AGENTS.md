@@ -247,15 +247,47 @@ Zuordnung, falls doch etwas auftaucht:
 | Element | Klassen |
 |---|---|
 | Karte, oberste Ebene | `rounded-3xl border border-border bg-card ring-0 shadow-elev-1` |
-| Karte mit Fokus (Auth, Dialog) | dieselbe, aber `shadow-elev-2` |
+| Karte mit Fokus (Auth, Dialog) | dieselbe, aber `shadow-elev-2`; `DialogContent` fährt `shadow-elev-3` |
 | Verschachtelte Box, Alert, Tabelle | `rounded-2xl border border-border` |
 | Input, Textarea, Select, Code-Block | `h-10 rounded-xl` bzw. `rounded-xl` |
+| Kompaktes Feld in einer dichten Zeile | `h-9 rounded-xl` |
 | Button primär | `rounded-full bg-inverse-surface text-inverse-surface-foreground hover:bg-inverse-surface-hover` |
 | Button sekundär | `rounded-full bg-surface-elevated text-foreground hover:bg-accent` |
+| Icon-Knopf in einer Werkzeugleiste | `rounded-lg` |
 | Badge, Chip, Tab | `rounded-full` |
 | CardFooter | `rounded-b-3xl border-t border-border bg-transparent` |
 | Hover auf klickbarer Karte | `hover:border-foreground/20 hover:shadow-elev-3` |
 | Icon in Karte | `size-11 rounded-full bg-surface-elevated text-muted-foreground` + `strokeWidth={1.5}` |
+
+### Diese Tabelle gilt an der Aufrufstelle, nicht im Primitive
+
+Der wichtigste Satz über das Design-System, und er stand hier nicht: **die Primitives
+in `src/components/ui/` tragen shadcn-Upstream-Defaults.** `card.tsx` ist
+`rounded-xl` mit `ring-1`, `input.tsx` ist `h-8 rounded-lg`, `button.tsx` ist
+`rounded-lg`, `alert.tsx` ist `rounded-lg`, `badge.tsx` ist `rounded-4xl`. Nur
+`popover.tsx` trifft die Tabelle von sich aus.
+
+Sichtbar wird davon nichts, weil die Aufrufstellen es 600-fach nachziehen: 79 von 79
+Cards, 108 von 108 Alerts, 88 von 88 Badges, 68 von 68 SelectTrigger, 138 von 149
+Inputs, 232 von 258 Buttons tragen die richtige Klasse per `className`.
+
+**Das ist Absicht und keine Schlamperei.** Regel 1 verlangt, neue Primitives per
+`npx shadcn@latest add` zu holen — und derselbe Befehl setzt bestehende zurück. Die
+Form dort einzupflegen heißt, sie beim nächsten Upgrade lautlos zu verlieren; an der
+Aufrufstelle erreicht ein Upgrade sie nicht. Der Preis ist, dass ein nacktes
+`<Button>` oder `<Input />` shadcn aussieht und nicht wie MITS.
+
+Praktische Folge für neuen Code: **die Klassen aus der Tabelle gehören mit ins
+`className`.** Wer ein Primitive ohne sie verwendet, bekommt kein Standardaussehen,
+sondern ein fremdes. Zwei Ausnahmen sind geprüft und legitim: `h-9` als kompakte
+Feldhöhe in dichten Zeilen, und `rounded-lg` an den Icon-Knöpfen der
+Composer-Werkzeugleiste — 22 Stellen, konsistent, deshalb oben in der Tabelle statt
+in einem Cleanup.
+
+Was **nicht** an der Aufrufstelle repariert werden kann, gehört ins Primitive: eine
+Farbe. `CardFooter` und `DialogFooter` trugen `bg-muted/50`, und das überschrieb
+niemand — ein Alpha-Grauschleier, der gegen `--card` und gegen `--popover`
+verschieden mischt. Solche Fälle werden im Primitive korrigiert, Radien nicht.
 
 `font-mono` bleibt nur, wo Zeichenraster Bedeutung trägt: JSON-Payloads, OCR-Rohtext,
 Schema-IDs, Modell-Tags. Zählwerte und Labels sind Sans.
@@ -1022,6 +1054,23 @@ Regel-2-Check — muss leer bleiben. `mail-templates.ts` ist die dokumentierte A
 (siehe Regel 2), Doc-Kommentare mit `#1001` sind Ticket-Nummern und keine Farben:
 
 ```bash
-grep -rnE "#[0-9a-fA-F]{3,8}\b|rgb\(|oklch\(" src --include=*.tsx --include=*.ts \
-  | grep -v "mail-templates.ts"
+grep -rnE "#[0-9a-fA-F]{3,8}\b|rgb\(|oklch\(|color-mix|lab\(|lch\(|hsl\(|\bcolor\(" src \
+  --include=*.tsx --include=*.ts | grep -v "mail-templates.ts"
 ```
+
+**Die letzten vier Alternativen sind nachgetragen, weil der Grep einen Verstoß
+durchgelassen hat**, den er hätte finden müssen. In `ui/button.tsx` stand
+
+```
+hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_8%)]
+```
+
+— eine außerhalb von `globals.css` definierte Farbe, also genau der Fall, für den
+Regel 2 da ist. Gefunden wurde sie nicht, weil das Muster `oklch\(` sucht und dort
+`in_oklch,` steht: derselbe Funktionsname, ohne folgende Klammer. Der Wert ist jetzt
+`--secondary-hover`.
+
+Die Lehre ist allgemeiner als die eine Zeile: eine Prüfung, die auf Syntax statt auf
+Bedeutung passt, meldet „0 Treffer" auch dann, wenn sie nur nicht hingesehen hat. CSS
+kennt mehr Wege, eine Farbe zu schreiben, als eine Regex bequem abdeckt — wer eine
+neue Schreibweise benutzt, ergänzt sie hier.

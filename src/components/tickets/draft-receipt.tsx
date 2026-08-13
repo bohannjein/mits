@@ -15,7 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { resolveFields } from "@/lib/forms/schema-to-zod";
-import type { MITSFormSchema, MITSTicket, MITSTicketDraft } from "@/types/mits";
+import type { MITSFormSchema, MITSTicket } from "@/types/mits";
 import { formatTicketNumber } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -159,71 +159,17 @@ function formatValue(value: unknown): string {
   return String(value).trim();
 }
 
-/**
- * The old developer receipt: a validated draft rendered as JSON.
+/*
+ * There was a second export here: `DraftReceipt`, the Phase-2 developer receipt.
  *
- * Kept for the schema builder's preview, where the raw shape *is* the point.
- * The intake no longer uses it — see `TicketReceipt` above.
+ * Removed rather than repaired. Nothing imported it — its own docstring claimed the
+ * schema builder needed it for a raw-shape preview, and the builder does not
+ * reference it — so it had been dead through three phases while still saying
+ * "Persistenz und Versand folgen mit dem Backend" over three `font-mono` badges of
+ * raw enum values (`source: legacy`, `priority: medium`). Two confirmation cards in
+ * one file is an invitation to wire up the wrong one, and the wrong one told the
+ * reporter their ticket had not been stored.
+ *
+ * Its `jsonReplacer` went with it: `TicketReceipt` stringifies a flat object of
+ * scalars and never needed the File branch.
  */
-export function DraftReceipt({
-  draft,
-  onDismiss,
-}: {
-  draft: MITSTicketDraft;
-  onDismiss: () => void;
-}) {
-  return (
-    <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-2">
-      <CardHeader>
-        <span className="grid size-11 place-items-center rounded-full bg-success/15 text-success">
-          <CheckCircle2Icon className="size-5" strokeWidth={1.5} aria-hidden />
-        </span>
-        <CardTitle className="mt-4 text-lg font-medium">
-          Entwurf validiert
-        </CardTitle>
-        <CardDescription className="mt-1 leading-relaxed">
-          Das Schema hat die Eingaben akzeptiert. Persistenz und Versand folgen mit
-          dem Backend.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3">
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="outline" className="rounded-full font-mono">
-            source: {draft.source}
-          </Badge>
-          <Badge variant="outline" className="rounded-full font-mono">
-            schema: {draft.form_schema_id ?? "—"}
-          </Badge>
-          {/* „—" statt eines Wertes, wenn der Entwurf keine Priorität nennt: das
-              Feld ist optional, und der Server setzt dann den für die Rolle
-              eingestellten Startwert. Ein hier hingeschriebenes „medium" wäre eine
-              Behauptung über eine Entscheidung, die noch nicht gefallen ist. */}
-          <Badge className="rounded-full font-mono">
-            priority: {draft.priority ?? "—"}
-          </Badge>
-        </div>
-        {/* Mono stays: this is raw JSON, and a proportional font would misalign
-            the indentation that makes it readable. */}
-        <pre className="max-h-72 overflow-auto rounded-xl border border-border bg-muted p-4 font-mono text-xs">
-          {JSON.stringify(draft.payload, jsonReplacer, 2)}
-        </pre>
-      </CardContent>
-      <CardFooter className="justify-end rounded-b-3xl border-t border-border bg-transparent">
-        <Button
-          className="rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
-          onClick={onDismiss}
-        >
-          Weiteres Ticket erfassen
-        </Button>
-      </CardFooter>
-    </Card>
-  );
-}
-
-/** File objects serialise to `{}` — show name and size instead. */
-function jsonReplacer(_key: string, value: unknown) {
-  if (typeof File !== "undefined" && value instanceof File) {
-    return `${value.name} (${Math.max(1, Math.round(value.size / 1024))} KB)`;
-  }
-  return value;
-}

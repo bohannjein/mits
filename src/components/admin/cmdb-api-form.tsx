@@ -12,6 +12,7 @@ import { useActionState } from "react";
 import { clearCMDBTokenAction, rotateCMDBTokenAction } from "@/app/admin/cmdb/actions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { useLatestResult } from "@/hooks/use-latest-result";
 import {
   Card,
   CardContent,
@@ -39,7 +40,7 @@ export function CMDBApiForm({ configured }: { configured: boolean }) {
     null,
   );
 
-  const result = rotateResult ?? clearResult;
+  const result = useLatestResult(rotateResult, clearResult);
 
   return (
     <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">

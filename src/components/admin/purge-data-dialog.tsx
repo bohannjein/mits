@@ -142,7 +142,7 @@ export function PurgeDataDialog({
           </Button>
         </DialogTrigger>
 
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="rounded-3xl border border-border bg-card shadow-elev-3 sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Bestand endgültig löschen</DialogTitle>
             <DialogDescription>Schritt {step} von 6</DialogDescription>
@@ -311,7 +311,7 @@ export function PurgeDataDialog({
               ) : (
                 <Button
                   type="submit"
-                  className="h-9 rounded-full bg-destructive px-4 text-destructive-foreground hover:bg-destructive/90"
+                  className="h-9 rounded-full bg-destructive px-4 text-destructive-foreground hover:bg-destructive-hover"
                   disabled={running || password === ""}
                 >
                   {running ? (

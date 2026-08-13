@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { CIIcon } from "@/components/tickets/ci-icon";
 import { Input } from "@/components/ui/input";
+import { useLatestResult } from "@/hooks/use-latest-result";
 import { CI_TYPE_LABELS, type CIType } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -64,7 +65,7 @@ export function TicketAssets({
   );
   const [query, setQuery] = useState("");
 
-  const result = attachResult ?? detachResult;
+  const result = useLatestResult(attachResult, detachResult);
   const attachedIds = new Set(attached.map((row) => row.id));
 
   const needle = query.trim().toLowerCase();

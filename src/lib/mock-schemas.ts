@@ -186,7 +186,9 @@ export const HARDWARE_ORDER_SCHEMA: MITSFormSchema = {
       order: 2,
       group: "Gerät",
       placeholder: "z. B. Dell Latitude 5550",
-      help: "Optional — ohne Angabe wird das Standardmodell bestellt.",
+      /* „Optional —" ist raus: das Fehlen des `*` neben dem Label sagt das schon.
+         Die Folge bleibt, sie ist aus dem Feld nicht ableitbar. */
+      help: "Ohne Angabe wird das Standardmodell bestellt.",
     },
     quantity: { order: 3, group: "Gerät" },
     cost_center: {
@@ -335,7 +337,9 @@ export const USER_ONBOARDING_SCHEMA: MITSFormSchema = {
       order: 7,
       step: 2,
       group: "Zugänge",
-      help: "Mindestens ein System auswählen.",
+      /* Kein `help` mehr: „Mindestens ein System auswählen." wiederholte nur
+         `required`, und der Renderer setzt dafür schon das `*` neben das Label —
+         die Zod-Meldung sagt es beim Absenden noch einmal. */
       optionLabels: {
         ad: "Active Directory",
         m365: "Microsoft 365",
@@ -430,10 +434,25 @@ export const SOFTWARE_ACCESS_SCHEMA: MITSFormSchema = {
         other: "Andere",
       },
     },
+    /*
+     * Das erste mitgelieferte Formular, das `visibleWhen` benutzt — und der Grund,
+     * warum es hier hingehört.
+     *
+     * Vorher stand das Feld dauerhaft im Formular, mit dem Satz „Nur ausfüllen,
+     * wenn oben ‚Andere' gewählt wurde." darunter: eine Bedingung als Prosa, in
+     * einer Anwendung, deren Formular-Engine Bedingungen auswertet. Jetzt fragt das
+     * Formular die Frage nur, wenn sie sich stellt, und der Satz ist überflüssig.
+     *
+     * Gefahrlos, weil `application_other` nicht in `required` steht: ein verstecktes
+     * Pflichtfeld würde serverseitig weiter verlangt und das Formular unabsendbar
+     * machen. Der Server rechnet die Sichtbarkeit aus derselben Payload nach
+     * (`schemaToZod(values)`), die Antwort auf eine nie gestellte Frage kommt also
+     * auch über einen handgebauten Request nicht in die Datenbank.
+     */
     application_other: {
       order: 2,
       placeholder: "Name und Hersteller",
-      help: "Nur ausfüllen, wenn oben „Andere“ gewählt wurde.",
+      visibleWhen: { field: "application", equals: ["other"] },
     },
     access_level: {
       order: 3,
@@ -539,7 +558,9 @@ export const SECURITY_INCIDENT_SCHEMA: MITSFormSchema = {
       },
     },
     host: { order: 3, placeholder: "NB-VERTRIEB-07 oder person@firma.de" },
-    incident_id: { order: 4, help: "Nummer aus dem Defender-Portal, falls vorhanden." },
+    /* Wo der Wert herkommt, gehört ins Feld — wie beim `host` eine Zeile darüber.
+       „falls vorhanden" wiederholte die fehlende Pflichtmarkierung. */
+    incident_id: { order: 4, placeholder: "Nummer aus dem Defender-Portal" },
     source: {
       order: 5,
       widget: "select",

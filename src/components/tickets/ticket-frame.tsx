@@ -104,7 +104,7 @@ export function TicketFrame({
         keep identical. One element, two positions.
       */}
       {rail !== undefined && (
-        <nav className="order-last lg:order-first lg:min-h-0 lg:w-[15rem] lg:shrink-0 lg:overflow-y-auto lg:pr-1 scrollbar-thin">
+        <nav className="order-last print:hidden lg:order-first lg:min-h-0 lg:w-[15rem] lg:shrink-0 lg:overflow-y-auto lg:pr-1 scrollbar-thin">
           {rail}
         </nav>
       )}
@@ -153,6 +153,11 @@ export function TicketFrame({
               size="sm"
               onClick={() => setOpen((current) => !current)}
               aria-expanded={open}
+              /* Not `print:hidden`: this button already carries `hidden` plus
+                 `lg:inline-flex`, and two display utilities at equal specificity
+                 are decided by Tailwind's output order rather than by intent. The
+                 attribute rule in `globals.css` is `!important` and settles it. */
+              data-print="hide"
               className="hidden h-8 shrink-0 rounded-full px-3 text-xs text-muted-foreground lg:inline-flex"
             >
               {open ? (
@@ -200,7 +205,9 @@ export function TicketFrame({
               scrolling text has to be opaque, and `z-10` to sit above the bubbles
               passing under it.
             */}
-            <div className="sticky bottom-0 z-10 shrink-0 border-t border-border bg-background pt-3 lg:static">
+            {/* `print:hidden`: an empty reply box on a printed ticket is a control
+                nobody can use, sitting where the last message should end. */}
+            <div className="sticky bottom-0 z-10 shrink-0 border-t border-border bg-background pt-3 print:hidden lg:static">
               {composer}
             </div>
           </>

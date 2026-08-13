@@ -82,6 +82,19 @@
      #131314 and washed out on #ffffff — and `--primary-foreground` only stays
      readable on one of the two. */
   --color-primary-hover: var(--primary-hover);
+  /* Same reasoning one step along: the three filled delete buttons used
+     `hover:bg-destructive/90`, which is the alpha step the rule forbids — on a
+     card it blended toward `--card`, on a page toward `--background`, so one
+     button had two hover colours. */
+  --color-destructive-hover: var(--destructive-hover);
+  /* Replaces an inline `color-mix(in oklch, …)` in `ui/button.tsx`, which defined
+     a colour outside this file and slipped past the rule-2 grep because the
+     pattern looks for `oklch(` and that string reads `in_oklch,`. */
+  --color-secondary-hover: var(--secondary-hover);
+  /* The dialog backdrop. Was a literal `bg-black/10`, which is correct on the
+     light theme and all but invisible over a near-black one — the modal lost its
+     separation from the page exactly where it needed it most. */
+  --color-scrim: var(--scrim);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -206,6 +219,8 @@
   --primary-hover: oklch(0.385 0.185 264);
   --secondary: oklch(0.955 0.006 250);
   --secondary-foreground: oklch(0.215 0.024 264);
+  /* The value the removed `color-mix(… --foreground 8%)` resolved to here. */
+  --secondary-hover: oklch(0.896 0.008 252);
   --muted: oklch(0.955 0.006 250);
   /* #5f6368 — Google's secondary text. */
   --muted-foreground: oklch(0.49 0.01 265);
@@ -219,6 +234,8 @@
   --accent-foreground: oklch(0.215 0.024 264);
   --destructive: oklch(0.52 0.2 25);
   --destructive-foreground: oklch(1 0 0);
+  /* Darker, like --primary-hover: the label on a filled delete button is white. */
+  --destructive-hover: oklch(0.455 0.205 25);
   --success: oklch(0.52 0.14 150);
   --success-foreground: oklch(1 0 0);
   --warning: oklch(0.62 0.14 65);
@@ -228,6 +245,9 @@
   --border: oklch(0 0 0 / 10%);
   --input: oklch(0 0 0 / 14%);
   --ring: oklch(0.45 0.2 264);
+  /* Dialog backdrop. Alpha belongs here — a scrim is a veil over the page, which
+     is the one case where compositing against what is behind is the whole point. */
+  --scrim: oklch(0 0 0 / 12%);
   /* Conversation bubbles — see the @theme block for why these are tokens. */
   --bubble-own: oklch(0.965 0.003 250);
   --bubble-own-border: oklch(0.885 0.005 250);
@@ -304,6 +324,10 @@
   --primary-hover: oklch(0.73 0.085 259);
   --secondary: oklch(0.277 0.004 285);
   --secondary-foreground: oklch(0.915 0.002 285);
+  /* Lighter here, unlike --primary-hover: this is an unfilled low surface whose
+     label is already near-white, so contrast comes from raising the surface. The
+     value the removed `color-mix(… --foreground 8%)` resolved to. */
+  --secondary-hover: oklch(0.328 0.004 285);
   --muted: oklch(0.277 0.004 285);
   /* zinc-400 #a1a1aa — the tone the fine Lucide icons sit in. */
   --muted-foreground: oklch(0.71 0.014 286);
@@ -311,6 +335,8 @@
   --accent-foreground: oklch(0.915 0.002 285);
   --destructive: oklch(0.68 0.19 22);
   --destructive-foreground: oklch(0.2 0.05 22);
+  /* Darker, same inverted-pair logic as --primary-hover in this block. */
+  --destructive-hover: oklch(0.615 0.19 22);
   --success: oklch(0.78 0.14 150);
   --success-foreground: oklch(0.2 0.04 150);
   --warning: oklch(0.84 0.15 85);
@@ -319,6 +345,10 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 14%);
   --ring: oklch(0.81 0.078 259);
+  /* Far stronger than the light value, and that asymmetry is the reason the token
+     exists: 12% black over #131314 is no veil at all, so the dialog floated with
+     nothing separating it from the page underneath. */
+  --scrim: oklch(0 0 0 / 55%);
   /*
    * Conversation bubbles. Opaque rather than an alpha tint: `bg-blue-950/40`
    * composites against whatever is behind it, and the same agent reply would sit
@@ -387,6 +417,55 @@
   h2,
   h3 {
     @apply font-heading tracking-tight;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Printing.
+
+   The ticket page has a "Drucken" button that calls `window.print()` on the page
+   as it stands — deliberately, rather than a second route rendering the same
+   thread, because that would be a second representation to keep correct. That
+   decision needs this stylesheet to hold up, and there was none.
+
+   **Nothing is a scroll container on paper.** `TicketFrame` builds the page out of
+   six of them so that only the conversation moves on screen; a printer has no
+   viewport to scroll, and an `overflow: auto` box prints the slice that happens to
+   be visible. The constraints are all `lg:`-prefixed, so A4 portrait (~794px)
+   escapes them and landscape (~1123px) does not — which is the worst kind of bug,
+   one that depends on the paper orientation. Released globally instead of per
+   element: a page that scrolls is a screen idea, and any new one added later is
+   covered without anybody remembering this file.
+
+   **The height chain is released too.** `html` and `body` carry `h-full` so the
+   frame has a definite height to divide up. On paper that is a first page and
+   nothing after it, and `body` being a flex column makes it worse, because a flex
+   child cannot paginate out of a parent with a fixed height.
+   ────────────────────────────────────────────────────────────────────────── */
+@media print {
+  html,
+  body {
+    height: auto !important;
+    display: block !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  /* A bubble or a table split across a page break is unreadable in the middle. */
+  [data-slot="card"],
+  [data-print="keep-together"] {
+    break-inside: avoid;
+  }
+
+  /* For controls that already carry competing display utilities, where a
+     `print:hidden` would be decided by class order rather than by intent. */
+  [data-print="hide"] {
+    display: none !important;
   }
 }
 

@@ -137,7 +137,7 @@ export function FloatingTicket() {
             }
       }
       className={cn(
-        "fixed z-50 flex flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-elev-3",
+        "fixed z-50 flex flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-elev-3 print:hidden",
         // Hidden on a phone: a 384-pixel panel over a 380-pixel viewport is not a
         // floating window, it is the page with a border. The pop-out button stays.
         "hidden sm:flex",

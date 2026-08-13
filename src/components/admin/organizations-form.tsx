@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useLatestResult } from "@/hooks/use-latest-result";
 import { MITSOrganizationSchema, type MITSOrganization } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -86,7 +87,7 @@ export function OrganizationsForm({
     if (saveResult?.ok) setDraft(null);
   }, [saveResult]);
 
-  const result = saveResult ?? deleteResult;
+  const result = useLatestResult(saveResult, deleteResult);
 
   return (
     <div className="grid gap-6">
@@ -230,7 +231,7 @@ export function OrganizationsForm({
           if (!open) setDraft(null);
         }}
       >
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl border border-border bg-card shadow-elev-3 sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{draft?.id ? "Firma bearbeiten" : "Firma anlegen"}</DialogTitle>
             <DialogDescription>

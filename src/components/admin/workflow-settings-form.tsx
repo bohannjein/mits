@@ -115,13 +115,14 @@ export function WorkflowSettingsForm({
               defaultChecked={settings.statusFollowsReply}
               disabled={pending}
             />
-            <div className="grid gap-1">
-              <Label htmlFor="statusFollowsReply">Status folgt der Antwort</Label>
-              <p className="text-sm text-muted-foreground">
-                Agent antwortet: Wartet auf Anwender. Melder antwortet: In
-                Bearbeitung.
-              </p>
-            </div>
+            {/* Hier stand die Zustandstabelle von `nextStatusAfterReply`
+                abgeschrieben („Agent antwortet: Wartet auf Anwender. Melder
+                antwortet: In Bearbeitung."). Regel 4: das Label sagt schon, was
+                passiert, und der Satz erklärte die Implementierung. „In
+                Bearbeitung" war zusätzlich falsch — es gibt drei gespeicherte
+                Statuswerte, und das ist keiner davon, sondern eine Ableitung aus
+                `describeTicketState`. */}
+            <Label htmlFor="statusFollowsReply">Status folgt der Antwort</Label>
           </div>
         </CardContent>
       </Card>
@@ -179,9 +180,12 @@ export function WorkflowSettingsForm({
               disabled={pending}
               className="h-10 rounded-xl"
             />
+            {/* Die Begründung („damit Antworten das Ticket wiederfinden") ist der
+                Weg über `ticketNumberFromSubject` → `parseTicketNumber` und gehört
+                in den Code-Kommentar, wo sie steht. Was bleibt, ist die Auskunft,
+                dass der eingetippte Betreff nicht der gesendete ist. */}
             <p className="text-sm text-muted-foreground">
-              Die Ticket-Nummer stellt MITS voran, damit Antworten das Ticket
-              wiederfinden.
+              MITS stellt die Ticket-Nummer voran.
             </p>
           </div>
 

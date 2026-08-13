@@ -13,6 +13,8 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { FileDropzone } from "@/components/ui/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -94,17 +96,10 @@ export function ChatIntake({
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<IntakeCategory | null>(null);
   const [files, setFiles] = useState<File[]>([]);
-  const [dragging, setDragging] = useState(false);
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   const filePicker = useRef<HTMLInputElement>(null);
-  /*
-   * Drag events fire for every child element, so entering a nested node raises
-   * `dragleave` on the parent. A counter is the standard fix — without it the drop
-   * highlight flickers off the moment the pointer crosses the textarea.
-   */
-  const dragDepth = useRef(0);
 
   const addFiles = (incoming: File[]) => {
     if (incoming.length === 0) return;
@@ -258,51 +253,37 @@ export function ChatIntake({
 
       {/*
         The whole card is the drop zone, not a dashed rectangle beside the fields.
-        `onDragOver` has to preventDefault or the browser navigates to the file.
+
+        `FileDropzone` owns the drag handling now. This file had its own copy — the
+        primitive's docblock says it was extracted from here — and the copy had
+        drifted in one way that mattered: it never checked whether the drag actually
+        carried files, so selecting a word in the description and dragging it across
+        the card put an upload frame in front of the text. The counter that stops the
+        highlight flickering over child elements lives in the primitive too.
       */}
-      <div
-        onDragEnter={(event) => {
-          event.preventDefault();
-          dragDepth.current += 1;
-          setDragging(true);
-        }}
-        onDragOver={(event) => event.preventDefault()}
-        onDragLeave={() => {
-          dragDepth.current = Math.max(0, dragDepth.current - 1);
-          if (dragDepth.current === 0) setDragging(false);
-        }}
-        onDrop={(event) => {
-          event.preventDefault();
-          dragDepth.current = 0;
-          setDragging(false);
-          addFiles(Array.from(event.dataTransfer.files));
-        }}
-        /*
-          Strg+V, auf derselben Karte wie das Ablegen.
+      <FileDropzone onFiles={addFiles} className="rounded-3xl">
+        <Card
+          /*
+            Strg+V, auf derselben Karte wie das Ablegen.
 
-          Ein Screenshot entsteht in der Zwischenablage — „Ausschneiden und
-          skizzieren", Druck, ein Snipping-Werkzeug —, und der Weg von dort ins
-          Ticket war vorher: erst speichern, dann suchen, dann wählen. Die Karte
-          fängt das Ereignis, weil der Fokus dabei im Titel- oder im Textfeld
-          steht und beide Kinder davon sind.
+            Ein Screenshot entsteht in der Zwischenablage — „Ausschneiden und
+            skizzieren", Druck, ein Snipping-Werkzeug —, und der Weg von dort ins
+            Ticket war vorher: erst speichern, dann suchen, dann wählen. Die Karte
+            fängt das Ereignis, weil der Fokus dabei im Titel- oder im Textfeld
+            steht und beide Kinder davon sind.
 
-          **Nur wenn wirklich Dateien dabei sind.** `clipboardData.files` ist bei
-          kopiertem Text leer; ohne die Prüfung würde jedes eingefügte Wort das
-          Standardverhalten verlieren und im Feld nichts erscheinen.
-        */
-        onPaste={(event) => {
-          const pasted = Array.from(event.clipboardData?.files ?? []);
-          if (pasted.length === 0) return;
-          event.preventDefault();
-          addFiles(pasted);
-        }}
-        className={cn(
-          "grid gap-3 rounded-3xl border bg-card px-4 py-4 shadow-elev-1 transition-colors",
-          dragging
-            ? "border-primary bg-accent/40"
-            : "border-border focus-within:border-foreground/20",
-        )}
-      >
+            **Nur wenn wirklich Dateien dabei sind.** `clipboardData.files` ist bei
+            kopiertem Text leer; ohne die Prüfung würde jedes eingefügte Wort das
+            Standardverhalten verlieren und im Feld nichts erscheinen.
+          */
+          onPaste={(event) => {
+            const pasted = Array.from(event.clipboardData?.files ?? []);
+            if (pasted.length === 0) return;
+            event.preventDefault();
+            addFiles(pasted);
+          }}
+          className="grid gap-3 rounded-3xl border border-border bg-card px-4 py-4 ring-0 shadow-elev-1 transition-colors focus-within:border-foreground/20"
+        >
         <div className="grid gap-1.5">
           <Label htmlFor="intake-title" className="sr-only">
             Worum geht es?
@@ -416,7 +397,8 @@ export function ChatIntake({
             {sending ? "Wird gesendet …" : "Absenden"}
           </Button>
         </div>
-      </div>
+        </Card>
+      </FileDropzone>
 
       {notice && <p className="text-xs text-destructive">{notice}</p>}
 

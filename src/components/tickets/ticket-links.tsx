@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useLatestResult } from "@/hooks/use-latest-result";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -77,7 +78,7 @@ export function TicketLinks({
     removeTicketLinkAction,
     null,
   );
-  const result = addResult ?? removeResult;
+  const result = useLatestResult(addResult, removeResult);
   const busy = adding || removing;
 
   const body = <div className="grid gap-4">

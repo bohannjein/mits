@@ -84,7 +84,13 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-footer"
       className={cn(
-        "flex items-center rounded-b-xl border-t bg-muted/50 p-(--card-spacing)",
+        // `bg-transparent`, not shadcn's `bg-muted/50`: an alpha tint composites
+        // against whatever is behind the card, so the same footer sat on a
+        // different colour on `--card` than in a dialog on `--popover`. The design
+        // table calls for a transparent footer separated by a hairline, and unlike
+        // the radii below this one is not overridden at a single call site — the
+        // grey wash was live everywhere a footer is used.
+        "flex items-center rounded-b-xl border-t border-border bg-transparent p-(--card-spacing)",
         className
       )}
       {...props}

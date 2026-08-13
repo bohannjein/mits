@@ -12,6 +12,7 @@ import { restoreCommentAction, restoreTicketAction } from "@/app/actions/tickets
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useLatestResult } from "@/hooks/use-latest-result";
 import { formatTicketNumber } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -60,7 +61,7 @@ export function TrashList({
     null,
   );
 
-  const result = ticketResult ?? commentResult;
+  const result = useLatestResult(ticketResult, commentResult);
 
   return (
     <div className="grid gap-6">

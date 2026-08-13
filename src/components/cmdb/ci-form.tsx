@@ -138,7 +138,7 @@ export function CIForm({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl border border-border bg-card shadow-elev-3 sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{item ? "Objekt bearbeiten" : "Objekt anlegen"}</DialogTitle>
           {/*
@@ -356,7 +356,9 @@ export function CIForm({
           {draft.type === "license" && (
             <div className="grid gap-4 rounded-2xl border border-border p-4 sm:grid-cols-2">
               <div className="grid gap-2">
-                <Label htmlFor="ci-seats">Plätze</Label>
+                {/* Die Werteregel ins Label, wie „Anzeigedauer (Sekunden)" — der
+                    Satz „0 zählt keine Plätze." darunter ist entfallen. */}
+                <Label htmlFor="ci-seats">Plätze (0 = keine Zählung)</Label>
                 <Input
                   id="ci-seats"
                   type="number"
@@ -368,9 +370,6 @@ export function CIForm({
                   disabled={saving}
                   className="h-10 rounded-xl tabular-nums"
                 />
-                <p className="text-xs text-muted-foreground">
-                  0 zählt keine Plätze.
-                </p>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="ci-expires">Läuft ab am</Label>

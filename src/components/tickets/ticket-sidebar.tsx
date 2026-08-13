@@ -43,6 +43,7 @@ import {
   TicketResources,
   type SharedFile,
 } from "@/components/tickets/ticket-resources";
+import { useLatestResult } from "@/hooks/use-latest-result";
 import type { SharedLink } from "@/lib/ticket-resources";
 import { TicketAssets, type AssetRow } from "@/components/tickets/ticket-assets";
 import { TicketLinks, type LinkRow } from "@/components/tickets/ticket-links";
@@ -275,22 +276,19 @@ export function TicketSidebar({
    * This was `statusResult ?? priorityResult ?? assignResult`, which is wrong the
    * moment two of them are used in one sitting: once a status change has left a
    * result behind, that result masks every later one, so a rejected reassignment
-   * showed "Status geändert." in green. Each action writes into one slot instead,
-   * and the newest write wins.
+   * showed "Status geändert." in green.
+   *
+   * The four hand-written effects that replaced it live in `useLatestResult` now —
+   * eight other components had the same `??` and needed the same fix, and the one
+   * subtlety (recency comes from comparing against the previous render, not from
+   * position in the list) is worth having in one place.
    */
-  const [feedback, setFeedback] = useState<ActionFeedback>(null);
-  useEffect(() => {
-    if (statusResult) setFeedback(statusResult);
-  }, [statusResult]);
-  useEffect(() => {
-    if (priorityResult) setFeedback(priorityResult);
-  }, [priorityResult]);
-  useEffect(() => {
-    if (assignResult) setFeedback(assignResult);
-  }, [assignResult]);
-  useEffect(() => {
-    if (autoCloseResult) setFeedback(autoCloseResult);
-  }, [autoCloseResult]);
+  const feedback = useLatestResult<NonNullable<ActionFeedback>>(
+    statusResult,
+    priorityResult,
+    assignResult,
+    autoCloseResult,
+  );
 
   const result = feedback;
 

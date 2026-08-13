@@ -16,6 +16,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useLatestResult } from "@/hooks/use-latest-result";
 import { formatMinutes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -93,7 +94,7 @@ export function TicketWorklog({
   };
 
   const total = entries.reduce((sum, entry) => sum + entry.minutes, 0);
-  const result = addResult ?? deleteResult;
+  const result = useLatestResult(addResult, deleteResult);
   const busy = adding || deleting;
 
   return (

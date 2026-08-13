@@ -227,7 +227,7 @@ function ToastViewport({
       // `pointer-events-none` on the container and `auto` on each card: the empty
       // space beside a toast must not swallow clicks on the page behind it.
       className={cn(
-        "pointer-events-none fixed z-50 flex w-[min(22rem,calc(100vw-2rem))] gap-2",
+        "pointer-events-none fixed z-50 flex w-[min(22rem,calc(100vw-2rem))] gap-2 print:hidden",
         POSITIONS[position],
       )}
       onPointerEnter={() => setPaused(true)}

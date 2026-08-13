@@ -54,6 +54,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
+import { useLatestResult } from "@/hooks/use-latest-result";
 import { cn } from "@/lib/utils";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -236,7 +237,12 @@ export function TicketComposer({
     }
     setSnippetsOpen(false);
   };
-  const result = replyResult ?? closeResult;
+  /*
+   * Whichever of the two submit paths ran last. This was `replyResult ??
+   * closeResult`, which pinned the first result forever — see `useLatestResult`
+   * for what that cost here specifically.
+   */
+  const result = useLatestResult(replyResult, closeResult);
   const busy = replying || closing || runningMacro;
 
   /*

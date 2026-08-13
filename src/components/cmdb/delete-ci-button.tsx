@@ -69,7 +69,7 @@ export function DeleteCIButton({
           type="submit"
           size="sm"
           disabled={pending}
-          className="flex-1 rounded-full bg-destructive px-4 text-destructive-foreground hover:bg-destructive/90"
+          className="flex-1 rounded-full bg-destructive px-4 text-destructive-foreground hover:bg-destructive-hover"
         >
           {pending ? (
             <Loader2Icon className="animate-spin" />

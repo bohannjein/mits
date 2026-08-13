@@ -465,10 +465,13 @@ export function MailSettingsForm({
             <InboxIcon className="size-5 text-primary" aria-hidden strokeWidth={1.5} />
             <CardTitle className="mt-4 text-lg font-medium">Jetzt abrufen</CardTitle>
             <CardDescription className="mt-1 leading-relaxed">
+              {/* Die Architektur-Begründung („weil ein Timer je Node-Worker liefe
+                  und jede Mail doppelt einlesen würde") steht wörtlich als
+                  Code-Kommentar am Abruf. Regel 4: was hier zählt, ist die
+                  Handlungsanweisung. */}
               Holt einmalig, was im Postfach liegt. Für den laufenden Betrieb ruft
               ein Cron-Job <code>POST /api/mail/poll</code> mit dem Service-Token
-              auf — MITS bringt bewusst keinen eigenen Timer mit, weil ein Timer je
-              Node-Worker liefe und jede Mail doppelt einlesen würde.
+              auf.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">

@@ -13,6 +13,7 @@ import { useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FileDropzone } from "@/components/ui/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
@@ -53,7 +54,6 @@ export function FaqAttachments({
   maxUploadMb: number;
 }) {
   const input = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,26 +102,20 @@ export function FaqAttachments({
 
   return (
     <div className="grid gap-3">
-      <div
-        onDragOver={(event) => {
-          event.preventDefault();
-          if (!disabled && !uploading) setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          setDragging(false);
-          if (disabled || uploading) return;
-          void upload(Array.from(event.dataTransfer.files));
-        }}
-        className={cn(
-          "grid justify-items-center gap-2 rounded-2xl border border-dashed px-4 py-6 text-center transition-colors",
-          dragging
-            ? "border-primary/60 bg-primary/5"
-            : "border-border bg-background",
-          (disabled || uploading) && "opacity-60",
-        )}
+      {/* Third copy of the drag handling that `FileDropzone` owns, and it had the
+          same naive `onDragLeave` as the CMDB import: the highlight dropped out as
+          soon as the pointer crossed the icon or either line of text. */}
+      <FileDropzone
+        onFiles={(incoming) => void upload(incoming)}
+        disabled={disabled || uploading}
+        className="rounded-2xl"
       >
+        <div
+          className={cn(
+            "grid justify-items-center gap-2 rounded-2xl border border-dashed border-border bg-background px-4 py-6 text-center transition-colors",
+            (disabled || uploading) && "opacity-60",
+          )}
+        >
         <span className="grid size-10 place-items-center rounded-full bg-surface-elevated text-muted-foreground">
           {uploading ? (
             <Loader2Icon className="size-4 animate-spin" strokeWidth={1.5} />
@@ -156,7 +150,8 @@ export function FaqAttachments({
           className="hidden"
           aria-label="Dateien für diesen FAQ-Beitrag"
         />
-      </div>
+        </div>
+      </FileDropzone>
 
       {error && (
         <p className="flex items-center gap-2 text-xs font-medium text-destructive">

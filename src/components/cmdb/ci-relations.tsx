@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useLatestResult } from "@/hooks/use-latest-result";
 import {
   Select,
   SelectContent,
@@ -64,7 +65,7 @@ export function CIRelations({
   const [target, setTarget] = useState("");
   const [kind, setKind] = useState<string>("depends_on");
 
-  const result = addResult ?? removeResult;
+  const result = useLatestResult(addResult, removeResult);
 
   const needle = query.trim().toLowerCase();
   const matches = needle

@@ -9,7 +9,7 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +22,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { FileDropzone } from "@/components/ui/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -69,7 +70,6 @@ export function AiChatTab({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TriageResult | null>(null);
-  const [dragging, setDragging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messageCounter = useRef(0);
@@ -115,12 +115,6 @@ export function AiChatTab({
       }
       return current.filter((_, i) => i !== index);
     });
-  };
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setDragging(false);
-    addFiles(Array.from(event.dataTransfer.files));
   };
 
   const canSend = (input.trim().length > 0 || attachments.length > 0) && !pending;
@@ -246,15 +240,23 @@ export function AiChatTab({
         />
       )}
 
-      {/* Composer, doubling as the drop zone. */}
-      <div
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={handleDrop}
-        /*
+      {/*
+        Composer, doubling as the drop zone.
+
+        `FileDropzone` owns the drag handling — the fourth copy of it in this tree,
+        and it had the same two defects as the others: a bare `onDragLeave` that
+        fired when the pointer crossed onto the textarea, and no check for whether
+        the drag carried files at all, so dragging a selected phrase across the box
+        offered to attach it.
+
+        The old version swapped the textarea placeholder to "Screenshot hier
+        ablegen …" while dragging. The primitive's overlay says the same thing more
+        loudly and in the same place as everywhere else in the app, so the
+        placeholder is now the one prompt it always was.
+      */}
+      <FileDropzone onFiles={addFiles} disabled={pending} className="rounded-3xl">
+        <div
+          /*
           Strg+V, weil ein Screenshot in der Zwischenablage entsteht und nicht auf
           der Platte. `addFiles` filtert weiterhin auf Bilder und sagt es, wenn
           etwas anderes dabei war — dieser Chat schickt die Anhänge an die
@@ -263,17 +265,14 @@ export function AiChatTab({
           Nur wenn Dateien dabei sind: bei kopiertem Text ist `files` leer, und
           ohne die Prüfung verlöre jedes eingefügte Wort sein Standardverhalten.
         */
-        onPaste={(event) => {
-          const pasted = Array.from(event.clipboardData?.files ?? []);
-          if (pasted.length === 0) return;
-          event.preventDefault();
-          addFiles(pasted);
-        }}
-        className={cn(
-          "grid gap-2 rounded-3xl border border-dashed p-3 transition-colors duration-300",
-          dragging ? "border-primary bg-primary/5" : "border-border bg-card",
-        )}
-      >
+          onPaste={(event) => {
+            const pasted = Array.from(event.clipboardData?.files ?? []);
+            if (pasted.length === 0) return;
+            event.preventDefault();
+            addFiles(pasted);
+          }}
+          className="grid gap-2 rounded-3xl border border-dashed border-border bg-card p-3 transition-colors duration-300"
+        >
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {attachments.map((attachment, index) => (
@@ -317,11 +316,7 @@ export function AiChatTab({
               void send();
             }
           }}
-          placeholder={
-            dragging
-              ? "Screenshot hier ablegen …"
-              : "z. B. „Outlook startet seit dem Update nicht mehr, Fehler 0x8004010F“"
-          }
+          placeholder="z. B. „Outlook startet seit dem Update nicht mehr, Fehler 0x8004010F“"
           rows={3}
           disabled={pending}
           className="resize-none rounded-2xl border-transparent bg-transparent shadow-none focus-visible:border-transparent focus-visible:ring-0"
@@ -365,7 +360,8 @@ export function AiChatTab({
             Analysieren
           </Button>
         </div>
-      </div>
+        </div>
+      </FileDropzone>
     </div>
   );
 }

@@ -189,7 +189,7 @@ export function DataSettingsForm({
             <Button
               type="submit"
               disabled={running || candidates === 0}
-              className="w-fit rounded-full bg-destructive px-4 text-destructive-foreground hover:bg-destructive/90"
+              className="w-fit rounded-full bg-destructive px-4 text-destructive-foreground hover:bg-destructive-hover"
             >
               {running ? (
                 <Loader2Icon className="animate-spin" />

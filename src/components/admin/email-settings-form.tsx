@@ -115,9 +115,11 @@ export function EmailSettingsForm({
               />
               <div className="grid gap-1">
                 <Label htmlFor="secure">Implizites TLS (Port 465)</Label>
+                {/* Das Label nennt den Port schon. Die STARTTLS-Verhandlung ist
+                    Protokoll-Innenleben, und „Nur für 465 einschalten" wiederholt
+                    die Klammer darüber. */}
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Aus lassen für 587 — dort wird STARTTLS benutzt, sobald der
-                  Server es anbietet. Nur für 465 einschalten.
+                  Für Port 587 aus lassen.
                 </p>
               </div>
             </div>

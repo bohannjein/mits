@@ -1109,9 +1109,12 @@ function FieldInspector({
             className="h-10 rounded-xl font-mono"
             onBlur={(event) => onRename(name, event.target.value)}
           />
+          {/* „Schlüssel in der Payload" ist raus: das Feld heißt „Feldname", steht
+              in `font-mono`, und „Payload" ist kein Wort, das ein Admin hat. Der
+              zweite Satz bleibt — was ein Umbenennen mit bestehenden Tickets tut,
+              ist eine Datenentscheidung und aus dem Feld nicht ableitbar. */}
           <p className="text-xs text-muted-foreground">
-            Schlüssel in der Payload. Antworten in bereits gespeicherten Tickets
-            behalten den alten Namen.
+            Antworten in bereits gespeicherten Tickets behalten den alten Namen.
           </p>
         </div>
 
@@ -1223,7 +1226,9 @@ function FieldInspector({
                   <Input
                     key={`${name}-cond`}
                     defaultValue={condition.equals.join(", ")}
-                    placeholder="einen dieser Werte hat, z. B. laptop, desktop"
+                    /* `true` mit im Beispiel, weil das die Antwort für Checkbox und
+                       Schalter ist — das stand vorher als Satz unter dem Feld. */
+                    placeholder="einen dieser Werte hat, z. B. laptop, desktop, true"
                     spellCheck={false}
                     className="h-10 rounded-xl font-mono text-xs"
                     aria-label="Werte, die das Feld einblenden"
@@ -1246,10 +1251,10 @@ function FieldInspector({
                   Ohne Werte bleibt das Feld dauerhaft verborgen.
                 </p>
               )}
-              <p className="text-xs text-muted-foreground">
-                Bei Checkbox und Schalter sind die Werte <code>true</code> und{" "}
-                <code>false</code>.
-              </p>
+              {/* Die Werteregel steht jetzt im `placeholder` des Wertfeldes
+                  darüber — im Feld gelesen, nicht darunter. Die Warnung eine Zeile
+                  höher bleibt: ein dauerhaft verborgenes Pflichtfeld macht das
+                  Formular unabsendbar, und das ist ein Supportfall. */}
             </div>
 
             {/* ── cascading options ──────────────────────────────────── */}
@@ -1288,15 +1293,14 @@ function FieldInspector({
                         spellCheck={false}
                         className="rounded-xl font-mono text-xs"
                         aria-label="Zuordnung von Elternwert zu Optionen"
+                        /* Die Formatregel war ein Satz darunter. Im Platzhalter
+                           zeigt sie dasselbe an einem Beispiel, und das Feld war
+                           ohne Vorbelegung ohnehin leer. */
+                        placeholder={`hardware: laptop, monitor\nsoftware: office, cad`}
                         onBlur={(event) =>
                           onCascade(name, cascade.field, parseCascade(event.target.value))
                         }
                       />
-                      <p className="text-xs text-muted-foreground">
-                        Eine Zeile pro Wert des Feldes{" "}
-                        <code>{cascade.field}</code>, Format{" "}
-                        <code>wert: option-a, option-b</code>.
-                      </p>
                     </>
                   )}
                 </div>

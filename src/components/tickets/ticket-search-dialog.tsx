@@ -19,6 +19,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -196,11 +197,22 @@ export function TicketSearchDialog({
 
   return (
     <>
-      <span onClick={() => setOpen(true)}>
-        {trigger ?? <SearchTrigger />}
-      </span>
-
       <Dialog open={open} onOpenChange={setOpen}>
+        {/*
+          `DialogTrigger asChild` rather than a `<span onClick>` around the button.
+          The old wrapper did work by keyboard — Enter on the focused `SearchTrigger`
+          fires a click that bubbles to the span — but only because the default
+          trigger happens to be a `<Button>`. The handler sat on a non-interactive
+          element, so a caller passing a plain `trigger` would have had a control
+          that only the mouse could reach, and nothing here would have said so.
+          Radix also wires up `aria-haspopup` and `aria-expanded`, which the span
+          never did.
+
+          Inside `Dialog`, not beside it: the trigger reads the open state from
+          Radix's context, and a trigger rendered outside the root has none.
+        */}
+        <DialogTrigger asChild>{trigger ?? <SearchTrigger />}</DialogTrigger>
+
         <DialogContent
           showCloseButton
           className="max-h-[85vh] gap-0 overflow-hidden rounded-3xl border border-border bg-card p-0 shadow-elev-3 sm:max-w-2xl"
