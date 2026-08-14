@@ -44,6 +44,17 @@ yarn-error.log*
 *.log
 logs/
 
+# Sitzungsmitschnitte, die im Projektwurzel landen (`2026-08-06-180241-….txt`)
+#
+# Nicht nur Unordnung, und darum steht die Regel hier statt in einer Aufräumliste:
+# Tailwind v4 sucht seine Klassen-Kandidaten im Verzeichnis und lässt dabei genau
+# das aus, was in dieser Datei steht. Ein Mitschnitt enthält Code samt
+# Klassennamen — und die Apostrophe eines Attribut-Selektors liegen darin als
+# HTML-Entity vor. Daraus baut Tailwind einen ungültigen Selektor, der CSS-Build
+# scheitert, und **jede** Seite antwortet mit 500. Der Fehler verstärkt sich
+# selbst: er wird ins Log geschrieben, das Log speist den Scanner.
+/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.txt
+
 # local runtime data (users, sessions, tickets, auth secret) — never committed
 #
 # Anchored with a leading slash, and that is not tidiness: an unanchored `data/`

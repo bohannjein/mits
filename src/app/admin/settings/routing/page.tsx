@@ -46,11 +46,23 @@ export default async function AdminRoutingPage() {
 
           {/* The only two sentences on this page that are not field labels, and
               both name a reason a working mask produces no visible effect. */}
+          {/* Nennt jetzt beide Hälften. „Regeln greifen nicht" liest sich als
+              „nichts wird einsortiert"; dass auch die Vorschläge im Eingang
+              ausbleiben, war daraus nicht zu erraten. */}
           {!enabled && (
-            <p className="mt-4 text-sm text-muted-foreground">
-              Das Modul „Smart-Routing“ ist unter Module abgeschaltet. Regeln
-              greifen erst wieder, wenn es aktiv ist.
-            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <p className="text-sm text-muted-foreground">
+                Das Modul „Smart-Routing“ ist abgeschaltet: nichts wird
+                einsortiert, und im Eingang erscheinen keine Vorschläge.
+              </p>
+              <Button
+                asChild
+                size="sm"
+                className="h-9 rounded-full bg-surface-elevated px-4 text-foreground hover:bg-accent"
+              >
+                <Link href="/admin/settings/features">Modul einschalten</Link>
+              </Button>
+            </div>
           )}
 
           {categories.length === 0 && (

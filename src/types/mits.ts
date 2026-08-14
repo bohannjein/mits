@@ -2721,7 +2721,7 @@ export const FEATURE_FLAG_META: Record<
   feature_smart_routing: {
     label: "Smart-Routing",
     description:
-      "Regeln ordnen eingehende Tickets anhand von Stichworten einer Kategorie zu und zeigen Anwendern passende FAQ-Einträge. Gepflegt unter /admin/settings/routing.",
+      "Regeln ordnen eingehende Tickets anhand von Stichworten einer Kategorie zu und zeigen Anwendern beim Schreiben passende FAQ-Einträge und Formulare. Gepflegt unter /admin/settings/routing.",
   },
   feature_auto_merge_suggestions: {
     label: "Zusammenführungs-Vorschläge",

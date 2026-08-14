@@ -250,13 +250,23 @@ export function collectAdminSummaries(): Record<string, AdminSummary> {
   );
   if (categories.length === 0) summaries["/admin/categories"].tone = "warn";
 
+  /*
+   * Regeln, und die eine Kombination, die Arbeit verschluckt.
+   *
+   * „Abgeschaltet ist neutral" gilt für ein Modul, das niemand angefasst hat.
+   * Hier ist der Fall spiegelbildlich: jemand hat Stichworte, Kategorien und
+   * Formularvorschläge eingetragen, und der Schalter zwei Einträge weiter oben
+   * lässt davon nichts wirken. Der Desk sagte dazu „3 Regeln" — also genau das,
+   * was jemand liest, der sich fragt, warum nichts passiert.
+   */
   const rules = listTriageRules();
-  summaries["/admin/settings/routing"] = counted(
-    rules.length,
-    "Regel",
-    "Regeln",
-    "Keine Regeln",
-  );
+  summaries["/admin/settings/routing"] =
+    rules.length > 0 && !flags.feature_smart_routing
+      ? {
+          text: `${rules.length} ${rules.length === 1 ? "Regel" : "Regeln"} — Modul abgeschaltet, keine wirkt`,
+          tone: "warn",
+        }
+      : counted(rules.length, "Regel", "Regeln", "Keine Regeln");
 
   summaries["/admin/canned-responses"] = counted(
     listCannedResponses().length,
