@@ -489,7 +489,7 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /admin/…                Administration
 /admin/macros           Makros
 /admin/categories       Kategoriebaum: Haupt- und Unterkategorien, Kachel-Symbol
-/admin/settings/routing Stichwort-Regeln: Kategorie, Mindestpriorität, FAQ-Vorschläge
+/admin/settings/routing Stichwort-Regeln: Kategorie, Mindestpriorität, FAQ- und Formularvorschläge
 /admin/settings/workflow Ballbesitz beim Antworten, Fristen fürs automatische Schließen
 /admin/settings/registration Selbstregistrierung, Domains, Sitzungsdauer, 2FA-Pflicht
 /customer?preview=user|agent Portal in der Sicht dieser Rolle, nur für Admins

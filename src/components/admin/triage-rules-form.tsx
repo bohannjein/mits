@@ -31,10 +31,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { iconFor } from "@/lib/icons";
 import {
   CATEGORY_ROOT,
   TICKET_PRIORITY_LABELS,
   TicketPriorityValues,
+  type MITSFormSchema,
   type MITSTicketCategory,
   type PortalFaq,
   type TriageRule,
@@ -43,9 +45,9 @@ import {
 /* ──────────────────────────────────────────────────────────────────────────
    Keyword rules.
 
-   One row per rule, submitted whole. A rule is three answers about one set of
+   One row per rule, submitted whole. A rule is four answers about one set of
    words: which category they mean, whether they raise the priority, and which FAQ
-   entries to offer while somebody is still typing them.
+   entries and which catalogue forms to offer while somebody is still typing them.
 
    **Keywords as a comma-separated line, not a tag widget.** The value is a short
    list of single words that gets pasted in from somewhere else as often as it gets
@@ -64,11 +66,17 @@ export function TriageRulesForm({
   rules: initial,
   categories,
   faqs,
+  /**
+   * The catalogue, unfiltered by role: an admin configures for everyone, and the
+   * intake drops a form the reporter's role may not see when it renders.
+   */
+  schemas,
 }: {
   rules: TriageRule[];
   /** Flat, with roots first — the dropdown shows the path, not a tree. */
   categories: MITSTicketCategory[];
   faqs: PortalFaq[];
+  schemas: MITSFormSchema[];
 }) {
   const [rules, setRules] = useState<TriageRule[]>(initial);
   const [result, formAction, saving] = useActionState(saveTriageRulesAction, null);
@@ -291,6 +299,44 @@ export function TriageRulesForm({
                   </div>
                 </div>
               )}
+
+              {schemas.length > 0 && (
+                <div className="grid gap-2">
+                  <Label>Formulare im Eingang vorschlagen</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {schemas.map((schema) => {
+                      const chosen = rule.form_schema_ids.includes(schema.id);
+                      const Icon = iconFor(schema.icon);
+                      return (
+                        <Button
+                          key={schema.id}
+                          type="button"
+                          size="sm"
+                          disabled={saving}
+                          aria-pressed={chosen}
+                          onClick={() =>
+                            patch(rule.id, {
+                              form_schema_ids: chosen
+                                ? rule.form_schema_ids.filter(
+                                    (id) => id !== schema.id,
+                                  )
+                                : [...rule.form_schema_ids, schema.id],
+                            })
+                          }
+                          className={
+                            chosen
+                              ? "h-8 max-w-full rounded-full bg-inverse-surface px-3 text-xs font-normal text-inverse-surface-foreground hover:bg-inverse-surface-hover"
+                              : "h-8 max-w-full rounded-full bg-surface-elevated px-3 text-xs font-normal text-foreground hover:bg-accent hover:text-accent-foreground"
+                          }
+                        >
+                          <Icon strokeWidth={1.5} aria-hidden />
+                          <span className="truncate">{schema.title}</span>
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           ))}
 
@@ -308,6 +354,7 @@ export function TriageRulesForm({
                   category_id: "",
                   priority: "",
                   faq_ids: [],
+                  form_schema_ids: [],
                   order_index: current.length,
                   enabled: true,
                 },

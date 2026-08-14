@@ -696,6 +696,21 @@ try {
     }
     throw new Error("a duplicate title was accepted");
   });
+  check("form suggestions survive the round trip", () => {
+    triageRules.setTriageRules([
+      mits.TriageRuleSchema.parse({
+        id: randomUUID(),
+        title: "Formulare",
+        keywords: ["notebook"],
+        form_schema_ids: ["hardware-order", "software-access"],
+      }),
+    ]);
+    const rows = triageRules.listTriageRules();
+    if (rows[0]?.form_schema_ids.join(",") !== "hardware-order,software-access") {
+      throw new Error(String(rows[0]?.form_schema_ids));
+    }
+    return rows;
+  });
   check("restore one rule", () =>
     triageRules.setTriageRules([
       mits.TriageRuleSchema.parse({

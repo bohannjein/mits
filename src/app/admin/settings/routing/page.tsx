@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { requireRole } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/features";
+import { listCatalogSchemas } from "@/lib/form-schemas";
 import { getPortalFaqs } from "@/lib/portal";
 import { listCategories } from "@/lib/ticket-categories";
 import { listTriageRules } from "@/lib/triage-rules";
@@ -22,6 +23,9 @@ export default async function AdminRoutingPage() {
   const rules = listTriageRules();
   const categories = listCategories();
   const faqs = getPortalFaqs();
+  // Ohne Rollenfilter: ein Admin richtet für alle ein, und der Eingang lässt ein
+  // Formular weg, das die Rolle des Melders nicht sehen darf.
+  const schemas = listCatalogSchemas();
   const enabled = isFeatureEnabled("feature_smart_routing");
 
   return (
@@ -36,7 +40,7 @@ export default async function AdminRoutingPage() {
             </h1>
             <p className="mt-2 max-w-2xl text-muted-foreground">
               Stichworte ordnen eingehende Tickets einer Kategorie zu und zeigen
-              Anwendern beim Schreiben passende FAQ-Einträge.
+              Anwendern beim Schreiben passende FAQ-Einträge und Formulare.
             </p>
           </div>
 
@@ -66,7 +70,12 @@ export default async function AdminRoutingPage() {
 
           <Separator className="my-8 bg-border" />
 
-          <TriageRulesForm rules={rules} categories={categories} faqs={faqs} />
+          <TriageRulesForm
+            rules={rules}
+            categories={categories}
+            faqs={faqs}
+            schemas={schemas}
+          />
         </div>
       </main>
     </>

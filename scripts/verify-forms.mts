@@ -34,10 +34,16 @@ import {
 } from "../src/lib/reminder-presets";
 import {
   KEYWORD_PREFIX_MIN,
+  TRIAGE_FORM_LIMIT,
+  hasFormSuggestions,
   matchTriageRules,
   matchesKeyword,
   triage,
 } from "../src/lib/services/auto-triage";
+import {
+  carriesAnything,
+  carryIntoSchema,
+} from "../src/lib/forms/carry-over";
 import { TriageRuleSchema } from "../src/types/mits";
 import {
   DEFAULT_ROLE_VISIBILITY,
@@ -4119,6 +4125,209 @@ console.log("\nauto-triage");
     triage("Kaffeemaschine", [urgent]).match === null,
   );
   check("an empty rule list is inert", triage("Drucker", []).categoryId === "");
+
+  /*
+   * Form suggestions: the third answer a rule gives about a word. Collected from
+   * every match like the articles, deduplicated, and the strongest rule first.
+   */
+  const formsOnly = rule({
+    id: "notebook",
+    title: "Notebook",
+    keywords: ["notebook", "akku"],
+    form_schema_ids: ["hardware-order"],
+    order_index: 0,
+  });
+  const formsToo = rule({
+    id: "vpn",
+    title: "VPN",
+    keywords: ["vpn"],
+    category_id: "cat-network",
+    form_schema_ids: ["software-access", "hardware-order"],
+    order_index: 1,
+  });
+
+  const both2 = triage("Notebook Akku leer und VPN geht nicht", [
+    formsOnly,
+    formsToo,
+  ]);
+  check(
+    "forms come from every match, strongest rule first",
+    both2.formSchemaIds.join(",") === "hardware-order,software-access",
+  );
+  check(
+    "a rule that only suggests forms does not file the ticket",
+    triage("Notebook Akku", [formsOnly]).categoryId === "",
+  );
+  check(
+    "a rule that only suggests forms still suggests them",
+    triage("Notebook Akku", [formsOnly]).formSchemaIds.join(",") ===
+      "hardware-order",
+  );
+  check(
+    "no match means no form",
+    triage("Kaffeemaschine", [formsOnly]).formSchemaIds.length === 0,
+  );
+  check(
+    "at most three forms are offered",
+    triage("Notebook", [
+      rule({
+        id: "many",
+        title: "Viele",
+        keywords: ["notebook"],
+        form_schema_ids: ["a", "b", "c", "d", "e"],
+      }),
+    ]).formSchemaIds.length === TRIAGE_FORM_LIMIT,
+  );
+
+  /*
+   * A stored rule from before the field exists parses, and parses to an empty
+   * list. The rules are a JSON blob read whole — a required key here would break
+   * `listTriageRules` on every instance that already had rules.
+   */
+  const legacy = TriageRuleSchema.parse({
+    id: "old",
+    title: "Alt",
+    keywords: ["drucker"],
+    category_id: "cat-x",
+    priority: "",
+    faq_ids: [],
+    order_index: 0,
+    enabled: true,
+  });
+  check(
+    "a rule stored before form suggestions parses to an empty list",
+    Array.isArray(legacy.form_schema_ids) && legacy.form_schema_ids.length === 0,
+  );
+
+  /*
+   * Whether a second column exists at all. Checked against the ids on offer, so a
+   * rule pointing at a deleted or role-hidden form reserves nothing.
+   */
+  check(
+    "a rule naming an available form asks for the column",
+    hasFormSuggestions([formsOnly], ["hardware-order"]),
+  );
+  check(
+    "a rule naming a form this role cannot see does not",
+    !hasFormSuggestions([formsOnly], ["software-access"]),
+  );
+  check(
+    "a disabled rule does not ask for the column",
+    !hasFormSuggestions(
+      [rule({ ...formsOnly, enabled: false })],
+      ["hardware-order"],
+    ),
+  );
+  check("no rules, no column", !hasFormSuggestions([], ["hardware-order"]));
+}
+
+console.log("\ncarry-over into a catalogue form");
+{
+  /*
+   * Taking a form suggestion must not cost somebody the words they had already
+   * written. Which field gets what is decided by `resolveWidget`, so these cases
+   * are about the *shapes* a target form can have, not about lengths.
+   */
+  const schema = (
+    properties: Record<string, unknown>,
+    uiHints?: Record<string, unknown>,
+  ): MITSFormSchema =>
+    parseFormSchema({
+      id: "target",
+      title: "Ziel",
+      category: "Test",
+      version: 1,
+      schema: { type: "object", properties },
+      ...(uiHints ? { uiHints } : {}),
+    });
+
+  const text = { title: "Drucker offline", description: "Seit heute morgen.", files: [] };
+
+  const pair = schema(
+    {
+      subject: { type: "string", title: "Titel", maxLength: 120 },
+      body: { type: "string", title: "Text", maxLength: 4000 },
+    },
+    { body: { widget: "textarea" } },
+  );
+  const filled = carryIntoSchema(pair, text);
+  check(
+    "the short field takes the title",
+    filled.subject === "Drucker offline",
+  );
+  check(
+    "the textarea takes the description",
+    filled.body === "Seit heute morgen.",
+  );
+
+  // Only one free-text field: it gets both halves, because losing the title to
+  // the shape of the target form is exactly the silent loss to avoid.
+  const single = schema(
+    { body: { type: "string", title: "Text", maxLength: 4000 } },
+    { body: { widget: "textarea" } },
+  );
+  check(
+    "a single textarea gets title and description",
+    carryIntoSchema(single, text).body ===
+      "Drucker offline\n\nSeit heute morgen.",
+  );
+
+  // Only short fields: joined and clamped to what the field can hold, so the form
+  // is not invalid before it has been touched.
+  const shortOnly = schema({
+    subject: { type: "string", title: "Titel", maxLength: 20 },
+  });
+  const clamped = carryIntoSchema(shortOnly, text);
+  check(
+    "a short-only form is joined and clamped",
+    clamped.subject === "Drucker offline — Se",
+  );
+
+  // Nothing to carry into: no keys, which is what suppresses the notice above the
+  // form — a claim about something that did not happen is worse than no claim.
+  const noText = schema({
+    when: { type: "string", title: "Wann", format: "date" },
+  });
+  check(
+    "a form with no free-text field carries nothing",
+    Object.keys(carryIntoSchema(noText, text)).length === 0,
+  );
+  check(
+    "and reports as much",
+    !carriesAnything(noText, text) && carriesAnything(pair, text),
+  );
+
+  // Never a key the schema does not declare: `SchemaForm` spreads this over its
+  // defaults, and a stray key would travel as far as the strictObject.
+  check(
+    "only declared fields are returned",
+    Object.keys(carryIntoSchema(pair, text)).every((key) =>
+      ["subject", "body"].includes(key),
+    ),
+  );
+
+  // A hidden field is not a prefill target — `resolveFields` drops it, and this
+  // must inherit that rather than read the properties itself.
+  const hidden = schema(
+    {
+      subject: { type: "string", title: "Titel", maxLength: 120 },
+      body: { type: "string", title: "Text", maxLength: 4000 },
+    },
+    { body: { widget: "textarea", hidden: true } },
+  );
+  check(
+    "a hidden textarea is not filled",
+    carryIntoSchema(hidden, text).body === undefined,
+  );
+
+  // An empty composer produces no keys at all rather than empty strings, so the
+  // form's own defaults stay in charge.
+  check(
+    "an empty composer carries nothing",
+    Object.keys(
+      carryIntoSchema(pair, { title: "", description: "", files: [] }),
+    ).length === 0,
+  );
 }
 
 console.log("\ncolumn guessing");

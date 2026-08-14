@@ -34,6 +34,15 @@ export const KEYWORD_PREFIX_MIN = 5;
 /** How many articles the intake offers at once. Same reasoning as `DEFLECTION_LIMIT`. */
 export const TRIAGE_FAQ_LIMIT = 3;
 
+/**
+ * How many catalogue forms the intake offers at once.
+ *
+ * Same number and the same reasoning as the articles above: a column of eight
+ * suggestions beside a half-written sentence is a second catalogue, and the
+ * catalogue already has a tab of its own.
+ */
+export const TRIAGE_FORM_LIMIT = 3;
+
 export interface TriageMatch {
   rule: TriageRule;
   /** Distinct keywords of this rule that were found. Never empty for a match. */
@@ -49,6 +58,36 @@ export interface TriageOutcome {
   priority: TicketPriority | "";
   /** Every matching rule's articles, deduplicated, best rule first. */
   faqIds: string[];
+  /**
+   * Every matching rule's catalogue forms, deduplicated, best rule first.
+   *
+   * Read by the intake and by nothing else. `applyTriage` never touches it: a form
+   * is an offer to the person still typing, not something written onto an incoming
+   * ticket — the create path, the mail ingest and REST have nobody to offer it to.
+   */
+  formSchemaIds: string[];
+}
+
+/**
+ * Whether any enabled rule could ever suggest a form that exists here.
+ *
+ * One expression, two callers, and that is the reason it is a function: the intake
+ * page reserves the suggestion column with it on the server, and the container
+ * decides its own grid with it in the browser. Two copies would be two answers to
+ * „is there a second column", and the disagreement renders as a squeezed composer.
+ *
+ * Checked against the ids actually on offer, so a rule pointing at a deleted or
+ * role-hidden form does not reserve a column that stays empty for everyone.
+ */
+export function hasFormSuggestions(
+  rules: TriageRule[],
+  schemaIds: string[],
+): boolean {
+  return rules.some(
+    (rule) =>
+      rule.enabled &&
+      rule.form_schema_ids.some((id) => schemaIds.includes(id)),
+  );
 }
 
 /**
@@ -102,9 +141,9 @@ export function matchTriageRules(text: string, rules: TriageRule[]): TriageMatch
  * The category comes from the strongest rule *that names one*, not simply from
  * the strongest rule: a rule may exist only to offer articles („Passwort" → two
  * FAQ entries, no category), and letting it win would mean a better-matching
- * filing rule below it never applies. The articles, by contrast, come from every
- * match — somebody writing about a notebook that will not connect to the VPN is
- * asking both questions.
+ * filing rule below it never applies. The articles and the forms, by contrast,
+ * come from every match — somebody writing about a notebook that will not connect
+ * to the VPN is asking both questions.
  */
 export function triage(text: string, rules: TriageRule[]): TriageOutcome {
   const matches = matchTriageRules(text, rules);
@@ -113,9 +152,15 @@ export function triage(text: string, rules: TriageRule[]): TriageOutcome {
     matches.find((candidate) => candidate.rule.category_id !== "") ?? null;
 
   const faqIds: string[] = [];
+  const formSchemaIds: string[] = [];
   for (const candidate of matches) {
     for (const id of candidate.rule.faq_ids) {
       if (!faqIds.includes(id)) faqIds.push(id);
+    }
+    // Same walk, same reason: somebody writing about a notebook that will not
+    // connect to the VPN may well be offered both forms.
+    for (const id of candidate.rule.form_schema_ids) {
+      if (!formSchemaIds.includes(id)) formSchemaIds.push(id);
     }
   }
 
@@ -127,5 +172,6 @@ export function triage(text: string, rules: TriageRule[]): TriageOutcome {
     // nobody can trace back to a reason.
     priority: deciding?.rule.priority ?? "",
     faqIds: faqIds.slice(0, TRIAGE_FAQ_LIMIT),
+    formSchemaIds: formSchemaIds.slice(0, TRIAGE_FORM_LIMIT),
   };
 }

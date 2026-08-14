@@ -19,6 +19,8 @@ interface IntakeState {
 
   setMode: (mode: TicketSource) => void;
   selectSchema: (id: string | null) => void;
+  /** Jump straight into one catalogue form, whatever mode is active. */
+  openSchema: (id: string) => void;
   acceptDraft: (draft: MITSTicketDraft) => void;
   dismissDraft: () => void;
 }
@@ -32,6 +34,14 @@ export const useIntakeStore = create<IntakeState>((set) => ({
   // starts at the tiles rather than a half-filled form for another category.
   setMode: (mode) => set({ mode, selectedSchemaId: null, lastDraft: null }),
   selectSchema: (selectedSchemaId) => set({ selectedSchemaId, lastDraft: null }),
+
+  /*
+   * One write, and that is the point: `setMode` clears `selectedSchemaId`, so
+   * calling the two above in sequence lands on the tile grid instead of the form
+   * — a suggestion that opens the catalogue and forgets which form was asked for.
+   */
+  openSchema: (id) =>
+    set({ mode: "wizard", selectedSchemaId: id, lastDraft: null }),
   acceptDraft: (lastDraft) => set({ lastDraft }),
   dismissDraft: () => set({ lastDraft: null, selectedSchemaId: null }),
 }));

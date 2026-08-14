@@ -9,7 +9,9 @@ paths:
   - "src/components/admin/triage-rules-form.tsx"
   - "src/components/tickets/queue-filter-bar.tsx"
   - "src/components/tickets/intent-tiles.tsx"
+  - "src/components/tickets/process-suggestions.tsx"
   - "src/components/tickets/re-route-modal.tsx"
+  - "src/lib/forms/carry-over.ts"
 ---
 
 # Kategorien, kaskadierender Filter, Smart-Routing
@@ -149,6 +151,54 @@ Schwelle zu reißen, oder nicht.
 - **Beide Hälften einzeln schaltbar**: die FAQ hängt an `deflection`, die Regeln
   an `feature_smart_routing`. Ein Admin, der Stichwort-Artikel will und kein
   lexikalisches Raten, bekommt genau das.
+
+## Und Stichworte ziehen Formulare
+
+`form_schema_ids` an der Regel, die dritte Antwort über dieselben Worte. Der
+Katalog liegt einen Reiter weiter und hilft damit genau denen, die schon wissen,
+dass es ihn gibt; alle anderen schreiben Freitext, und das Formular mit den drei
+Feldern, die der Desk sonst nachfragen muss, sieht niemand. Der Vorschlag kommt
+deshalb **nach** den Worten statt davor.
+
+- **`applyTriage` schreibt davon nichts.** Ein Formularvorschlag ist ein Angebot
+  an jemanden, der noch tippt — der Anlege-Pfad, der Mail-Ingest und REST haben
+  niemanden, dem sie es anbieten könnten. `formSchemaIds` liest ausschließlich der
+  Eingang.
+- **Aufgelöst gegen den Katalog dieser Rolle.** Eine Id, die
+  `listCatalogSchemasFor` nicht liefert, fällt still weg: ein Vorschlag, der sich
+  nicht öffnen lässt, ist schlechter als ein Vorschlag weniger. Die Admin-Maske
+  zeigt dafür den **unfilterten** Katalog — dort wird für alle eingerichtet.
+- **Die Spalte ist reserviert, nicht bedingt.** Eine Spalte, die beim ersten
+  Treffer erscheint, schiebt das Schreibfeld mitten im Satz zur Seite. Ob es sie
+  überhaupt gibt, entscheidet `hasFormSuggestions(rules, ids)` — **eine** Funktion
+  für zwei Aufrufer, weil `/customer/new` daraus seine Breite nimmt und
+  `TriModalContainer` sein Raster; zwei Kopien wären zwei Antworten auf „gibt es
+  eine zweite Spalte", und die Uneinigkeit rendert als gequetschtes Schreibfeld.
+- **Ab `xl`, darunter unter dem Feld.** Bei 1024 px bleiben nach Innenabstand keine
+  70 rem (48 + 2 + 20), die erste Spalte müsste also schmaler werden als sie heute
+  ist. `minmax(0,1fr)` und nicht `minmax(0,48rem)`: eine Spur mit festem Maximum
+  schrumpft nicht, sie läuft über.
+- **Nur über dem Freitext-Reiter.** Der Katalog *ist* dieselbe Liste in voller
+  Länge, drei seiner Einträge daneben zu zeigen wäre eine Abkürzung dorthin, wo man
+  schon ist. Der KI-Reiter schlägt selbst vor.
+- **Der Text wandert mit** (`lib/forms/carry-over.ts`). Ohne das wäre der Vorschlag
+  eine Bestrafung fürs Anklicken: zwei Sätze und ein Screenshot weg, und der
+  Nächste lernt, nicht zu klicken. Was wohin geht, entscheidet `resolveWidget` über
+  `resolveFields` — erstes `textarea` bekommt die Beschreibung, erstes `text` den
+  Titel, erstes `file` die Anhänge. Ein Formular mit nur *einem* Freitextfeld
+  bekommt beide Hälften.
+- **Der Freitext liegt in `TriModalContainer`, nicht in `ChatIntake`.** Radix baut
+  den inaktiven Reiter ab, und dieser Vorschlag wechselt den Reiter absichtlich —
+  mit State im Kind hätte die Funktion ihre eigene Eingabe gefressen. Nicht in
+  `useIntakeStore`: Modul-Singleton, auf dem Server über Requests geteilt.
+- **`openSchema` ist ein Schreibvorgang.** `setMode` leert `selectedSchemaId`; die
+  beiden hintereinander zu rufen landet auf dem Kachelraster statt im Formular.
+- **Der Hinweis über dem vorbefüllten Formular hängt an dem, was ankam**, nicht am
+  Vorhandensein eines Schnappschusses. Ein Formular ohne Freitextfeld trägt nichts,
+  und eine Meldung über etwas, das nicht passiert ist, ist schlechter als keine.
+- **Aus den Kacheln geöffnet wird nichts vorbefüllt.** `carryText` ist nur gesetzt,
+  wenn jemand über einen Vorschlag hereinkam — sonst stünden Worte in einem
+  Formular, das niemand mit ihnen verbunden hat.
 
 ## Intent-Kacheln
 

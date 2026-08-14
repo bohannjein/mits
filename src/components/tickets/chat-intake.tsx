@@ -10,7 +10,7 @@ import {
   SendIcon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,12 +18,7 @@ import { FileDropzone } from "@/components/ui/file-dropzone";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  DEFLECTION_LIMIT,
-  suggestFaqs,
-  type DeflectionHit,
-} from "@/lib/services/ai/deflection";
-import { triage } from "@/lib/services/auto-triage";
+import type { DeflectionHit } from "@/lib/services/ai/deflection";
 import { formatFileSize } from "@/types/mits";
 import { cn } from "@/lib/utils";
 import {
@@ -31,8 +26,6 @@ import {
   UPLOAD_ACCEPT,
   type IntakeCategory,
   type MITSTicketDraft,
-  type PortalFaq,
-  type TriageRule,
 } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -60,42 +53,56 @@ const MAX_FILES = 5;
 
 const ENTRANCE = { type: "spring", stiffness: 260, damping: 28, mass: 0.9 } as const;
 
+/*
+ * Controlled, and every one of its four answers lives in `TriModalContainer`.
+ *
+ * Two reasons, and the second is the load-bearing one. Radix unmounts the inactive
+ * tab panel, so with the text in local state any tab switch threw it away — and a
+ * form suggestion beside the field is a *tab switch on purpose*, which would have
+ * made this component eat its own input. Second, the suggestion column is a
+ * sibling of this card and needs the same text to match against; the one thing two
+ * siblings share can live in neither of them.
+ *
+ * Deliberately not in `useIntakeStore`: that store is a module-level singleton and
+ * is shared across requests on the server, so a half-written sentence would leak
+ * into somebody else's first render.
+ */
 export function ChatIntake({
   schemaId,
   onSubmit,
   /** Greeting name. Empty renders the neutral form of the heading. */
   greetingName = "",
+  title,
+  description,
+  category,
+  files,
+  onTitleChange,
+  onDescriptionChange,
+  onCategoryChange,
+  onFilesChange,
   /**
-   * FAQ entries to match against while typing. Empty switches the whole
-   * suggestion area off — which is what an instance with the feature disabled or
-   * with no articles passes.
+   * Self-service articles for the words typed so far, matched by the container.
+   * Empty renders no hint area at all.
    */
-  faqs = [],
-  /**
-   * Keyword rules, the second way an article gets offered.
-   *
-   * The lexical match beside it finds what *shares vocabulary* with the article,
-   * which misses the case an admin can see coming: „Notebook" should pull up the
-   * notebook articles whether or not those articles happen to use the word often
-   * enough to clear the threshold. A rule says so directly.
-   *
-   * Empty when smart routing is off, which switches this half off and leaves the
-   * lexical half working.
-   */
-  triageRules = [],
+  faqHits = [],
+  onDismissHints,
 }: {
   schemaId: string;
   onSubmit: (draft: MITSTicketDraft) => Promise<void>;
   greetingName?: string;
-  faqs?: PortalFaq[];
-  triageRules?: TriageRule[];
+  title: string;
+  description: string;
+  category: IntakeCategory | null;
+  files: File[];
+  onTitleChange: (value: string) => void;
+  onDescriptionChange: (value: string) => void;
+  onCategoryChange: (value: IntakeCategory | null) => void;
+  onFilesChange: (files: File[]) => void;
+  faqHits?: DeflectionHit[];
+  onDismissHints: () => void;
 }) {
   const reduceMotion = useReducedMotion();
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState<IntakeCategory | null>(null);
-  const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -104,69 +111,21 @@ export function ChatIntake({
   const addFiles = (incoming: File[]) => {
     if (incoming.length === 0) return;
     setNotice(null);
-    setFiles((current) => {
-      const room = MAX_FILES - current.length;
-      if (room <= 0) {
-        setNotice(`Mehr als ${MAX_FILES} Dateien gehen nicht.`);
-        return current;
-      }
-      if (incoming.length > room) {
-        setNotice(`Nur ${room} weitere Datei(en) möglich.`);
-      }
-      return [...current, ...incoming.slice(0, room)];
-    });
+
+    const room = MAX_FILES - files.length;
+    if (room <= 0) {
+      setNotice(`Mehr als ${MAX_FILES} Dateien gehen nicht.`);
+      return;
+    }
+    if (incoming.length > room) {
+      setNotice(`Nur ${room} weitere Datei(en) möglich.`);
+    }
+    onFilesChange([...files, ...incoming.slice(0, room)]);
   };
 
   const titleOk = title.trim().length >= MIN_TITLE;
   const descriptionOk = description.trim().length >= MIN_DESCRIPTION;
   const canSend = titleOk && descriptionOk && !sending;
-
-  /*
-   * FAQ suggestions, recomputed after a pause in typing.
-   *
-   * The matching is a set intersection over a few dozen entries, so debouncing is
-   * not about cost — it is about not shuffling links underneath somebody
-   * mid-sentence. 500 ms is long enough that the area only changes when they stop
-   * to think.
-   *
-   * Held in state rather than derived during render for exactly that reason:
-   * deriving would update on every keystroke and undo the debounce.
-   */
-  const [hits, setHits] = useState<DeflectionHit[]>([]);
-  const [dismissedHints, setDismissedHints] = useState(false);
-
-  useEffect(() => {
-    if (faqs.length === 0 || dismissedHints) return;
-
-    const timer = window.setTimeout(() => {
-      const text = `${title} ${description}`;
-
-      /*
-       * Keyword rules first, then the lexical match — and the order is the point.
-       *
-       * A rule is an admin saying „diese Artikel gehören zu diesem Wort", which is
-       * a stronger statement than a token overlap of 0.4. So the rules' articles
-       * head the list, and the lexical hits fill whatever room is left up to
-       * `DEFLECTION_LIMIT`.
-       *
-       * Deduplicated on the id: an article can be both named by a rule and found
-       * by the overlap, and the same question twice reads as a rendering bug.
-       */
-      const byKeyword = triage(text, triageRules)
-        .faqIds.map((id) => faqs.find((faq) => faq.id === id))
-        .filter((faq): faq is PortalFaq => faq !== undefined)
-        // Score 1: it was named, not measured. Nothing reads it here, but the
-        // shape has to match, and inventing a fraction would be a made-up number.
-        .map((faq) => ({ id: faq.id, question: faq.question, score: 1 }));
-
-      const lexical = suggestFaqs(text, faqs).filter(
-        (hit) => !byKeyword.some((named) => named.id === hit.id),
-      );
-
-      setHits([...byKeyword, ...lexical].slice(0, DEFLECTION_LIMIT));
-    }, 500);
-    return () => window.clearTimeout(timer);
-  }, [title, description, faqs, triageRules, dismissedHints]);
 
   const handleSend = async () => {
     if (!canSend) return;
@@ -236,7 +195,7 @@ export function ChatIntake({
               disabled={sending}
               // Tapping the selected pill clears it. A choice that cannot be taken
               // back is a trap on a field nobody was required to answer.
-              onClick={() => setCategory(selected ? null : entry.value)}
+              onClick={() => onCategoryChange(selected ? null : entry.value)}
               className={cn(
                 "h-9 rounded-full px-4 text-sm",
                 selected
@@ -291,7 +250,7 @@ export function ChatIntake({
           <Input
             id="intake-title"
             value={title}
-            onChange={(event) => setTitle(event.target.value)}
+            onChange={(event) => onTitleChange(event.target.value)}
             disabled={sending}
             maxLength={120}
             placeholder="Worum geht es? z. B. Drucker Etage 3 offline"
@@ -303,7 +262,7 @@ export function ChatIntake({
 
         <Textarea
           value={description}
-          onChange={(event) => setDescription(event.target.value)}
+          onChange={(event) => onDescriptionChange(event.target.value)}
           disabled={sending}
           rows={6}
           maxLength={4000}
@@ -335,8 +294,8 @@ export function ChatIntake({
                   disabled={sending}
                   aria-label={`${file.name} entfernen`}
                   onClick={() =>
-                    setFiles((current) =>
-                      current.filter((_, position) => position !== index),
+                    onFilesChange(
+                      files.filter((_, position) => position !== index),
                     )
                   }
                   className="size-5 rounded-full p-0 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
@@ -409,7 +368,7 @@ export function ChatIntake({
         ignores it can finish what they were doing without touching it.
       */}
       <AnimatePresence initial={false}>
-        {hits.length > 0 && !sending && (
+        {faqHits.length > 0 && !sending && (
           <motion.aside
             initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
@@ -432,13 +391,10 @@ export function ChatIntake({
                 variant="ghost"
                 size="sm"
                 aria-label="Vorschläge ausblenden"
-                onClick={() => {
-                  // Stays gone for this visit. Somebody who closed it has
-                  // answered the question, and re-offering on the next keystroke
-                  // is the nagging the feature is supposed to avoid.
-                  setDismissedHints(true);
-                  setHits([]);
-                }}
+                // Stays gone for this visit. Somebody who closed it has answered
+                // the question, and re-offering on the next keystroke is the
+                // nagging the feature is supposed to avoid.
+                onClick={onDismissHints}
                 className="size-6 shrink-0 rounded-full p-0 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               >
                 <XIcon className="size-3" strokeWidth={1.5} />
@@ -446,7 +402,7 @@ export function ChatIntake({
             </div>
 
             <ul className="grid gap-1">
-              {hits.map((hit) => (
+              {faqHits.map((hit) => (
                 <li key={hit.id}>
                   {/* A new tab, deliberately: the half-written ticket stays where
                       it is. Reading the article and losing the text would be the

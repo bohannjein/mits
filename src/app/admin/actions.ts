@@ -15,7 +15,7 @@ import { ROLE_LABELS, isRole } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
 import { isFeatureEnabled, setFeatureFlags } from "@/lib/features";
 import { ingestMailbox } from "@/lib/mail/ingest";
-import { saveFormSchema } from "@/lib/form-schemas";
+import { getFormSchema, saveFormSchema } from "@/lib/form-schemas";
 import {
   conditionCycles,
   danglingConditions,
@@ -846,6 +846,17 @@ export async function saveTriageRulesAction(
         ok: false,
         error: `Regel „${rule.title}“ zeigt auf eine Kategorie, die es nicht gibt.`,
       };
+    }
+
+    // Und dieselbe Frage für die vorgeschlagenen Formulare, aus demselben Grund:
+    // eine tote Id schlägt nichts vor, und die Maske meldete Erfolg.
+    for (const schemaId of rule.form_schema_ids) {
+      if (!getFormSchema(schemaId)) {
+        return {
+          ok: false,
+          error: `Regel „${rule.title}“ zeigt auf ein Formular, das es nicht gibt.`,
+        };
+      }
     }
   }
 

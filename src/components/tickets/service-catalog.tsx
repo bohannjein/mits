@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowLeftIcon, ChevronRightIcon } from "lucide-react";
+import { ArrowLeftIcon, ChevronRightIcon, WandSparklesIcon } from "lucide-react";
 
 import { SchemaForm } from "@/components/forms/schema-form";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { carryIntoSchema, type CarryText } from "@/lib/forms/carry-over";
 import { iconFor } from "@/lib/icons";
 import { groupByCategory } from "@/lib/mock-schemas";
 import { useIntakeStore } from "@/lib/store/intake-store";
@@ -27,10 +29,21 @@ export function ServiceCatalog({
   onSubmit,
   /** Chosen once above the tabs; forwarded so every mode stamps the same site. */
   locationId = null,
+  /**
+   * Free-text the reporter had already written when they took a form suggestion.
+   *
+   * `null` for anybody who opened a form from the tiles — prefilling *that* path
+   * from text typed in another tab would put words into a form nobody connected to
+   * them. See `lib/forms/carry-over.ts` for what lands where.
+   */
+  carryText = null,
+  onClearCarry,
 }: {
   schemas: MITSFormSchema[];
   onSubmit: (draft: MITSTicketDraft) => void | Promise<void>;
   locationId?: string | null;
+  carryText?: CarryText | null;
+  onClearCarry?: () => void;
 }) {
   const selectedSchemaId = useIntakeStore((state) => state.selectedSchemaId);
   const selectSchema = useIntakeStore((state) => state.selectSchema);
@@ -38,6 +51,11 @@ export function ServiceCatalog({
 
   if (selected) {
     const Icon = iconFor(selected.icon);
+    const carried = carryText ? carryIntoSchema(selected, carryText) : {};
+    // Keyed on whether anything actually landed, not on whether a snapshot
+    // exists: a form without a free-text field carries nothing, and a notice
+    // claiming otherwise would be a claim about something that did not happen.
+    const carriedFields = Object.keys(carried).length;
 
     return (
       <div className="grid gap-6">
@@ -60,18 +78,36 @@ export function ServiceCatalog({
           </Badge>
         </div>
 
+        {carriedFields > 0 && (
+          /* No Gemini sheen, unlike the AI proposal: no model touched this, the
+             reporter's own words were moved. */
+          <Alert className="rounded-2xl border-border px-4 py-3">
+            <WandSparklesIcon strokeWidth={1.5} />
+            <AlertTitle>Aus dem Geschriebenen übernommen</AlertTitle>
+            <AlertDescription>
+              Bitte prüfen und die restlichen Felder ergänzen.
+            </AlertDescription>
+          </Alert>
+        )}
+
         <SchemaForm
           key={selected.id}
           schema={selected}
           source="wizard"
           onSubmit={onSubmit}
+          initialPayload={carried}
           locationId={locationId}
           secondaryAction={
             <Button
               type="button"
               variant="ghost"
               className="h-11 rounded-full px-4"
-              onClick={() => selectSchema(null)}
+              onClick={() => {
+                // The snapshot goes with the form. Opening another one from the
+                // tiles afterwards must not arrive prefilled.
+                onClearCarry?.();
+                selectSchema(null);
+              }}
             >
               <ArrowLeftIcon strokeWidth={1.5} />
               Katalog

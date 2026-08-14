@@ -19,14 +19,23 @@ import { ChatIntake } from "@/components/tickets/chat-intake";
 import { TicketReceipt } from "@/components/tickets/draft-receipt";
 import { IntentTiles } from "@/components/tickets/intent-tiles";
 import { LocationPicker } from "@/components/tickets/location-picker";
+import { ProcessSuggestions } from "@/components/tickets/process-suggestions";
 import { ServiceCatalog } from "@/components/tickets/service-catalog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { CarryText } from "@/lib/forms/carry-over";
+import {
+  DEFLECTION_LIMIT,
+  suggestFaqs,
+  type DeflectionHit,
+} from "@/lib/services/ai/deflection";
+import { hasFormSuggestions, triage } from "@/lib/services/auto-triage";
 import { useIntakeStore } from "@/lib/store/intake-store";
 import { cn } from "@/lib/utils";
 import {
   MITSTicketSchema,
+  type IntakeCategory,
   type MITSCategoryNode,
   type MITSFormSchema,
   type MITSLocation,
@@ -112,12 +121,13 @@ export function TriModalContainer({
   /** The category tree, for the intent tiles. Empty hides them entirely. */
   categories = [],
   /**
-   * Keyword rules, for the FAQ hints.
+   * Keyword rules, behind the FAQ hints *and* the form suggestions beside the
+   * free-text field.
    *
    * Sent whole to the browser like the FAQ beside it, and for the same reason: the
    * matching runs on every pause in typing, so a request per keystroke-burst is
-   * not an option. They contain no secrets — a keyword and a category name are
-   * both things the reporter is about to be shown anyway.
+   * not an option. They contain no secrets — a keyword, a category name and a form
+   * title are all things the reporter is about to be shown anyway.
    */
   triageRules = [],
   /**
@@ -192,6 +202,7 @@ export function TriModalContainer({
     ? wanted
     : tabs[0]?.value;
   const dismissDraft = useIntakeStore((state) => state.dismissDraft);
+  const openSchema = useIntakeStore((state) => state.openSchema);
   const [error, setError] = useState<string | null>(null);
   /** The persisted ticket, shown as a confirmation instead of the old JSON dump. */
   const [created, setCreated] = useState<MITSTicket | null>(null);
@@ -210,6 +221,133 @@ export function TriModalContainer({
     schemaId: string;
     payload: Record<string, unknown>;
   } | null>(null);
+
+  /*
+   * The free-text composer's four answers, held here rather than in `ChatIntake`.
+   *
+   * Radix unmounts the inactive tab panel, so state inside that component died on
+   * every tab switch — and a form suggestion beside the field switches tabs on
+   * purpose, which would have made it destroy the very text it matched against.
+   * The suggestion column also needs the same words, and it is a sibling of the
+   * card: what two siblings share cannot live in either.
+   *
+   * Not in `useIntakeStore` — the store is a module singleton and shared across
+   * requests on the server, so somebody's half-written sentence would surface in
+   * another visitor's first render. Same reason `initialMode` is a prop.
+   */
+  const [freeTitle, setFreeTitle] = useState("");
+  const [freeDescription, setFreeDescription] = useState("");
+  const [freeCategory, setFreeCategory] = useState<IntakeCategory | null>(null);
+  const [freeFiles, setFreeFiles] = useState<File[]>([]);
+
+  /** Matched articles and forms, plus the two "leave me alone" switches. */
+  const [faqHits, setFaqHits] = useState<DeflectionHit[]>([]);
+  const [formHits, setFormHits] = useState<MITSFormSchema[]>([]);
+  const [dismissedHints, setDismissedHints] = useState(false);
+  const [dismissedForms, setDismissedForms] = useState(false);
+
+  /**
+   * The text a taken suggestion carries into the catalogue form.
+   *
+   * A snapshot rather than a read of the four values above: it is answered at the
+   * moment of the click, and the composer keeps its text afterwards so „zurück zum
+   * Katalog" and a tab switch back both find it where it was.
+   */
+  const [carry, setCarry] = useState<CarryText | null>(null);
+
+  /*
+   * Whether a second column exists at all — same expression the page uses to pick
+   * its width, hence the shared helper. Without the gate the grid would squeeze the
+   * composer into two thirds of a page that never widened.
+   */
+  const railPossible = hasFormSuggestions(
+    triageRules,
+    catalogSchemas.map((schema) => schema.id),
+  );
+
+  /*
+   * Both suggestion lists, recomputed after a pause in typing.
+   *
+   * The matching is a set intersection over a few dozen entries, so debouncing is
+   * not about cost — it is about not shuffling links and cards underneath somebody
+   * mid-sentence. 500 ms is long enough that the area only changes when they stop
+   * to think.
+   *
+   * Held in state rather than derived during render for exactly that reason:
+   * deriving would update on every keystroke and undo the debounce.
+   */
+  useEffect(() => {
+    const wantsFaq = faqs.length > 0 && !dismissedHints;
+    const wantsForms = railPossible && !dismissedForms;
+    if (!wantsFaq && !wantsForms) return;
+
+    const timer = window.setTimeout(() => {
+      const text = `${freeTitle} ${freeDescription}`;
+      const outcome = triage(text, triageRules);
+
+      if (wantsFaq) {
+        /*
+         * Keyword rules first, then the lexical match — and the order is the point.
+         *
+         * A rule is an admin saying „diese Artikel gehören zu diesem Wort", which
+         * is a stronger statement than a token overlap of 0.4. So the rules'
+         * articles head the list, and the lexical hits fill whatever room is left
+         * up to `DEFLECTION_LIMIT`.
+         *
+         * Deduplicated on the id: an article can be both named by a rule and found
+         * by the overlap, and the same question twice reads as a rendering bug.
+         */
+        const byKeyword = outcome.faqIds
+          .map((id) => faqs.find((faq) => faq.id === id))
+          .filter((faq): faq is PortalFaq => faq !== undefined)
+          // Score 1: it was named, not measured. Nothing reads it here, but the
+          // shape has to match, and inventing a fraction would be a made-up number.
+          .map((faq) => ({ id: faq.id, question: faq.question, score: 1 }));
+
+        const lexical = suggestFaqs(text, faqs).filter(
+          (hit) => !byKeyword.some((named) => named.id === hit.id),
+        );
+
+        setFaqHits([...byKeyword, ...lexical].slice(0, DEFLECTION_LIMIT));
+      }
+
+      if (wantsForms) {
+        // Resolved against what this role may actually see. An id the catalogue
+        // does not carry falls out silently — a suggestion nobody can open is
+        // worse than one fewer suggestion.
+        setFormHits(
+          outcome.formSchemaIds
+            .map((id) => catalogSchemas.find((schema) => schema.id === id))
+            .filter((schema): schema is MITSFormSchema => schema !== undefined),
+        );
+      }
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [
+    freeTitle,
+    freeDescription,
+    faqs,
+    triageRules,
+    catalogSchemas,
+    railPossible,
+    dismissedHints,
+    dismissedForms,
+  ]);
+
+  /**
+   * Take a suggestion: snapshot the text, then open that form.
+   *
+   * `openSchema` is one store write on purpose — `setMode` clears the selected
+   * schema, so mode and selection set separately would land on the tile grid.
+   */
+  const takeSuggestion = (schemaId: string) => {
+    setCarry({
+      title: freeTitle,
+      description: freeDescription,
+      files: freeFiles,
+    });
+    openSchema(schemaId);
+  };
 
   /**
    * Persist the draft. The owner is not sent — the API takes it from the session,
@@ -294,6 +432,15 @@ export function TriModalContainer({
           setCreated(null);
           setAiProposal(null);
           dismissDraft();
+          // The next ticket starts empty. Carrying the sent text into it would
+          // offer a second copy of something already filed.
+          setFreeTitle("");
+          setFreeDescription("");
+          setFreeCategory(null);
+          setFreeFiles([]);
+          setCarry(null);
+          setFormHits([]);
+          setFaqHits([]);
         }}
       />
     );
@@ -321,6 +468,27 @@ export function TriModalContainer({
   }
 
   return (
+    /*
+     * Two columns, and the first one keeps the width the page always had.
+     *
+     * The page caps itself at 70rem when a rail is possible, so `1fr` beside a
+     * 20rem column and a 2rem gap resolves to exactly the 48rem the composer has
+     * always had — it must not narrow because a column appeared beside it. `1fr`
+     * rather than `minmax(0,48rem)`: a track with a fixed maximum overflows
+     * instead of shrinking, and the sum would break out of the page on the first
+     * viewport too narrow for it.
+     *
+     * The column is *reserved* rather than conditional — one that springs into
+     * existence on the first keyword would shove the composer sideways
+     * mid-sentence, which costs more than empty space does. Without a rule that
+     * names a form the page stays single-column and nothing here applies.
+     */
+    <div
+      className={cn(
+        railPossible &&
+          "xl:grid xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start xl:gap-8",
+      )}
+    >
     <Tabs
       value={mode}
       onValueChange={(value) => setMode(value as TicketSource)}
@@ -414,11 +582,21 @@ export function TriModalContainer({
                 schemaId={quickTicketSchema.id}
                 onSubmit={handleSubmit}
                 greetingName={greetingName}
-                faqs={faqs}
-                // The keyword path into the same hint area: „Notebook" pulls the
-                // articles an admin attached to that word, where the lexical
-                // match only finds what happens to share vocabulary.
-                triageRules={triageRules}
+                title={freeTitle}
+                description={freeDescription}
+                category={freeCategory}
+                files={freeFiles}
+                onTitleChange={setFreeTitle}
+                onDescriptionChange={setFreeDescription}
+                onCategoryChange={setFreeCategory}
+                onFilesChange={setFreeFiles}
+                // Matched above, in the same debounce as the form suggestions —
+                // both answer the same question about the same words.
+                faqHits={faqHits}
+                onDismissHints={() => {
+                  setDismissedHints(true);
+                  setFaqHits([]);
+                }}
               />
             </TabPanel>
           </TabsContent>
@@ -430,6 +608,11 @@ export function TriModalContainer({
                 schemas={catalogSchemas}
                 onSubmit={handleSubmit}
                 locationId={locationId}
+                // Only set when somebody arrived here from a suggestion. Browsing
+                // the tiles by hand must not silently prefill a form from text
+                // typed in another tab.
+                carryText={carry}
+                onClearCarry={() => setCarry(null)}
               />
             </TabPanel>
           </TabsContent>
@@ -459,6 +642,28 @@ export function TriModalContainer({
           </TabsContent>
       </FormOptionsProvider>
     </Tabs>
+
+      {/*
+        The second column, and only over the free-text tab.
+
+        The catalogue tab is the same list in full, so suggesting three of its
+        entries beside it would be a shortcut into where somebody already is; the
+        AI tab does its own proposing. Under `xl` there is no column and this drops
+        into the normal flow below the composer.
+      */}
+      {railPossible && mode === "legacy" && (
+        <div className="mt-6 xl:mt-0">
+          <ProcessSuggestions
+            schemas={formHits}
+            onOpen={takeSuggestion}
+            onDismiss={() => {
+              setDismissedForms(true);
+              setFormHits([]);
+            }}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 

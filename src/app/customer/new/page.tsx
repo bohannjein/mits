@@ -10,8 +10,10 @@ import { TriModalContainer } from "@/components/tickets/tri-modal-container";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { CUSTOMER_HOME } from "@/lib/auth/roles";
+import { cn } from "@/lib/utils";
 import { requireArea, requireUser } from "@/lib/auth/session";
 import { getFeatureFlags } from "@/lib/features";
+import { hasFormSuggestions } from "@/lib/services/auto-triage";
 import { listCategoryTree } from "@/lib/ticket-categories";
 import { listTriageRules } from "@/lib/triage-rules";
 import {
@@ -82,6 +84,26 @@ export default async function NewTicketPage({
   const flags = getFeatureFlags();
 
   /*
+   * Formularvorschläge neben dem Schreibfeld: Regeln lesen, und daraus die Breite.
+   *
+   * Die Regeln hängen am Modul-Schalter wie bisher. Ob daneben eine zweite Spalte
+   * *entsteht*, ist eine engere Frage — es braucht eine aktive Regel, die ein
+   * Formular nennt, das diese Rolle auch sehen darf. Ohne das bleibt die Seite
+   * einspaltig und Zeichen für Zeichen die alte; dieselbe Entscheidung wie
+   * „`max-w-7xl` nur mit Randspalten" auf der Melder-Ticketseite.
+   *
+   * `hasFormSuggestions` statt einer Bedingung hier, weil `TriModalContainer` im
+   * Browser dieselbe Frage beantworten muss: zwei Kopien wären zwei Antworten auf
+   * „gibt es eine zweite Spalte", und die Uneinigkeit rendert als gequetschtes
+   * Schreibfeld.
+   */
+  const triageRules = flags.feature_smart_routing ? listTriageRules() : [];
+  const withRail = hasFormSuggestions(
+    triageRules,
+    catalogSchemas.map((schema) => schema.id),
+  );
+
+  /*
    * Choices for the `location` and `user` field widgets. Loaded here rather than
    * baked into the schemas, so a new branch or a new colleague shows up without
    * anyone editing a form.
@@ -106,7 +128,21 @@ export default async function NewTicketPage({
     <>
       <AppHeader />
       <main className="flex flex-1 flex-col items-center px-6 py-12">
-        <div className="w-full max-w-3xl">
+        {/*
+          70rem = 48rem erste Spalte + 2rem Abstand + 20rem Randspalte, also
+          genau die Summe des Rasters darunter. Ein größerer Deckel ließe rechts
+          Schlupf stehen, den keine der beiden Spalten aufnimmt — die Seite sähe
+          dann außermittig aus.
+
+          Ab `xl` und nicht ab `lg`: bei 1024 px bleiben nach Innenabstand keine
+          70rem übrig, und die erste Spalte müsste schmaler werden als sie heute
+          ist. Darunter steht die Randspalte unter dem Schreibfeld.
+        */}
+        <div className={cn("w-full max-w-3xl", withRail && "xl:max-w-[70rem]")}>
+          {/* Kopfblock und Banner bleiben auf der Breite der ersten Spalte und
+              links ausgerichtet, sonst zentrierte sich die Überschrift über
+              beiden Spalten und stünde neben dem Schreibfeld statt darüber. */}
+          <div className={cn(withRail && "xl:max-w-3xl")}>
           {announcements.length > 0 && (
             <div className="mb-8">
               <AnnouncementBanner announcements={announcements} />
@@ -138,6 +174,7 @@ export default async function NewTicketPage({
           </div>
 
           <Separator className="my-8 bg-border" />
+          </div>
 
           <TriModalContainer
             quickTicketSchema={quickTicketSchema}
@@ -165,10 +202,11 @@ export default async function NewTicketPage({
               isAIFeatureOn(getAISettings(), "deflection") ? getPortalFaqs() : []
             }
             /*
-             * The intent tiles, and the keyword rules behind the hints.
+             * The intent tiles, and the keyword rules behind the hints and the
+             * form suggestions.
              *
              * Both empty when their module is off, which is the whole off switch —
-             * `IntentTiles` renders null on an empty tree and `ChatIntake` skips
+             * `IntentTiles` renders null on an empty tree and the container skips
              * the keyword half on an empty rule list. No conditional markup here,
              * so there is no branch that can render half of the feature.
              *
@@ -179,7 +217,7 @@ export default async function NewTicketPage({
             categories={
               flags.feature_ticket_categories ? listCategoryTree() : []
             }
-            triageRules={flags.feature_smart_routing ? listTriageRules() : []}
+            triageRules={triageRules}
           />
         </div>
       </main>

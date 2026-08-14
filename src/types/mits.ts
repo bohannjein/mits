@@ -4282,10 +4282,11 @@ export function isReminderPreset(value: unknown): value is ReminderPreset {
    it moved. `services/ai/routing.ts` keeps doing what it did: it suggests, in a
    tag, and never writes a category.
 
-   The same rule also carries the FAQ entries worth offering while somebody is
-   still typing the word. One list, because it is one statement about a word: if
-   "Notebook" means Hardware/Notebooks, the articles about notebooks are the ones
-   to show — maintaining that twice is how the two drift apart.
+   The same rule also carries the FAQ entries and the catalogue forms worth
+   offering while somebody is still typing the word. One list, because it is one
+   statement about a word: if "Notebook" means Hardware/Notebooks, the articles
+   and the form about notebooks are the ones to show — maintaining that in three
+   places is how the three drift apart.
    ────────────────────────────────────────────────────────────────────────── */
 
 export const TriageRuleSchema = z.object({
@@ -4312,6 +4313,19 @@ export const TriageRuleSchema = z.object({
   priority: z.union([TicketPriority, z.literal("")]).default(""),
   /** FAQ ids offered in the intake while the words are being typed. */
   faq_ids: z.array(z.string().min(1)).max(10).default([]),
+  /**
+   * Catalogue forms offered beside the free-text field while the words are typed.
+   *
+   * The third answer about one set of words, and the same shape as `faq_ids`
+   * above for the same reason: „Notebook" means the notebook articles *and* the
+   * notebook request form, and splitting that across two settings masks is how
+   * the two drift apart.
+   *
+   * `.default([])` is the entire migration. The rules are a JSON blob in
+   * `mits_setting`, read whole and written whole, so a stored rule from before
+   * this field still parses.
+   */
+  form_schema_ids: z.array(z.string().min(1)).max(10).default([]),
   order_index: z.number().int().nonnegative().default(0),
   enabled: z.boolean().default(true),
 });
