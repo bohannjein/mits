@@ -134,15 +134,22 @@ export default async function NewTicketPage({
           Schlupf stehen, den keine der beiden Spalten aufnimmt — die Seite sähe
           dann außermittig aus.
 
-          Ab `xl` und nicht ab `lg`: bei 1024 px bleiben nach Innenabstand keine
-          70rem übrig, und die erste Spalte müsste schmaler werden als sie heute
-          ist. Darunter steht die Randspalte unter dem Schreibfeld.
+          Der Deckel greift erst ab `xl`; zwischen `lg` und `xl` ist das Fenster
+          selbst der Deckel, und die erste Spalte gibt dort Breite ab. Darunter
+          steht die Randspalte unter dem Schreibfeld.
         */}
-        <div className={cn("w-full max-w-3xl", withRail && "xl:max-w-[70rem]")}>
-          {/* Kopfblock und Banner bleiben auf der Breite der ersten Spalte und
-              links ausgerichtet, sonst zentrierte sich die Überschrift über
-              beiden Spalten und stünde neben dem Schreibfeld statt darüber. */}
-          <div className={cn(withRail && "xl:max-w-3xl")}>
+        <div className={cn("w-full max-w-3xl", withRail && "lg:max-w-none xl:max-w-[70rem]")}>
+          {/*
+            Kopfblock und Banner enden dort, wo die erste Spalte endet.
+
+            Als Rand und nicht als `max-w-3xl`: zwischen `lg` und `xl` ist die
+            erste Spalte *schmaler* als 48rem, ein Deckel auf 48rem ließe den Knopf
+            „Meine Tickets" also rechts über das Schreibfeld hinaus in die
+            Randspalte ragen. Der Rand ist Randspalte plus Abstand — dieselbe
+            Rechnung, die das Raster darunter macht, und damit exakt dessen erste
+            Spalte.
+          */}
+          <div className={cn(withRail && "lg:mr-[18rem] xl:mr-[22rem]")}>
           {announcements.length > 0 && (
             <div className="mb-8">
               <AnnouncementBanner announcements={announcements} />

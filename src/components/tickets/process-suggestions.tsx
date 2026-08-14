@@ -8,7 +8,11 @@ import { iconFor } from "@/lib/icons";
 import type { MITSFormSchema } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
-   „Dafür gibt es ein Formular" — beside the free-text field, while it is written.
+   „Passende Prozesse" — beside the text field, while the text is written.
+
+   The heading says Prozess and the code says `MITSFormSchema`, deliberately: this
+   is the word the people here use for the thing a reporter picks. See
+   `.claude/rules/categories.md`.
 
    The catalogue is one tab away and always has been, which helps exactly the
    people who already know it exists. Everybody else describes their problem in
@@ -48,16 +52,16 @@ export function ProcessSuggestions({
           animate={{ opacity: 1, y: 0 }}
           exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
           transition={ENTRANCE}
-          aria-label="Passende Formulare"
+          aria-label="Passende Prozesse"
           className="grid content-start gap-3"
         >
           <div className="flex items-center gap-2">
-            <h2 className="label-industrial flex-1">Passende Formulare</h2>
+            <h2 className="label-industrial flex-1">Passende Prozesse</h2>
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              aria-label="Formularvorschläge ausblenden"
+              aria-label="Prozessvorschläge ausblenden"
               // Stays gone for this visit, same rule as the FAQ hints: somebody
               // who closed it has answered the question, and re-offering on the
               // next keystroke is the nagging this is supposed to avoid.

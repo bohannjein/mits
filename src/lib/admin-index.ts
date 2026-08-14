@@ -255,7 +255,7 @@ export function collectAdminSummaries(): Record<string, AdminSummary> {
    *
    * „Abgeschaltet ist neutral" gilt für ein Modul, das niemand angefasst hat.
    * Hier ist der Fall spiegelbildlich: jemand hat Stichworte, Kategorien und
-   * Formularvorschläge eingetragen, und der Schalter zwei Einträge weiter oben
+   * Prozessvorschläge eingetragen, und der Schalter zwei Einträge weiter oben
    * lässt davon nichts wirken. Der Desk sagte dazu „3 Regeln" — also genau das,
    * was jemand liest, der sich fragt, warum nichts passiert.
    */

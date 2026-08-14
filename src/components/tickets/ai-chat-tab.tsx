@@ -58,11 +58,25 @@ interface ChatMessage {
 export function AiChatTab({
   schemas,
   onAccept,
+  /**
+   * Reports what the person has written, for the keyword rules beside this tab.
+   *
+   * Debounced here rather than in the container, because the container holds it in
+   * state: an update per keystroke would re-render this whole tab — message list,
+   * thumbnails and all — while somebody is typing into it.
+   *
+   * Sent messages *plus* the composer, not the composer alone. `send` clears the
+   * box, and a suggestion that vanished the moment the question was asked would be
+   * gone exactly when the answer arrives. The assistant's turns are left out: the
+   * rules answer „what did this person say".
+   */
+  onMatchTextChange,
 }: {
   /** The schemas in effect, so the preview can resolve what the router picked. */
   schemas: MITSFormSchema[];
   /** Hand the vetted proposal to the container, which opens it in <SchemaForm>. */
   onAccept: (schemaId: string, payload: Record<string, unknown>) => void;
+  onMatchTextChange?: (text: string) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -87,6 +101,21 @@ export function AiChatTab({
       urls.clear();
     };
   }, []);
+
+  useEffect(() => {
+    if (!onMatchTextChange) return;
+
+    const written = messages
+      .filter((message) => message.role === "user")
+      .map((message) => message.text)
+      .join(" ");
+
+    const timer = window.setTimeout(
+      () => onMatchTextChange(`${written} ${input}`.trim()),
+      400,
+    );
+    return () => window.clearTimeout(timer);
+  }, [messages, input, onMatchTextChange]);
 
   const nextId = () => {
     messageCounter.current += 1;

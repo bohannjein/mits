@@ -848,13 +848,13 @@ export async function saveTriageRulesAction(
       };
     }
 
-    // Und dieselbe Frage für die vorgeschlagenen Formulare, aus demselben Grund:
+    // Und dieselbe Frage für die vorgeschlagenen Prozesse, aus demselben Grund:
     // eine tote Id schlägt nichts vor, und die Maske meldete Erfolg.
     for (const schemaId of rule.form_schema_ids) {
       if (!getFormSchema(schemaId)) {
         return {
           ok: false,
-          error: `Regel „${rule.title}“ zeigt auf ein Formular, das es nicht gibt.`,
+          error: `Regel „${rule.title}“ zeigt auf einen Prozess, den es nicht gibt.`,
         };
       }
     }

@@ -40,7 +40,7 @@ export default async function AdminRoutingPage() {
             </h1>
             <p className="mt-2 max-w-2xl text-muted-foreground">
               Stichworte ordnen eingehende Tickets einer Kategorie zu und zeigen
-              Anwendern beim Schreiben passende FAQ-Einträge und Formulare.
+              Anwendern beim Schreiben passende FAQ-Einträge und Prozesse.
             </p>
           </div>
 

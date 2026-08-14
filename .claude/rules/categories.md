@@ -152,7 +152,14 @@ Schwelle zu reißen, oder nicht.
   an `feature_smart_routing`. Ein Admin, der Stichwort-Artikel will und kein
   lexikalisches Raten, bekommt genau das.
 
-## Und Stichworte ziehen Formulare
+## Und Stichworte ziehen Prozesse
+
+**In der Oberfläche heißt es „Prozess", im Code weiter `form_schema_ids` und
+`MITSFormSchema`.** Kein Versehen: der Melder wählt einen Vorgang, das Datenmodell
+kennt ein Formular, und die Spalte trägt das Wort, mit dem die Leute hier über die
+Sache reden. Der Formular-Builder heißt weiterhin so — wer beide Masken sieht, sieht
+zwei Wörter für eine Sache. Wenn das stört, ist es eine Umbenennung an den
+Beschriftungen, nicht am Schema.
 
 `form_schema_ids` an der Regel, die dritte Antwort über dieselben Worte. Der
 Katalog liegt einen Reiter weiter und hilft damit genau denen, die schon wissen,
@@ -174,13 +181,31 @@ deshalb **nach** den Worten statt davor.
   für zwei Aufrufer, weil `/customer/new` daraus seine Breite nimmt und
   `TriModalContainer` sein Raster; zwei Kopien wären zwei Antworten auf „gibt es
   eine zweite Spalte", und die Uneinigkeit rendert als gequetschtes Schreibfeld.
-- **Ab `xl`, darunter unter dem Feld.** Bei 1024 px bleiben nach Innenabstand keine
-  70 rem (48 + 2 + 20), die erste Spalte müsste also schmaler werden als sie heute
-  ist. `minmax(0,1fr)` und nicht `minmax(0,48rem)`: eine Spur mit festem Maximum
-  schrumpft nicht, sie läuft über.
-- **Nur über dem Freitext-Reiter.** Der Katalog *ist* dieselbe Liste in voller
-  Länge, drei seiner Einträge daneben zu zeigen wäre eine Abkürzung dorthin, wo man
-  schon ist. Der KI-Reiter schlägt selbst vor.
+- **Ab `lg`, darunter unter dem Feld — und die Randspalte ist dort schmaler.**
+  Bei 1024 px bleiben nach Innenabstand keine 70 rem (48 + 2 + 20), die erste Spalte
+  gibt also Breite ab; 16 rem statt 20 rem für die Randspalte ist der Unterschied
+  zwischen 43 rem und 39 rem Schreibfeld. `minmax(0,1fr)` und nicht
+  `minmax(0,48rem)`: eine Spur mit festem Maximum schrumpft nicht, sie läuft über.
+- **Der Kopfblock der Seite endet per `mr`, nicht per `max-w-3xl`.** Zwischen `lg`
+  und `xl` ist die erste Spalte schmaler als 48 rem — ein Deckel auf 48 rem ließe
+  den Knopf „Meine Tickets" rechts in die Randspalte ragen. Der Rand ist
+  Randspalte plus Abstand, also dieselbe Rechnung, die das Raster macht.
+- **Über beiden Reitern, in denen geschrieben wird.** Nicht über dem Katalog: der
+  *ist* dieselbe Liste in voller Länge, drei seiner Einträge daneben wären eine
+  Abkürzung dorthin, wo man schon steht. Der KI-Reiter bekommt sie — ein
+  Modellvorschlag und eine Stichwort-Regel sind zwei verschiedene Aussagen, eine
+  geraten und eine von einem Admin aufgeschrieben, und die Regel steht auch da,
+  während das Modell noch rechnet.
+- **`AiChatTab` meldet seinen Text selbst, debounced auf 400 ms.** Der Container
+  hält ihn in State, eine Meldung pro Tastendruck würde also den ganzen Reiter samt
+  Nachrichtenliste und Vorschaubildern neu rendern, während jemand hineintippt.
+  Gemeldet werden **gesendete Nachrichten plus Eingabefeld**: `send` leert das Feld,
+  und ein Vorschlag, der mit dem Abschicken der Frage verschwindet, wäre genau dann
+  weg, wenn die Antwort kommt. Die Turns des Assistenten bleiben draußen — die
+  Regeln beantworten „was hat dieser Mensch gesagt".
+- **Aus dem KI-Reiter wandert alles als Beschreibung mit, kein Titel.** Ein Kasten,
+  ein Text; den ersten Satz als Überschrift abzutrennen wäre erfunden. Die Bilder
+  bleiben zurück, sie gingen an die Bildanalyse und nicht in die Dateiablage.
 - **Der Text wandert mit** (`lib/forms/carry-over.ts`). Ohne das wäre der Vorschlag
   eine Bestrafung fürs Anklicken: zwei Sätze und ein Screenshot weg, und der
   Nächste lernt, nicht zu klicken. Was wohin geht, entscheidet `resolveWidget` über

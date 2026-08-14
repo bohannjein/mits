@@ -240,6 +240,16 @@ export function TriModalContainer({
   const [freeCategory, setFreeCategory] = useState<IntakeCategory | null>(null);
   const [freeFiles, setFreeFiles] = useState<File[]>([]);
 
+  /**
+   * What the person wrote in the AI tab, reported by `AiChatTab` on a pause.
+   *
+   * Its own state and not the four above: that tab has one text box, no title and
+   * no category, and its images go to the vision model rather than into the file
+   * store. Merging the two would mean deciding which half of a free-text ticket a
+   * chat prompt is.
+   */
+  const [aiText, setAiText] = useState("");
+
   /** Matched articles and forms, plus the two "leave me alone" switches. */
   const [faqHits, setFaqHits] = useState<DeflectionHit[]>([]);
   const [formHits, setFormHits] = useState<MITSFormSchema[]>([]);
@@ -265,6 +275,10 @@ export function TriModalContainer({
     catalogSchemas.map((schema) => schema.id),
   );
 
+  /** The words the rules see, from whichever tab is doing the writing. */
+  const matchText =
+    mode === "ai_chat" ? aiText : `${freeTitle} ${freeDescription}`;
+
   /*
    * Both suggestion lists, recomputed after a pause in typing.
    *
@@ -277,13 +291,17 @@ export function TriModalContainer({
    * deriving would update on every keystroke and undo the debounce.
    */
   useEffect(() => {
-    const wantsFaq = faqs.length > 0 && !dismissedHints;
-    const wantsForms = railPossible && !dismissedForms;
+    // The FAQ hints live inside the free-text card; the rail stands beside both
+    // text-carrying tabs. Neither wants to be matched against the other's words.
+    const wantsFaq = mode === "legacy" && faqs.length > 0 && !dismissedHints;
+    const wantsForms =
+      railPossible &&
+      !dismissedForms &&
+      (mode === "legacy" || mode === "ai_chat");
     if (!wantsFaq && !wantsForms) return;
 
     const timer = window.setTimeout(() => {
-      const text = `${freeTitle} ${freeDescription}`;
-      const outcome = triage(text, triageRules);
+      const outcome = triage(matchText, triageRules);
 
       if (wantsFaq) {
         /*
@@ -304,7 +322,7 @@ export function TriModalContainer({
           // shape has to match, and inventing a fraction would be a made-up number.
           .map((faq) => ({ id: faq.id, question: faq.question, score: 1 }));
 
-        const lexical = suggestFaqs(text, faqs).filter(
+        const lexical = suggestFaqs(matchText, faqs).filter(
           (hit) => !byKeyword.some((named) => named.id === hit.id),
         );
 
@@ -324,8 +342,8 @@ export function TriModalContainer({
     }, 500);
     return () => window.clearTimeout(timer);
   }, [
-    freeTitle,
-    freeDescription,
+    matchText,
+    mode,
     faqs,
     triageRules,
     catalogSchemas,
@@ -339,13 +357,18 @@ export function TriModalContainer({
    *
    * `openSchema` is one store write on purpose — `setMode` clears the selected
    * schema, so mode and selection set separately would land on the tile grid.
+   *
+   * From the AI tab the whole prompt is the description and there is no title: that
+   * tab has one box, and splitting its first sentence off as a heading would be an
+   * invention. Its images stay behind — they were uploaded to the vision model, not
+   * to the file store.
    */
   const takeSuggestion = (schemaId: string) => {
-    setCarry({
-      title: freeTitle,
-      description: freeDescription,
-      files: freeFiles,
-    });
+    setCarry(
+      mode === "ai_chat"
+        ? { title: "", description: aiText, files: [] }
+        : { title: freeTitle, description: freeDescription, files: freeFiles },
+    );
     openSchema(schemaId);
   };
 
@@ -438,6 +461,7 @@ export function TriModalContainer({
           setFreeDescription("");
           setFreeCategory(null);
           setFreeFiles([]);
+          setAiText("");
           setCarry(null);
           setFormHits([]);
           setFaqHits([]);
@@ -471,22 +495,26 @@ export function TriModalContainer({
     /*
      * Two columns, and the first one keeps the width the page always had.
      *
-     * The page caps itself at 70rem when a rail is possible, so `1fr` beside a
-     * 20rem column and a 2rem gap resolves to exactly the 48rem the composer has
-     * always had — it must not narrow because a column appeared beside it. `1fr`
-     * rather than `minmax(0,48rem)`: a track with a fixed maximum overflows
-     * instead of shrinking, and the sum would break out of the page on the first
-     * viewport too narrow for it.
+     * The page caps itself at 70rem when a rail is possible, so at `xl` the `1fr`
+     * beside a 20rem column and a 2rem gap resolves to exactly the 48rem the
+     * composer has always had. `1fr` rather than `minmax(0,48rem)`: a track with a
+     * fixed maximum overflows instead of shrinking, and the sum would break out of
+     * the page on the first viewport too narrow for it.
+     *
+     * **Two column widths, and that is what makes `lg` bearable.** At 1024px there
+     * are about 61rem to divide, so the composer *does* give up room — 16rem
+     * instead of 20rem for the rail is the difference between a 43rem and a 39rem
+     * composer. The cards hold a title and two lines either way.
      *
      * The column is *reserved* rather than conditional — one that springs into
      * existence on the first keyword would shove the composer sideways
      * mid-sentence, which costs more than empty space does. Without a rule that
-     * names a form the page stays single-column and nothing here applies.
+     * names a process the page stays single-column and nothing here applies.
      */
     <div
       className={cn(
         railPossible &&
-          "xl:grid xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start xl:gap-8",
+          "lg:grid lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-start lg:gap-8 xl:grid-cols-[minmax(0,1fr)_20rem]",
       )}
     >
     <Tabs
@@ -636,6 +664,9 @@ export function TriModalContainer({
                   onAccept={(schemaId, payload) =>
                     setAiProposal({ schemaId, payload })
                   }
+                  // The setter itself, so the effect over there does not re-arm on
+                  // every render of this component.
+                  onMatchTextChange={setAiText}
                 />
               )}
             </TabPanel>
@@ -644,15 +675,19 @@ export function TriModalContainer({
     </Tabs>
 
       {/*
-        The second column, and only over the free-text tab.
+        The second column, over both tabs where somebody writes.
 
-        The catalogue tab is the same list in full, so suggesting three of its
-        entries beside it would be a shortcut into where somebody already is; the
-        AI tab does its own proposing. Under `xl` there is no column and this drops
-        into the normal flow below the composer.
+        Not over the catalogue: that tab *is* the same list in full, so suggesting
+        three of its entries beside it would be a shortcut into where the person
+        already stands. The AI tab does get it — the model's proposal and a keyword
+        rule are two different claims, one guessed and one written down by an admin,
+        and the rule is also there while the model is still thinking.
+
+        Under `lg` there is no column and this drops into the normal flow below the
+        composer.
       */}
-      {railPossible && mode === "legacy" && (
-        <div className="mt-6 xl:mt-0">
+      {railPossible && (mode === "legacy" || mode === "ai_chat") && (
+        <div className="mt-6 lg:mt-0">
           <ProcessSuggestions
             schemas={formHits}
             onOpen={takeSuggestion}

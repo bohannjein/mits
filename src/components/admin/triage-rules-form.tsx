@@ -302,7 +302,7 @@ export function TriageRulesForm({
 
               {schemas.length > 0 && (
                 <div className="grid gap-2">
-                  <Label>Formulare im Eingang vorschlagen</Label>
+                  <Label>Prozesse im Eingang vorschlagen</Label>
                   <div className="flex flex-wrap gap-2">
                     {schemas.map((schema) => {
                       const chosen = rule.form_schema_ids.includes(schema.id);
