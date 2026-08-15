@@ -1,4 +1,5 @@
 import type { NotificationKind } from "@/lib/notifications";
+import { NOTIFICATION_CHANNELS } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
    "Das ist passiert, während du weg warst" — the arithmetic half.
@@ -35,6 +36,7 @@ const KIND_NOUN: Record<NotificationKind, [singular: string, plural: string]> = 
   ticket: ["neues Ticket im Pool", "neue Tickets im Pool"],
   assigned: ["Ticket dir zugewiesen", "Tickets dir zugewiesen"],
   reminder: ["fällige Erinnerung", "fällige Erinnerungen"],
+  mention: ["Erwähnung", "Erwähnungen"],
 };
 
 /** German enumeration: "a, b und c". */
@@ -57,11 +59,20 @@ export function deterministicDigest(events: DigestEvent[]): NotificationDigest {
     counts.set(event.kind, (counts.get(event.kind) ?? 0) + 1);
   }
 
-  // Fixed order rather than insertion order, so the same set of events always
-  // produces the same sentence — otherwise two polls a second apart read as two
-  // different things having happened.
+  /*
+   * Feste Reihenfolge statt Eingangsreihenfolge, damit dieselbe Menge Ereignisse
+   * immer denselben Satz ergibt — sonst lesen sich zwei Abfragen eine Sekunde
+   * auseinander wie zwei verschiedene Vorgänge.
+   *
+   * **Aus `NOTIFICATION_CHANNELS`, nicht aus einer Liste hier.** Vorher standen
+   * drei Namen von Hand da, und `reminder` fehlte: ein Stapel aus lauter
+   * fälligen Erinnerungen ergab die Überschrift „Während deiner Abwesenheit: "
+   * — mit nichts dahinter. Dieselbe Regel wie überall sonst in diesem Projekt:
+   * die Liste ist die Wahrheit, und ein neuer Kanal hat hier nichts
+   * nachzutragen.
+   */
   const parts: string[] = [];
-  for (const kind of ["reply", "ticket", "assigned"] as const) {
+  for (const kind of NOTIFICATION_CHANNELS) {
     const count = counts.get(kind);
     if (!count) continue;
     const [singular, plural] = KIND_NOUN[kind];

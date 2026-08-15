@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AtSignIcon,
   CheckCircle2Icon,
   CheckCheckIcon,
   ChevronDownIcon,
@@ -100,6 +101,14 @@ export function TicketComposer({
   cannedResponses = [],
   /** One-click actions. Empty when the module is off. */
   macros = [],
+  /**
+   * Wer sich mit `@` in den Vorgang ziehen lässt.
+   *
+   * Nur Agenten, und der Server prüft es erneut: der Text trägt bloß den
+   * Anzeigenamen, die Ids reisen in einem eigenen Feld. Leer, wenn das Modul aus
+   * ist — dann gibt es den Knopf gar nicht.
+   */
+  colleagues = [],
 }: {
   ticketId: string;
   isAgent: boolean;
@@ -116,6 +125,7 @@ export function TicketComposer({
     description: string;
     shortcut: string;
   }[];
+  colleagues?: { id: string; name: string }[];
 }) {
   const { toast } = useToast();
   const [internal, setInternal] = useState(false);
@@ -132,6 +142,19 @@ export function TicketComposer({
    * does with them.
    */
   const [snippetFilter, setSnippetFilter] = useState("");
+
+  /*
+   * Wer in diesem Entwurf genannt wurde.
+   *
+   * Der Text bekommt den Anzeigenamen, dieser Zustand die Id — und nur die Id
+   * geht mit. Den Namen serverseitig zurückzulesen wäre die zweite Wahrheit und
+   * bei zwei Kolleginnen mit demselben Vornamen falsch.
+   *
+   * Eine Liste und keine Menge: die Reihenfolge ist die des Einfügens, und
+   * `recordMentions` entdoppelt ohnehin.
+   */
+  const [mentioned, setMentioned] = useState<{ id: string; name: string }[]>([]);
+  const [mentionOpen, setMentionOpen] = useState(false);
 
   /*
    * The formatting bar starts folded.
@@ -261,6 +284,10 @@ export function TicketComposer({
   useEffect(() => {
     if (!result?.ok) return;
     setBody("");
+    // Zusammen mit dem Text, nicht danach: eine stehen gebliebene Erwähnung
+    // hinge am nächsten Entwurf und benachrichtigte jemanden für eine Nachricht,
+    // in der sein Name gar nicht vorkommt.
+    setMentioned([]);
     focusComposer();
   }, [result, focusComposer]);
 
@@ -574,6 +601,16 @@ export function TicketComposer({
         name="visibility"
         value={internal ? "internal" : "public"}
       />
+      {/*
+        Die Ids der Genannten. Nur sie — der Server schlägt Namen und Zugriff
+        selbst nach, und ein Name aus dem Browser wäre eine Behauptung darüber,
+        wer gemeint war.
+      */}
+      <input
+        type="hidden"
+        name="mentions"
+        value={JSON.stringify(mentioned.map((person) => person.id))}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         {/* No `htmlFor`: the id it pointed at was the reporter's textarea, and a
@@ -582,6 +619,68 @@ export function TicketComposer({
         <Label className="text-xs text-muted-foreground">
           {internal ? "Interne Notiz" : "Öffentliche Antwort"}
         </Label>
+
+        <div className="flex flex-wrap items-center gap-1">
+        {/*
+          Jemanden dazuholen.
+
+          Neben den Bausteinen und nicht in ihnen: ein Baustein fügt Text ein,
+          eine Erwähnung benachrichtigt einen Menschen. Dasselbe Menü hätte zwei
+          Wirkungsarten in einer Liste.
+
+          Kein `@`-Kürzel im Feld wie das `/` daneben: dafür bräuchte tiptap eine
+          Suggestion-Erweiterung — eine neue Abhängigkeit für eine Geste, die der
+          Knopf ohne sie erledigt.
+        */}
+        {isAgent && colleagues.length > 0 && (
+          <DropdownMenu open={mentionOpen} onOpenChange={setMentionOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 rounded-full px-3 text-xs"
+                disabled={busy}
+              >
+                <AtSignIcon strokeWidth={1.5} />
+                Erwähnen
+                {mentioned.length > 0 && (
+                  <span className="tabular-nums text-muted-foreground">
+                    {mentioned.length}
+                  </span>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="w-64 rounded-2xl border border-border shadow-elev-2"
+            >
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                Wird benachrichtigt und folgt danach
+              </DropdownMenuLabel>
+              {colleagues.map((person) => {
+                const already = mentioned.some((entry) => entry.id === person.id);
+                return (
+                  <DropdownMenuItem
+                    key={person.id}
+                    className="rounded-xl"
+                    disabled={already}
+                    onSelect={() => {
+                      // Der Name in den Text, die Id in den Zustand. Das
+                      // schließende Leerzeichen ist der Unterschied zwischen
+                      // „@Bea Schulzdanke" und einem lesbaren Satz.
+                      insertText(`@${person.name} `);
+                      setMentioned((current) => [...current, person]);
+                    }}
+                  >
+                    <AtSignIcon strokeWidth={1.5} />
+                    <span className="truncate">{person.name}</span>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
         {/* Inserted into the field, never sent on its own — the agent confirms
             what goes out, same rule as the AI triage. */}
@@ -720,6 +819,7 @@ export function TicketComposer({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+        </div>
       </div>
 
       {/*

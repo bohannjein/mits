@@ -5,6 +5,7 @@ import {
   FilterXIcon,
   PinIcon,
   ServerIcon,
+  SunriseIcon,
   UsersIcon,
 } from "lucide-react";
 
@@ -362,6 +363,22 @@ export default async function AgentQueuePage({
                       available={availableColumns}
                       hidden={hiddenColumns}
                     />
+                    {/*
+                      „Mein Tag" hängt an keinem Modul und an keinem Bereich: die
+                      Seite zeigt nur, was dieser Leser ohnehin sehen darf, in
+                      einer anderen Reihenfolge. Ein Schalter dafür wäre einer
+                      für eine Sortierung.
+                    */}
+                    <Button
+                      asChild
+                      size="sm"
+                      className="h-11 rounded-full border border-border bg-card px-4 text-foreground hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <Link href="/mits/today">
+                        <SunriseIcon strokeWidth={1.5} />
+                        Mein Tag
+                      </Link>
+                    </Button>
                     {/*
                       Dieselbe Regel wie bei der CMDB: versteckt, wenn das Modul
                       aus ist oder die Rolle die Fläche nicht hat. Ein Link in

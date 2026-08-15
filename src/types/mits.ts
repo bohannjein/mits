@@ -647,6 +647,15 @@ export const MITSTicketSchema = z.object({
    */
   pinned: z.boolean().default(false),
   /**
+   * Ob *dieser Leser* dem Ticket folgt.
+   *
+   * Je Konto wie `pinned` daneben, dieselbe Stelle (`searchTickets`), derselbe
+   * ehrliche Default überall sonst. Der Unterschied zum Pin ist die Frage, nicht
+   * die Form: der Pin sagt „ich komme darauf zurück" und sortiert die eigene
+   * Queue, das hier sagt „sag mir Bescheid" und entscheidet über Meldungen.
+   */
+  watched: z.boolean().default(false),
+  /**
    * Der Melder hat nachgelegt: es gibt eine Melder-Nachricht, die neuer ist als
    * die jüngste öffentliche Team-Antwort — und eine solche Antwort existiert.
    *
@@ -729,6 +738,7 @@ export const MITSTicketDraftSchema = MITSTicketSchema.omit({
   last_activity_at: true,
   unread: true,
   pinned: true,
+  watched: true,
   awaiting_reply: true,
   logged_minutes: true,
   // Written by the routing service after the ticket exists, and declared by an
@@ -2302,6 +2312,16 @@ export const FeatureFlagsSchema = z.object({
    * that gains one on update never decided to have it.
    */
   feature_team_overview: z.boolean().default(true),
+  /**
+   * Beobachter und `@`-Erwähnungen. An, und träge wie die Pins.
+   *
+   * Inert, bis jemand jemanden erwähnt oder einem Ticket folgt: keine Zeile
+   * heißt kein Knopfzustand, keine Meldung und keine geänderte Abfrage. Was es
+   * **ermöglicht**, ist die engere Einstellung des `reply`-Kanals — die bleibt
+   * ihrerseits auf „alle Tickets", damit ein Update niemandem still Meldungen
+   * wegnimmt.
+   */
+  feature_ticket_watchers: z.boolean().default(true),
 });
 export type FeatureFlags = z.infer<typeof FeatureFlagsSchema>;
 export type FeatureFlagKey = keyof FeatureFlags;
@@ -2328,6 +2348,7 @@ export const NOTIFICATION_CHANNELS = [
   "ticket",
   "assigned",
   "reminder",
+  "mention",
 ] as const;
 export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
 
@@ -2370,6 +2391,22 @@ export const NOTIFICATION_CHANNEL_META: Record<
     label: "Erinnerung fällig",
     description:
       "Eine Erinnerung, die du selbst auf ein Ticket gelegt hast, ist fällig. Nur für Agenten.",
+    staffOnly: true,
+  },
+  mention: {
+    /*
+     * Der fünfte Kanal, und die Regel darüber gilt: einen zu erfinden heißt,
+     * die Abfrage zu schreiben, die ihn findet. Sie steht in
+     * `listNotifications` neben den vier anderen und joint
+     * `mits_comment_mention`.
+     *
+     * Staff-only, weil nur Agenten erwähnbar sind. Einen Melder in einer
+     * internen Notiz zu erwähnen, die er nie sieht, wäre eine Meldung über ein
+     * Ticket ohne einen Ort, an dem der Satz steht.
+     */
+    label: "Erwähnt",
+    description:
+      "Jemand hat dich mit @ in einem Beitrag genannt. Nur für Agenten.",
     staffOnly: true,
   },
 };
@@ -2449,6 +2486,32 @@ export const NotificationSettingsSchema = z.object({
   assigned_tone: ToastTone.default("success"),
   /** On by default: a ticket handed to you is the one that must not scroll past. */
   assigned_sticky: z.boolean().default(true),
+
+  mention_enabled: z.boolean().default(true),
+  mention_tone: ToastTone.default("success"),
+  /**
+   * Bleibt stehen, wie die Zuweisung und aus demselben Grund: jemand hat
+   * ausdrücklich *dich* gemeint. Eine Erwähnung, die nach fünf Sekunden weg ist,
+   * ist eine Frage, die niemand beantwortet.
+   */
+  mention_sticky: z.boolean().default(true),
+
+  /**
+   * Wofür der `reply`-Kanal feuert.
+   *
+   * `all` ist der Auslieferungszustand und das bisherige Verhalten: ein Agent
+   * bekommt eine Einblendung für **jede** Antwort auf **jedes** Ticket. Auf
+   * einem ruhigen Desk ist das die richtige Voreinstellung, auf einem lauten der
+   * Grund, aus dem jemand den Kanal ganz abschaltet.
+   *
+   * `mine` ist der Zwischenzustand, den es vorher nicht gab: zugewiesen,
+   * beobachtet oder selbst gemeldet. Er hängt an `mits_ticket_watch` — ohne
+   * Beobachter wäre er eine Stummschaltung und keine Eingrenzung, deshalb steht
+   * die Wahl nur bei eingeschaltetem Modul in der Maske.
+   *
+   * Default bleibt `all`, damit ein Update niemandem still Meldungen wegnimmt.
+   */
+  reply_scope: z.enum(["all", "mine"]).default("all"),
 });
 export type NotificationSettings = z.infer<typeof NotificationSettingsSchema>;
 
@@ -2894,6 +2957,11 @@ export const FEATURE_FLAG_META: Record<
     label: "Team-Übersicht",
     description:
       "Rückstand, Auslastung je Agent und Präsenz auf einer Seite unter /mits/team. Welche Angaben dort stehen, wird unter /admin/settings/team eingestellt.",
+  },
+  feature_ticket_watchers: {
+    label: "Beobachter & Erwähnungen",
+    description:
+      "Einem Ticket folgen, ohne es zu besitzen, und Kolleginnen mit @ in eine interne Notiz ziehen. Erlaubt zusätzlich, die Antwort-Meldungen auf zugewiesene und beobachtete Tickets zu begrenzen.",
   },
 };
 

@@ -14,6 +14,7 @@ import {
 } from "@/lib/sanitize";
 import { withinRetractWindow } from "@/lib/retract-window";
 import { UploadError, linkUploadsToTicket } from "@/lib/storage";
+import { watchTicket } from "@/lib/ticket-watchers";
 import { applyReplyWorkflow } from "@/lib/ticket-workflow";
 import {
   TicketCommentSchema,
@@ -357,6 +358,21 @@ export function addComment(
   if (visibility === "public" && !skipReplyWorkflow) {
     applyReplyWorkflow(ticketId, user, isAgent);
   }
+
+  /*
+   * Wer schreibt, folgt danach.
+   *
+   * Hier und nicht in der Action, aus demselben Grund wie der Ballbesitz eine
+   * Zeile darüber: der Mail-Ingest legt Beiträge ohne Server Action ab, und ein
+   * Agent, der per Mail antwortet, hat genauso etwas zu diesem Ticket gesagt.
+   *
+   * **Nur Personal.** Ein Melder bekommt jede öffentliche Antwort auf sein
+   * eigenes Ticket ohnehin; eine Abo-Zeile für ihn wäre eine Zeile ohne Wirkung,
+   * und `reply_scope` fragt sie für Melder nie ab. `isAgent` und nicht die Rolle
+   * des Kontos: der Ingest erzwingt dort `0`, eine gemailte Kundenantwort unter
+   * einem Auffang-Konto legt also kein Abo an.
+   */
+  if (isAgent) watchTicket(ticketId, user.id);
 
   publish({
     type: "ticket",

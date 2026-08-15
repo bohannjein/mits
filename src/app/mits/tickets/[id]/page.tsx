@@ -46,6 +46,7 @@ import {
   listCategoryTree,
 } from "@/lib/ticket-categories";
 import { isPinned } from "@/lib/ticket-pins";
+import { isWatching } from "@/lib/ticket-watchers";
 import { listRemindersForTicket } from "@/lib/ticket-reminders";
 import { triage } from "@/lib/services/auto-triage";
 import { listTriageRules } from "@/lib/triage-rules";
@@ -334,6 +335,15 @@ export default async function AgentTicketPage({
   const pinned = flags.feature_ticket_pins ? isPinned(id, user.id) : null;
 
   /*
+   * Dasselbe eine Zeile tiefer und aus demselben Grund: `ticket.watched` ist
+   * hier per Default `false`, weil nur `searchTickets` die Spalte rechnet. Ein
+   * eigener Read ist eine Antwort, das Feld wäre eine Behauptung.
+   */
+  const watching = flags.feature_ticket_watchers
+    ? isWatching(id, user.id)
+    : null;
+
+  /*
    * Everything the re-route dialog needs, or null.
    *
    * The suggestion comes from the **triage rules**, not from the model's routing
@@ -553,6 +563,7 @@ export default async function AgentTicketPage({
                 reminders={reminders}
                 routing={routing}
                 pinned={pinned}
+                watching={watching}
               >
               <TicketMessages
                 // Prepended, not merged by timestamp: the opening message *is* the
@@ -592,6 +603,17 @@ export default async function AgentTicketPage({
                 ticketId={ticket.id}
                 isAgent
                 variant="rich"
+                /*
+                 * Ohne die eigene Person: sich selbst zu nennen erzeugt keine
+                 * Meldung — die Abfrage schließt den Autor aus —, legte aber ein
+                 * Abo an, das niemand verlangt hat. Leer bei abgeschaltetem
+                 * Modul, dann gibt es den Knopf gar nicht.
+                 */
+                colleagues={
+                  flags.feature_ticket_watchers
+                    ? agents.filter((agent) => agent.id !== user.id)
+                    : []
+                }
                 // Title and blurb only. The macro's actions stay on the server —
                 // the browser posts an id and `runMacro` decides what that means.
                 macros={

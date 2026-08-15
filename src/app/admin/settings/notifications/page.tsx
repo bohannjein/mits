@@ -60,6 +60,7 @@ export default async function NotificationSettingsPage() {
           <NotificationSettingsForm
             settings={getNotificationSettings()}
             digestUsesModel={isAIFeatureOn(getAISettings(), "digest")}
+            watchersOn={flags.feature_ticket_watchers}
           />
         </div>
       </main>

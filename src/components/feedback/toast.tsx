@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
+  AtSignIcon,
   BellIcon,
   BellRingIcon,
   CheckCircle2Icon,
@@ -61,6 +62,7 @@ export type ToastKind =
   | "ticket"
   | "assigned"
   | "reminder"
+  | "mention"
   | "digest"
   | "system";
 
@@ -101,6 +103,9 @@ const ICONS: Record<ToastKind, typeof BellIcon> = {
   // A ringing bell, not the plain one: this is the only channel somebody asked
   // for by hand, and the digest below already owns the quiet bell.
   reminder: BellRingIcon,
+  // Eine Erwähnung ist an eine Person gerichtet und nicht an eine Rolle — das
+  // Symbol zeigt jemanden, den man anspricht, nicht eine Nachricht.
+  mention: AtSignIcon,
   // The one that stands for several things at once, so a bell rather than any
   // one of the three icons it replaced.
   digest: BellIcon,

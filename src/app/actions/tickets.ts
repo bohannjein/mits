@@ -35,6 +35,8 @@ import {
   setTicketPriority,
   setTicketStatus,
 } from "@/lib/tickets";
+import { recordMentions } from "@/lib/ticket-watchers";
+import { listUsers } from "@/lib/users";
 import { WorklogError, addWorklog, deleteWorklog } from "@/lib/worklogs";
 import { formatMinutes } from "@/lib/format";
 import {
@@ -544,6 +546,53 @@ export async function removeTicketLinkAction(
   return { ok: true, message: "Verknüpfung entfernt." };
 }
 
+/**
+ * Die Erwähnungen eines abgeschickten Beitrags festhalten.
+ *
+ * **Nach dem Schreiben, nicht darin.** `addComment` hat vier Aufrufer — Maske,
+ * Mail-Ingest, Sweeper, Makro-Runner — und drei davon können niemanden erwähnen;
+ * ein zusätzlicher Parameter wäre dort ein Feld, das immer leer ist. Die Folge
+ * ist ausgesprochen und gewollt: scheitert dieser Schritt, steht der Beitrag
+ * trotzdem und es fehlt eine Meldung. Andersherum — der Beitrag scheitert, weil
+ * eine Erwähnung nicht abzulegen war — wäre die teurere Reihenfolge.
+ *
+ * **Die Ids werden gegen den Kontenbestand geprüft.** Der Text im Beitrag trägt
+ * nur den Anzeigenamen; ohne diese Prüfung könnte ein handgebauter Request eine
+ * Meldung an ein beliebiges Konto auslösen, auch an eines ohne Zugriff auf das
+ * Ticket.
+ */
+function recordMentionsFrom(
+  formData: FormData,
+  commentId: string,
+  ticketId: string,
+  authorId: string,
+): void {
+  if (!isFeatureEnabled("feature_ticket_watchers")) return;
+
+  const raw = String(formData.get("mentions") ?? "");
+  if (!raw.trim()) return;
+
+  let ids: unknown;
+  try {
+    ids = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (!Array.isArray(ids)) return;
+
+  const wanted = new Set(ids.filter((id): id is string => typeof id === "string"));
+  if (wanted.size === 0) return;
+
+  const allowed = listUsers()
+    .filter((account) => canViewBoard(account.role) && wanted.has(account.id))
+    // Sich selbst zu nennen erzeugt keine Meldung — die Abfrage schließt den
+    // Autor ohnehin aus —, aber es legte ein Abo an, das niemand verlangt hat.
+    .filter((account) => account.id !== authorId)
+    .map((account) => account.id);
+
+  if (allowed.length > 0) recordMentions(commentId, ticketId, allowed);
+}
+
 export async function addCommentAction(
   _previous: TicketActionResult | null,
   formData: FormData,
@@ -592,6 +641,13 @@ export async function addCommentAction(
    *
    * So: the write decides the outcome, and the follow-up work is best effort.
    */
+  try {
+    recordMentionsFrom(formData, comment.id, ticketId, auth.user.id);
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error("[MITS] Erwähnungen konnten nicht abgelegt werden:", error);
+  }
+
   try {
     revalidateTicket(ticketId);
   } catch (error) {

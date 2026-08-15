@@ -1467,6 +1467,168 @@ try {
     return state;
   });
 
+  console.log("beobachter und erwaehnungen");
+  const watchers = await import("../src/lib/ticket-watchers");
+
+  // Ein eigenes Ticket fuer diesen Abschnitt: die Pruefungen unten haengen an
+  // Zuweisung und Melder, und die Tickets darueber haben beides mehrfach
+  // gewechselt.
+  let watchedTicketId = "";
+  check("ein eigenes ticket fuer diesen abschnitt", () => {
+    const ticket = tickets.createTicket(
+      mits.MITSTicketDraftSchema.parse({
+        source: "legacy",
+        form_schema_id: "quick-ticket",
+        payload: {
+          title: "Beamer bleibt schwarz",
+          description: "Im kleinen Besprechungsraum bleibt der Beamer schwarz.",
+        },
+      }),
+      reporter,
+    );
+    watchedTicketId = ticket.id;
+    return ticket.id;
+  });
+
+  check("folgen und wieder aufhoeren", () => {
+    watchers.watchTicket(watchedTicketId, agentId);
+    if (!watchers.isWatching(watchedTicketId, agentId)) {
+      throw new Error("folgt nicht");
+    }
+    // Idempotent: die automatischen Aufrufer pruefen nichts.
+    watchers.watchTicket(watchedTicketId, agentId);
+    const list = watchers.listWatchers(watchedTicketId);
+    if (list.length !== 1) throw new Error(`${list.length} beobachter`);
+    return list[0].name;
+  });
+
+  /*
+   * Die Pruefung, die es nur hier gibt.
+   *
+   * `watched` ist eine gebundene Spalte in der SELECT-Liste von
+   * `searchTickets`, direkt hinter `pinned`. Eine verschobene Bindeposition
+   * ergibt gueltiges SQL, das eine andere Frage beantwortet — weder typecheck
+   * noch build fuehrt ein Statement aus.
+   */
+  check("die watched-spalte meldet den leser, nicht die zeile", () => {
+    const mine = tickets
+      .searchTickets({ watchedBy: agentId }, agent)
+      .find((row) => row.id === watchedTicketId);
+    if (!mine?.watched) throw new Error("watched ist false auf einer abo-zeile");
+
+    const theirs = tickets
+      .searchTickets({}, reporter)
+      .find((row) => row.id === watchedTicketId);
+    if (theirs?.watched) throw new Error("watched ist ueber leser gelaufen");
+
+    return "je leser";
+  });
+
+  check("der filter verengt auf die abos", () => {
+    const watchedRows = tickets.countSearchTickets({ watchedBy: agentId }, agent);
+    const all = tickets.countSearchTickets({}, agent);
+    if (watchedRows < 1) throw new Error("kein abo gefunden");
+    if (watchedRows > all) throw new Error("mehr abos als tickets");
+    return `${watchedRows}/${all}`;
+  });
+
+  check("eine zuweisung legt ein abo an", () => {
+    tickets.assignTicket(watchedTicketId, adminId, agent);
+    if (!watchers.isWatching(watchedTicketId, adminId)) {
+      throw new Error("der neue bearbeiter folgt nicht");
+    }
+    return true;
+  });
+
+  let mentionCommentId = "";
+  check("ein beitrag legt ein abo an und traegt erwaehnungen", () => {
+    const comment = comments.addComment(
+      watchedTicketId,
+      agent,
+      "Kurze Notiz an das Team.",
+      "internal",
+    );
+    mentionCommentId = comment.id;
+    if (!watchers.isWatching(watchedTicketId, agentId)) {
+      throw new Error("der autor folgt nicht");
+    }
+
+    watchers.recordMentions(comment.id, watchedTicketId, [adminId]);
+    if (!watchers.isWatching(watchedTicketId, adminId)) {
+      throw new Error("der erwaehnte folgt nicht");
+    }
+    // Zweimal dieselbe Person im selben Beitrag ist derselbe Zustand.
+    watchers.recordMentions(comment.id, watchedTicketId, [adminId]);
+    return comment.id;
+  });
+
+  check("die erwaehnung wird gemeldet", () => {
+    const since = new Date(Date.now() - 60_000).toISOString();
+    const events = notifications.listNotifications(admin, since);
+    const hit = events.find((event) => event.key === `mention:${mentionCommentId}`);
+    if (!hit) throw new Error("keine erwaehnungs-meldung");
+    if (hit.kind !== "mention") throw new Error(hit.kind);
+    return hit.title;
+  });
+
+  check("die erwaehnung ersetzt die antwort-meldung", () => {
+    const since = new Date(Date.now() - 60_000).toISOString();
+    const events = notifications.listNotifications(admin, since);
+    if (events.some((event) => event.key === `reply:${mentionCommentId}`)) {
+      throw new Error("beitrag doppelt gemeldet");
+    }
+    return events.length;
+  });
+
+  /*
+   * Die engere Reichweite baut ihre WHERE-Klausel dynamisch zusammen. Genau
+   * dort sind drei zusaetzliche `?` in der richtigen Reihenfolge zu binden, und
+   * ein Fehler darin ist wieder gueltiges SQL mit anderer Bedeutung.
+   */
+  check("reply_scope mine laeuft und verengt nicht ins leere", () => {
+    notificationSettings.setNotificationSettings(
+      mits.NotificationSettingsSchema.parse({ reply_scope: "mine" }),
+    );
+    const since = new Date(Date.now() - 60_000).toISOString();
+    const narrowed = notifications.listNotifications(agent, since);
+
+    notificationSettings.setNotificationSettings(
+      mits.DEFAULT_NOTIFICATION_SETTINGS,
+    );
+    const wide = notifications.listNotifications(agent, since);
+
+    if (narrowed.length > wide.length) {
+      throw new Error("die engere wahl liefert mehr");
+    }
+    return `${narrowed.length}/${wide.length}`;
+  });
+
+  check("nicht mehr folgen", () => {
+    watchers.unwatchTicket(watchedTicketId, agentId);
+    if (watchers.isWatching(watchedTicketId, agentId)) {
+      throw new Error("folgt weiterhin");
+    }
+    return true;
+  });
+
+  console.log("mein tag");
+  const today = await import("../src/lib/today");
+  check("collectToday laeuft und entdoppelt", () => {
+    const result = today.collectToday(agent);
+    const ids = result.items.map((item) => item.ticketId);
+    if (new Set(ids).size !== ids.length) {
+      throw new Error("ein ticket steht zweimal in der liste");
+    }
+    return `${result.items.length} eintraege, ${result.poolTotal} im pool`;
+  });
+
+  check("jeder grund hat eine beschriftung", () => {
+    for (const reason of today.TODAY_REASONS) {
+      if (!today.TODAY_REASON_LABELS[reason]) throw new Error(reason);
+    }
+    return today.TODAY_REASONS.length;
+  });
+
   console.log("accounts");
   const createAccountModule = await import("../src/lib/auth/create-account");
   const users = await import("../src/lib/users");

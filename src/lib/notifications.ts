@@ -4,6 +4,7 @@ import { canViewBoard } from "@/lib/auth/roles";
 import type { SessionUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/sqlite";
 import { isFeatureEnabled } from "@/lib/features";
+import { getNotificationSettings } from "@/lib/notification-settings";
 import { dueReminders } from "@/lib/ticket-reminders";
 import { formatTicketNumber } from "@/types/mits";
 
@@ -28,7 +29,12 @@ import { formatTicketNumber } from "@/types/mits";
    see anyway, further back. It is clamped so it cannot become a full-table scan.
    ────────────────────────────────────────────────────────────────────────── */
 
-export type NotificationKind = "reply" | "ticket" | "assigned" | "reminder";
+export type NotificationKind =
+  | "reply"
+  | "ticket"
+  | "assigned"
+  | "reminder"
+  | "mention";
 
 export interface MITSNotification {
   /** Stable across polls, so the client can collapse a repeat. */
@@ -89,6 +95,16 @@ export function listNotifications(
   const events: MITSNotification[] = [];
 
   /*
+   * Beobachter und Erwähnungen hängen an einem Modul, und beide Zweige unten
+   * fragen es einzeln ab. Zusammengefasst wäre die engere Reichweite auch dann
+   * aktiv, wenn das Modul aus ist — und dann gäbe es keinen Weg, ein Abo
+   * anzulegen, mit dem man sie wieder weitet. Eine Stummschaltung ohne Ausgang.
+   */
+  const watchers = isFeatureEnabled("feature_ticket_watchers");
+  const narrowReplies =
+    staff && watchers && getNotificationSettings().reply_scope === "mine";
+
+  /*
    * Replies. Never the caller's own — being told about the message you just sent
    * is noise, and it fires on every single reply an agent writes.
    *
@@ -96,6 +112,43 @@ export function listNotifications(
    * tickets. Both halves are in the SQL rather than filtered afterwards, so a
    * future caller cannot get the rows and forget the filter.
    */
+  /*
+   * Eine Erwähnung ersetzt die allgemeine Antwort-Meldung, sie kommt nicht
+   * dazu. „Bea hat geantwortet" und „Bea hat dich genannt" über derselben
+   * Nachricht sind zwei Einblendungen für ein Ereignis, und die zweite ist die
+   * genauere.
+   */
+  const mentionExclusion = watchers
+    ? `AND NOT EXISTS (
+         SELECT 1 FROM mits_comment_mention m
+          WHERE m.comment_id = c.id AND m.user_id = ?
+       )`
+    : "";
+
+  /*
+   * Die engere Reichweite: zugewiesen, beobachtet oder selbst gemeldet.
+   *
+   * Nur für Personal — ein Melder sieht ohnehin nur seine eigenen Tickets, und
+   * eine zweite Verengung darüber wäre eine Einstellung, die ihm Meldungen über
+   * sein eigenes Anliegen nimmt.
+   */
+  const replyScopeClause = narrowReplies
+    ? `AND (
+         t.assigned_to = ?
+         OR t.created_by = ?
+         OR EXISTS (
+              SELECT 1 FROM mits_ticket_watch w
+               WHERE w.ticket_id = t.id AND w.user_id = ?
+            )
+       )`
+    : "";
+
+  const replyParams: unknown[] = [from, user.id];
+  if (!staff) replyParams.push(user.id);
+  if (watchers) replyParams.push(user.id);
+  if (narrowReplies) replyParams.push(user.id, user.id, user.id);
+  replyParams.push(MAX_EVENTS);
+
   const replies = db
     .prepare(
       `SELECT c.id, c.author_name, c.body, c.body_format, c.created_at,
@@ -107,12 +160,12 @@ export function listNotifications(
           AND c.created_at > ?
           AND c.author_id <> ?
           ${staff ? "" : "AND c.visibility = 'public' AND t.created_by = ?"}
+          ${mentionExclusion}
+          ${replyScopeClause}
         ORDER BY c.created_at DESC
         LIMIT ?`,
     )
-    .all(
-      ...(staff ? [from, user.id, MAX_EVENTS] : [from, user.id, user.id, MAX_EVENTS]),
-    ) as {
+    .all(...replyParams) as {
     id: string;
     author_name: string;
     body: string;
@@ -208,6 +261,57 @@ export function listNotifications(
         href: `${base}/${row.ticket_id}`,
         createdAt: row.created_at,
       });
+    }
+
+    /*
+     * Erwähnt.
+     *
+     * Die Tabelle ist der Grund, aus dem das hier ein Join und keine Textsuche
+     * ist: der Beitrag trägt den Anzeigenamen, die Zeile die Id. Aus dem Text
+     * zurückzulesen wäre bei zwei Kolleginnen mit demselben Vornamen falsch —
+     * und zwar in die Richtung, in der jemand eine Meldung über ein Gespräch
+     * bekommt, in dem er nicht gemeint war.
+     *
+     * Kein Sichtbarkeitszusatz: erwähnbar sind nur Agenten, und die sehen jede
+     * Notiz auf jedem Ticket. Die Zeile selbst ist die Berechtigung.
+     */
+    if (watchers) {
+      const mentions = db
+        .prepare(
+          `SELECT c.id, c.author_name, c.body, c.body_format, c.created_at,
+                  t.id AS ticket_id, t.ticket_number, t.title
+             FROM mits_comment_mention m
+             JOIN mits_ticket_comment c ON c.id = m.comment_id
+             JOIN mits_ticket t ON t.id = c.ticket_id
+            WHERE m.user_id = ?
+              AND c.deleted_at IS NULL
+              AND t.deleted_at IS NULL
+              AND c.created_at > ?
+              AND c.author_id <> ?
+            ORDER BY c.created_at DESC
+            LIMIT ?`,
+        )
+        .all(user.id, from, user.id, MAX_EVENTS) as {
+        id: string;
+        author_name: string;
+        body: string;
+        body_format: string;
+        created_at: string;
+        ticket_id: string;
+        ticket_number: number | null;
+        title: string;
+      }[];
+
+      for (const row of mentions) {
+        events.push({
+          key: `mention:${row.id}`,
+          kind: "mention",
+          title: `${row.author_name} hat dich genannt`,
+          description: `${row.title} — ${preview(row.body, row.body_format)}`,
+          href: `${base}/${row.ticket_id}`,
+          createdAt: row.created_at,
+        });
+      }
     }
   }
 

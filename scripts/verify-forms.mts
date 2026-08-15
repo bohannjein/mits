@@ -1,7 +1,10 @@
 import { SHORTCUT_GROUPS, isPlainKey, swallowsKeys } from "../src/lib/shortcuts";
 import { fillCannedResponse, firstNameOf } from "../src/types/mits";
 import {
+  DEFAULT_NOTIFICATION_SETTINGS,
   DEFAULT_TEAM_SETTINGS,
+  NOTIFICATION_CHANNELS,
+  NOTIFICATION_CHANNEL_META,
   QUEUE_COLUMNS,
   QUEUE_COLUMN_LABELS,
   TEAM_TOGGLES,
@@ -5014,6 +5017,73 @@ console.log("\nqueue-spalten");
   check(
     "eine ausgeblendete Spalte ist unsichtbar, jede andere sichtbar",
     !queueColumnVisible(["time"], "time") && queueColumnVisible(["time"], "status"),
+  );
+}
+
+console.log("\nbeobachter und erwaehnungen");
+{
+  /*
+   * Der fuenfte Kanal. `Record<NotificationChannel, …>` erzwingt die Meta beim
+   * Kompilieren; was hier steht, ist der Rest: dass er staff-only ist (nur
+   * Agenten sind erwaehnbar) und dass die Sammelmeldung ein Wort dafuer hat.
+   */
+  check(
+    "mention ist ein kanal mit beschriftung",
+    (NOTIFICATION_CHANNELS as readonly string[]).includes("mention") &&
+      NOTIFICATION_CHANNEL_META.mention.label.length > 0,
+  );
+  check(
+    "und er ist agenten vorbehalten",
+    NOTIFICATION_CHANNEL_META.mention.staffOnly === true,
+  );
+  check(
+    "die einstellung kennt ihn",
+    channelConfig(DEFAULT_NOTIFICATION_SETTINGS, "mention").enabled === true,
+  );
+
+  /*
+   * Der Auslieferungszustand ist die alte Reichweite. Alles andere naehme jeder
+   * laufenden Instanz mit dem Update Meldungen weg — und ein System, das
+   * leiser ist als eingestellt, sieht nach einem ganz anderen Fehler aus.
+   */
+  check(
+    "reply_scope steht auf allen tickets",
+    DEFAULT_NOTIFICATION_SETTINGS.reply_scope === "all",
+  );
+
+  // Die Sammelmeldung zaehlt selbst; ein Kanal ohne Substantiv liefe dort in
+  // ein `undefined` mitten im Satz.
+  const mentionDigest = deterministicDigest([
+    {
+      kind: "mention",
+      title: "Bea hat dich genannt",
+      description: "Beamer bleibt schwarz",
+    },
+    {
+      kind: "mention",
+      title: "Carl hat dich genannt",
+      description: "Drucker klemmt",
+    },
+  ]);
+  check(
+    "die sammelmeldung hat ein wort fuer erwaehnungen",
+    mentionDigest.headline.includes("2 Erwähnungen") &&
+      !mentionDigest.headline.includes("undefined"),
+  );
+
+  /*
+   * Der Fehler, der dabei aufgefallen ist und schon vorher darin war: die
+   * Kanalliste stand von Hand im Digest, und `reminder` fehlte. Ein Stapel aus
+   * lauter faelligen Erinnerungen ergab „Waehrend deiner Abwesenheit: " mit
+   * nichts dahinter.
+   */
+  const reminderDigest = deterministicDigest([
+    { kind: "reminder", title: "Erinnerung faellig", description: "Drucker" },
+    { kind: "reminder", title: "Erinnerung faellig", description: "Beamer" },
+  ]);
+  check(
+    "und eine ueberschrift, die bei lauter erinnerungen nicht leer bleibt",
+    reminderDigest.headline.includes("2 fällige Erinnerungen"),
   );
 }
 

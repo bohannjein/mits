@@ -487,6 +487,48 @@ function migrateAppTables(database: Database.Database): void {
     -- This one is for the delete path when a ticket goes.
     CREATE INDEX IF NOT EXISTS idx_mits_ticket_pin_ticket
       ON mits_ticket_pin (ticket_id);
+
+    -- Wer einem Ticket folgt, ohne es zu besitzen.
+    --
+    -- Dieselbe Form wie der Pin, und ein anderer Zweck: der Pin ist ein
+    -- Lesezeichen in der eigenen Queue, das hier ist ein Abonnement auf
+    -- Meldungen. Ein Agent sieht ohnehin jedes Ticket -- was ihm fehlt, ist der
+    -- Zwischenzustand zwischen "alles" und "nur meins", und den traegt diese
+    -- Tabelle.
+    --
+    -- Das Paar ist der Schluessel: zweimal folgen ist derselbe Zustand wie
+    -- einmal. Keine weiteren Spalten -- ein Abo hat keine Eigenschaften.
+    CREATE TABLE IF NOT EXISTS mits_ticket_watch (
+      user_id    TEXT NOT NULL,
+      ticket_id  TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, ticket_id)
+    );
+
+    -- Fuer den Loeschpfad und fuer "wer folgt diesem Ticket".
+    CREATE INDEX IF NOT EXISTS idx_mits_ticket_watch_ticket
+      ON mits_ticket_watch (ticket_id);
+
+    -- Wer in einem Beitrag erwaehnt wurde.
+    --
+    -- Das ist KEINE Zustelltabelle und widerspricht der Doktrin in
+    -- lib/notifications.ts nicht: kein Zustellflag, kein Aufraeumjob, keine
+    -- Zeile pro Person pro Ereignis. Es ist eine Tatsache ueber den Beitrag, wie
+    -- mits_ticket_ci eine ueber das Ticket ist. Abgeleitet bleibt die *Meldung*
+    -- -- listNotifications joint diese Zeilen ueber created_at > since.
+    --
+    -- Der Text im Beitrag traegt den Anzeigenamen, diese Tabelle die Id. Den
+    -- Namen spaeter aus dem Text zurueckzulesen waere die zweite Wahrheit, und
+    -- sie waere bei zwei Kolleginnen mit demselben Vornamen falsch.
+    CREATE TABLE IF NOT EXISTS mits_comment_mention (
+      comment_id TEXT NOT NULL,
+      user_id    TEXT NOT NULL,
+      PRIMARY KEY (comment_id, user_id)
+    );
+
+    -- Die Meldungsabfrage sucht "was wurde seit X fuer mich erwaehnt".
+    CREATE INDEX IF NOT EXISTS idx_mits_mention_user
+      ON mits_comment_mention (user_id);
   `);
 
   addColumns(database);

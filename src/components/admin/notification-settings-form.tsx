@@ -58,9 +58,18 @@ export function NotificationSettingsForm({
   settings,
   /** Whether the AI digest is switched on, so the mask can say what will happen. */
   digestUsesModel,
+  /**
+   * Ob Beobachter überhaupt existieren.
+   *
+   * Die engere Reichweite fragt nach „zugewiesen oder beobachtet"; ohne das
+   * Modul gäbe es keine Abos, und die Einstellung wäre eine Stummschaltung ohne
+   * Ausgang. Deshalb erscheint sie nur mit ihm.
+   */
+  watchersOn = false,
 }: {
   settings: NotificationSettings;
   digestUsesModel: boolean;
+  watchersOn?: boolean;
 }) {
   const [result, action, saving] = useActionState(
     saveNotificationSettingsAction,
@@ -237,6 +246,56 @@ export function NotificationSettingsForm({
           })}
         </CardContent>
       </Card>
+
+      {/*
+        Die Reichweite des lautesten Kanals.
+
+        Sie steht in einer eigenen Karte und nicht als dritter Schalter am Kanal
+        „Neue Antwort": die drei dort beschreiben, *wie* eine Meldung aussieht,
+        das hier entscheidet, *ob* es sie gibt. Zusammengelegt läse es sich als
+        Darstellungsoption.
+
+        Nur mit dem Modul, weil die engere Wahl nach Abos fragt, die es ohne das
+        Modul nicht gibt.
+      */}
+      {watchersOn && (
+        <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
+          <CardHeader>
+            <CardTitle className="text-lg font-medium">
+              Reichweite der Antwort-Meldungen
+            </CardTitle>
+            <CardDescription className="mt-1 leading-relaxed">
+              Ein Agent sieht jedes Ticket. Diese Einstellung entscheidet, über
+              welche davon er auch etwas gesagt bekommt.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-2">
+            <Label htmlFor="reply_scope">Melden bei Antworten auf</Label>
+            <Select
+              name="reply_scope"
+              defaultValue={settings.reply_scope}
+              disabled={saving}
+            >
+              <SelectTrigger
+                id="reply_scope"
+                className="h-10 w-full rounded-xl sm:w-80"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Alle Tickets</SelectItem>
+                <SelectItem value="mine">
+                  Zugewiesene, beobachtete und eigene
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Wer ein Ticket übernimmt, darauf antwortet oder darin genannt wird,
+              folgt ihm danach automatisch.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
         <CardHeader>

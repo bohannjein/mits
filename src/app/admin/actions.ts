@@ -1464,6 +1464,13 @@ export async function saveNotificationSettingsAction(
       maxVisible: formData.get("maxVisible"),
       pollSeconds: formData.get("pollSeconds"),
       digestThreshold: formData.get("digestThreshold"),
+      /*
+       * Fehlt das Feld — das Modul ist aus, die Karte wird nicht gerendert —,
+       * greift der Default `all`. Das ist die richtige Richtung: ohne Abos wäre
+       * `mine` eine Stummschaltung, und ein Speichern der übrigen Einstellungen
+       * darf sie nicht nebenbei setzen.
+       */
+      reply_scope: formData.get("reply_scope") ?? undefined,
     }),
   );
 

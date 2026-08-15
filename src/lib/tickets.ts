@@ -27,6 +27,9 @@ import {
   type TicketSort,
 } from "@/lib/ticket-sort";
 import { TICKETS_PER_PAGE } from "@/lib/ticket-paging";
+// Eine Senke: `lib/ticket-watchers.ts` importiert nichts aus dieser Datei, sonst
+// wäre der Pfeil ein Zyklus. Die Zugriffsprüfung liegt deshalb in der Action.
+import { watchTicket } from "@/lib/ticket-watchers";
 import { applyStatusChange } from "@/lib/ticket-workflow";
 import { defaultPriorityFor } from "@/lib/role-visibility";
 import { getUserOrganizationId, isOrgAdmin } from "@/lib/user-profile";
@@ -86,6 +89,7 @@ interface TicketRow {
   last_activity_at?: string | null;
   unread?: number;
   pinned?: number;
+  watched?: number;
   logged_minutes?: number | null;
   awaiting_reply?: number;
 }
@@ -125,6 +129,7 @@ function rowToTicket(row: TicketRow): MITSTicket {
     // Same shape as `unread`: absent everywhere except `searchTickets`, and the
     // schema's default is then the honest answer rather than a claim.
     pinned: row.pinned === 1,
+    watched: row.watched === 1,
     awaiting_reply: row.awaiting_reply === 1,
     logged_minutes: row.logged_minutes ?? 0,
     created_at: row.created_at,
@@ -619,6 +624,15 @@ export interface TicketFilter {
   excludePinnedFor?: string;
 
   /**
+   * Nur, was diese Person beobachtet.
+   *
+   * Wie die zwei darüber eine Benutzer-Id und deshalb **nie** aus dem
+   * Query-String: ein Wert von dort wäre ein Leser, der in die Abo-Liste eines
+   * anderen sieht. Gesetzt wird er nur dort, wo die Id aus der Sitzung kommt.
+   */
+  watchedBy?: string;
+
+  /**
    * Column and direction. Defaults to newest first.
    *
    * Part of the filter rather than a second argument so the queue can hand one
@@ -878,6 +892,17 @@ function ticketWhere(
     );
     whereParams.push(filter.pinnedOnlyFor);
   }
+  /*
+   * Nur, was diese Person beobachtet. Kein Gegenstück wie beim Pin: es gibt
+   * keinen zweiten Block, aus dem etwas herausgehalten werden müsste.
+   */
+  if (filter.watchedBy) {
+    clauses.push(
+      `EXISTS (SELECT 1 FROM mits_ticket_watch w
+                WHERE w.ticket_id = mits_ticket.id AND w.user_id = ?)`,
+    );
+    whereParams.push(filter.watchedBy);
+  }
   if (filter.excludePinnedFor) {
     clauses.push(
       `NOT EXISTS (SELECT 1 FROM mits_ticket_pin p
@@ -1053,6 +1078,17 @@ export function searchTickets(
   )`;
 
   /*
+   * Ob dieser Leser dem Ticket folgt. Direkt hinter `pinned`, damit die beiden
+   * parametrisierten Ausdrücke nebeneinander stehen und die Bindungswarnung
+   * darüber für beide gilt — der Parameter wird unten in derselben Reihenfolge
+   * angehängt.
+   */
+  const watched = `EXISTS (
+    SELECT 1 FROM mits_ticket_watch w
+     WHERE w.ticket_id = mits_ticket.id AND w.user_id = ?
+  )`;
+
+  /*
    * Reihenfolge in dieser Liste ist Bindungsreihenfolge — siehe die Warnung an
    * `pinned` darüber. `AWAITING_REPLY_SQL` ist parameterlos und könnte deshalb
    * überall stehen; es steht trotzdem hinten, damit die Warnung weiter für die
@@ -1072,6 +1108,7 @@ export function searchTickets(
          END AS unread,
          ${logged} AS logged_minutes,
          ${pinned} AS pinned,
+         ${watched} AS watched,
          ${AWAITING_REPLY_SQL} AS awaiting_reply`;
 
   // `activity` and `readAt` are each interpolated more than once above, so their
@@ -1084,7 +1121,8 @@ export function searchTickets(
     selectParams[2], // readAt, second branch
     selectParams[2], // readAt, third branch
     ...selectParams.slice(0, 2), // activity, third branch
-    user.id, // pinned, last column in the list
+    user.id, // pinned
+    user.id, // watched, last parametrised column in the list
   ];
 
   const { where, params: whereParams } = ticketWhere(filter, user);
@@ -1283,6 +1321,18 @@ export function assignTicket(
       from: nameOf(before.assigned_to),
       to: nameOf(assigneeId),
     });
+    /*
+     * Wer ein Ticket bekommt, folgt ihm danach.
+     *
+     * Ohne das wäre die engere Einstellung des `reply`-Kanals eine
+     * Stummschaltung: sie fragt nach zugewiesen **oder** beobachtet, und wenn
+     * nie jemand automatisch folgt, bleibt die zweite Hälfte für immer leer.
+     *
+     * Die Gegenrichtung fehlt absichtlich — eine entzogene Zuweisung löscht das
+     * Abo nicht. Wer ein Ticket abgibt, will meist wissen, wie es ausgeht, und
+     * der Knopf am Ticket ist der Weg, das zu beenden.
+     */
+    if (assigneeId) watchTicket(ticketId, assigneeId);
     announce(ticketId, actor.id);
     // The one state change that does produce a notification — "dir zugewiesen"
     // — so the recipient's watcher is woken rather than left on its interval.

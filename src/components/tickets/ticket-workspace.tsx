@@ -13,6 +13,7 @@ import { useState, type ReactNode } from "react";
 
 import { DispatchDialog } from "@/components/tickets/dispatch-dialog";
 import { PinButton } from "@/components/tickets/pin-button";
+import { WatchButton } from "@/components/tickets/watch-button";
 import { ReRouteModal } from "@/components/tickets/re-route-modal";
 import {
   ReminderPopover,
@@ -72,6 +73,7 @@ export function TicketWorkspace({
   reminders,
   routing,
   pinned,
+  watching,
   children,
 }: {
   ticketId: string;
@@ -94,6 +96,8 @@ export function TicketWorkspace({
   } | null;
   /** Null when pinning is switched off — the button is then absent, not disabled. */
   pinned: boolean | null;
+  /** Null, wenn Beobachten abgeschaltet ist. Gleiche Regel wie beim Pin. */
+  watching: boolean | null;
   /** The conversation, server-rendered. */
   children: ReactNode;
 }) {
@@ -159,6 +163,15 @@ export function TicketWorkspace({
         */}
         {pinned !== null && (
           <PinButton ticketId={ticketId} pinned={pinned} variant="bar" />
+        )}
+
+        {/*
+          Folgen steht neben dem Pin und ist absichtlich nicht derselbe Knopf.
+          Der Pin sortiert die eigene Queue, das Abo entscheidet über Meldungen —
+          zwei Fragen, und zusammengelegt wäre jedes Lesezeichen ein Abo.
+        */}
+        {watching !== null && (
+          <WatchButton ticketId={ticketId} watching={watching} />
         )}
 
         {/*
