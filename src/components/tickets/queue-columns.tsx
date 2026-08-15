@@ -1,6 +1,6 @@
 "use client";
 
-import { Columns3Icon, Loader2Icon } from "lucide-react";
+import { Loader2Icon, SlidersHorizontalIcon } from "lucide-react";
 import { startTransition, useActionState, useState } from "react";
 
 import { saveQueueColumnsAction } from "@/app/actions/queue-columns";
@@ -20,8 +20,14 @@ import {
 /* ──────────────────────────────────────────────────────────────────────────
    Welche Spalten die Queue zeigt.
 
-   Im `actions`-Slot von `QueueTabs`, neben dem CMDB-Knopf — kein neuer Platz im
-   Layout, und dieselbe Zeile, in der auch die Zuständigkeit umgeschaltet wird.
+   **Als letzter Spaltenkopf in der Tabelle**, nicht mehr in der Reihe mit
+   „Team" und „CMDB". Dort stand eine Einstellung *dieser* Tabelle neben zwei
+   Wegen an einen anderen Ort; hier ist sie das Spiegelbild der Pin-Spalte links
+   — dort ein Knopf je Zeile ohne Überschrift, hier eine Überschrift ohne
+   Zeilen.
+
+   Nur die Queue reicht sie durch. Der Pin-Block darüber liest dieselbe Wahl und
+   bekommt kein zweites Bedienelement dafür.
 
    **Angeboten wird nur, was die Instanz hat.** Die Liste kommt als Prop vom
    Server: `feature_time_tracking` entscheidet über „Zeit", die Pins über
@@ -76,16 +82,27 @@ export function QueueColumnPicker({
   return (
     <Popover>
       <PopoverTrigger asChild>
+        {/*
+          Nur das Symbol, und in Icon-Knopf-Größe.
+
+          Der Knopf sitzt jetzt als letzter Spaltenkopf in der Tabelle statt in
+          der Reihe mit „Team" und „CMDB". Neben beschrifteten Spaltenköpfen ist
+          ein Wort mehr Breite, die dem Titel fehlt — dieselbe Begründung, aus
+          der die Pin-Spalte gegenüber keine Beschriftung trägt. Was er tut,
+          steht im `title` und im `sr-only`-Text.
+        */}
         <Button
-          size="sm"
-          className="h-11 rounded-full border border-border bg-card px-4 text-foreground hover:bg-accent hover:text-accent-foreground"
+          size="icon"
+          variant="ghost"
+          aria-label="Spalten wählen"
+          title="Spalten wählen"
+          className="size-7 rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground"
         >
           {pending ? (
-            <Loader2Icon className="animate-spin" />
+            <Loader2Icon className="size-4 animate-spin" />
           ) : (
-            <Columns3Icon strokeWidth={1.5} />
+            <SlidersHorizontalIcon className="size-4" strokeWidth={1.5} />
           )}
-          Spalten
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 rounded-2xl">

@@ -598,8 +598,24 @@ zu tun hat.
 ### Die Spalten gehören dem Agenten
 
 `QUEUE_COLUMNS` in `types/mits.ts`, gespeichert unter `queue_columns:<userId>`
-(`lib/agent-views.ts`, neben `agent_view:<userId>`). Popover im `actions`-Slot von
-`QueueTabs`.
+(`lib/agent-views.ts`, neben `agent_view:<userId>`).
+
+**Der Auslöser ist der letzte Spaltenkopf der Tabelle**, ein Icon-Knopf ohne
+Beschriftung. Er saß einmal im `actions`-Slot von `QueueTabs`, in einer Reihe
+mit „Mein Tag", „Team" und „CMDB" — dort stand eine Einstellung *dieser* Tabelle
+neben drei Wegen an einen anderen Ort. Jetzt ist er das Spiegelbild der
+Pin-Spalte links: dort ein Knopf je Zeile ohne Überschrift, hier eine
+Überschrift ohne Zeilen.
+
+- **`columnPicker` reist als `ReactNode` durch `TicketTable`.** Der Picker ist
+  ein Client-Bauteil mit einer Server Action daran, die Tabelle eine Server
+  Component; durchgereicht muss sie die Spaltenwahl nicht kennen.
+- **Jede Zeile bekommt eine leere Gegenzelle** (`w-px p-0`). Ohne sie stünden
+  Kopf und Zeilen um eine Spalte versetzt; mit der üblichen Zellenpolsterung
+  säße auf jeder Zeile ein Streifen Luft am rechten Rand.
+- **Nur die Queue setzt das Prop.** Der Pin-Block liest dieselbe Wahl und
+  bekommt kein zweites Bedienelement — zwei Wege zu einer Einstellung, zwölf
+  Pixel auseinander.
 
 - **Nummer und Titel stehen nicht zur Wahl.** Der Titel trägt `w-full max-w-0` und
   ist damit die *absorbierende* Spalte; ohne ihn hat das automatische Layout

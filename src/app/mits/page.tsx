@@ -359,10 +359,12 @@ export default async function AgentQueuePage({
                    * schauen.
                    */
                   <>
-                    <QueueColumnPicker
-                      available={availableColumns}
-                      hidden={hiddenColumns}
-                    />
+                    {/*
+                      Die Spaltenwahl stand hier und sitzt jetzt als letzter
+                      Spaltenkopf in der Tabelle. In dieser Reihe stand eine
+                      Einstellung *dieser* Tabelle neben zwei Wegen an einen
+                      anderen Ort.
+                    */}
                     {/*
                       „Mein Tag" hängt an keinem Modul und an keinem Bereich: die
                       Seite zeigt nur, was dieser Leser ohnehin sehen darf, in
@@ -516,6 +518,15 @@ export default async function AgentQueuePage({
                     // Passed whole, so a sort click keeps the tab, the scope and any
                     // deep filter that is already narrowing the list.
                     searchParams={params}
+                    // Die Spaltenwahl gehört zu den Spalten und steht deshalb
+                    // als letzter Spaltenkopf. Nur hier, nicht am Pin-Block: es
+                    // ist eine Einstellung, keine zwei.
+                    columnPicker={
+                      <QueueColumnPicker
+                        available={availableColumns}
+                        hidden={hiddenColumns}
+                      />
+                    }
                   />
                   <TicketPager
                     basePath="/mits"

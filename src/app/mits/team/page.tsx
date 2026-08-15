@@ -66,6 +66,10 @@ export default async function TeamPage() {
         <div className="w-full max-w-7xl">
           <BackLink href="/mits" label="Zurück zur Queue" />
           <div className="mt-4">
+            {/*
+              Nur die Überschrift. Der Untertitel beschrieb, was die Blöcke
+              darunter zeigen — und die tragen ihre eigenen Überschriften.
+            */}
             <h1 className="flex items-center gap-3 text-3xl font-normal tracking-tight sm:text-4xl">
               <UsersIcon
                 className="size-7 text-muted-foreground"
@@ -74,10 +78,6 @@ export default async function TeamPage() {
               />
               Team
             </h1>
-            <p className="mt-2 max-w-2xl text-muted-foreground">
-              Was liegen bleibt und wer wie viel davon hält. Welche Angaben hier
-              stehen, steuert die Administration.
-            </p>
           </div>
 
           <Separator className="my-8 bg-border" />
