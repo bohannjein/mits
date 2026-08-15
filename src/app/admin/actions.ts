@@ -11,7 +11,7 @@ import {
 import { AIProviderError, verifyAIProvider } from "@/lib/services/ai/provider";
 import { recordAuthEvent } from "@/lib/auth-log";
 import { AccountCreateError, createAccount } from "@/lib/auth/create-account";
-import { ROLE_LABELS, isRole } from "@/lib/auth/roles";
+import { ROLE_LABELS, canViewBoard, isRole } from "@/lib/auth/roles";
 import { requireRole } from "@/lib/auth/session";
 import { isFeatureEnabled, setFeatureFlags } from "@/lib/features";
 import { ingestMailbox } from "@/lib/mail/ingest";
@@ -85,16 +85,20 @@ import {
   RoleChangeError,
   findUser,
   hasTwoFactor,
+  listUsers,
   resetTwoFactor,
   setUserName,
   setUserRole,
 } from "@/lib/users";
+import { setAgentCapacity, setTeamSettings } from "@/lib/team-settings";
 import {
   AIProvider,
   ANALYTICS_WIDGETS,
   AnalyticsSettingsSchema,
   NOTIFICATION_CHANNELS,
   NotificationSettingsSchema,
+  TEAM_TOGGLES,
+  TeamSettingsSchema,
   AI_FEATURES,
   AI_FEATURE_META,
   CannedResponseSchema,
@@ -1481,6 +1485,84 @@ export async function saveNotificationSettingsAction(
       muted === 0
         ? "Gespeichert. Alle Kanäle sind aktiv."
         : `Gespeichert. ${muted} von ${NOTIFICATION_CHANNELS.length} Kanälen stumm.`,
+  };
+}
+
+/* ── Team overview ──────────────────────────────────────────────────────── */
+
+/**
+ * Was auf /mits/team steht, plus die Kapazität je Konto.
+ *
+ * Ein Absenden, zwei Ziele: das flache Schalter-Objekt geht in eine
+ * `mits_setting`-Zeile, die Kapazitäten in je eine eigene. Zwei Formulare wären
+ * hier der bekannte Fehler — ein nicht angehakter Schalter wird nicht gesendet,
+ * also löschte jedes Speichern der einen Sektion die Schalter der anderen.
+ */
+export async function saveTeamSettingsAction(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireRole("admin");
+
+  const parsed = parsePayload(formData, "settings", TeamSettingsSchema);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+
+  const saved = setTeamSettings(parsed.data);
+
+  /*
+   * Die Kapazitäten von Hand geparst und **gegen den Kontenbestand gefiltert**,
+   * nicht per `z.record`.
+   *
+   * Zwei Gründe, beide schon einmal teuer gewesen: `z.record` mit einem Enum ist
+   * in Zod 4 exhaustiv und lehnt eine Teilmenge ab, und eine abgelehnte Zeile
+   * nähme hier die Schalter mit, die gerade erfolgreich gespeichert wurden. Der
+   * Filter ist zusätzlich die Zugriffsgrenze: ohne ihn schriebe ein handgebauter
+   * Request eine Setting-Zeile für jede Id, die er sich ausdenkt.
+   */
+  let capacityCount = 0;
+  try {
+    const raw: unknown = JSON.parse(String(formData.get("capacities") ?? "{}"));
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const draft = raw as Record<string, unknown>;
+      for (const account of listUsers()) {
+        if (!canViewBoard(account.role)) continue;
+        if (!(account.id in draft)) continue;
+
+        const value = String(draft[account.id] ?? "").trim();
+        // Leer heißt „nimm den Instanzwert", nicht „Kapazität null". Der
+        // Unterschied ist, ob ein frisch angelegtes Konto denselben Maßstab
+        // bekommt wie die anderen oder als dauerhaft überlastet erscheint.
+        if (value === "") {
+          setAgentCapacity(account.id, null);
+          continue;
+        }
+
+        const parsedValue = Number.parseInt(value, 10);
+        if (!Number.isFinite(parsedValue)) continue;
+        setAgentCapacity(account.id, parsedValue);
+        capacityCount += 1;
+      }
+    }
+  } catch {
+    // Ein unlesbares Kapazitätsfeld darf die gespeicherten Schalter nicht
+    // zurücknehmen — sie stehen bereits. Gemeldet wird der Teilerfolg unten.
+    return {
+      ok: false,
+      error: "Die Angaben sind gespeichert, die Kapazitäten konnten nicht gelesen werden.",
+    };
+  }
+
+  revalidatePath("/mits/team");
+  revalidatePath("/admin");
+  revalidatePath("/admin/settings/team");
+
+  const hidden = TEAM_TOGGLES.filter((key) => !saved[key]).length;
+  return {
+    ok: true,
+    message:
+      hidden === 0
+        ? `Gespeichert. Alle Angaben sichtbar, ${capacityCount} eigene Kapazität(en).`
+        : `Gespeichert. ${hidden} von ${TEAM_TOGGLES.length} Angaben ausgeblendet, ${capacityCount} eigene Kapazität(en).`,
   };
 }
 

@@ -5,6 +5,7 @@ import {
   FilterXIcon,
   PinIcon,
   ServerIcon,
+  UsersIcon,
 } from "lucide-react";
 
 import { IncidentBanner } from "@/components/dashboard/incident-banner";
@@ -361,6 +362,23 @@ export default async function AgentQueuePage({
                       available={availableColumns}
                       hidden={hiddenColumns}
                     />
+                    {/*
+                      Dieselbe Regel wie bei der CMDB: versteckt, wenn das Modul
+                      aus ist oder die Rolle die Fläche nicht hat. Ein Link in
+                      einen 404 ist die schlechtere Antwort als kein Link.
+                    */}
+                    {flags.feature_team_overview && areas.mits_team && (
+                      <Button
+                        asChild
+                        size="sm"
+                        className="h-11 rounded-full border border-border bg-card px-4 text-foreground hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <Link href="/mits/team">
+                          <UsersIcon strokeWidth={1.5} />
+                          Team
+                        </Link>
+                      </Button>
+                    )}
                     {flags.feature_cmdb && areas.mits_cmdb && (
                       <Button
                         asChild

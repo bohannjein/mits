@@ -47,6 +47,17 @@ export async function AppHeader() {
   const staff = user !== null && canViewBoard(user.role);
 
   /*
+   * Zwei Achsen, beide hier aufgelöst: das Modul kann für die Instanz aus sein,
+   * und die Rolle kann die Fläche nicht haben. Das Menü bekommt ein Boolean —
+   * eine Client-Komponente, die die Regel selbst liest, wäre die zweite Stelle,
+   * an der sie gelten muss.
+   */
+  const showTeam =
+    staff &&
+    isFeatureEnabled("feature_team_overview") &&
+    areas?.mits_team !== false;
+
+  /*
    * The heartbeat lives here so every page anyone opens counts as a sign of life,
    * without each page having to know about presence. Every role beats — the queue's
    * panel has a tab for reporters, and one that could only ever say "offline" would
@@ -176,6 +187,7 @@ export async function AppHeader() {
               user={user}
               showOwnTickets={areas?.customer_tickets !== false}
               showAnalytics={areas?.mits_analytics !== false}
+              showTeam={showTeam}
             />
           </>
         ) : (

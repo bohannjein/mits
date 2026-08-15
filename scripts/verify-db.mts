@@ -1853,6 +1853,101 @@ try {
     throw new Error("die doppelte Adresse ging durch");
   });
 
+  console.log("team-uebersicht");
+  const teamSettings = await import("../src/lib/team-settings");
+  const team = await import("../src/lib/team");
+
+  check("einstellungen schreiben und zuruecklesen", () => {
+    teamSettings.setTeamSettings({
+      ...mits.DEFAULT_TEAM_SETTINGS,
+      show_current_ticket: true,
+      show_resolved_today: true,
+      stale_days: 3,
+    });
+    const back = teamSettings.getTeamSettings();
+    if (!back.show_current_ticket || back.stale_days !== 3) {
+      throw new Error(JSON.stringify(back));
+    }
+    return back;
+  });
+
+  check("kapazitaet je konto", () => {
+    teamSettings.setAgentCapacity(agentId, 7);
+    const all = teamSettings.listAgentCapacities();
+    if (all.get(agentId) !== 7) throw new Error(JSON.stringify([...all]));
+    if (teamSettings.getAgentCapacity(agentId) !== 7) {
+      throw new Error("einzelabfrage weicht ab");
+    }
+    return all;
+  });
+
+  check("eine kapazitaet ueber der grenze wird geklemmt", () => {
+    teamSettings.setAgentCapacity(adminId, 9000);
+    const value = teamSettings.getAgentCapacity(adminId);
+    if (value !== 500) throw new Error(String(value));
+    return value;
+  });
+
+  check("null loescht den eintrag, das konto faellt auf den instanzwert", () => {
+    teamSettings.setAgentCapacity(adminId, null);
+    if (teamSettings.getAgentCapacity(adminId) !== null) {
+      throw new Error("der eintrag steht noch");
+    }
+    return true;
+  });
+
+  /*
+   * Der eigentliche Punkt dieser Datei: laufen die vier Aggregate ueberhaupt.
+   * `backlogFor` interpoliert `AWAITING_REPLY_SQL` aus `lib/tickets.ts` in ein
+   * eigenes Statement — der Ausdruck nennt `mits_ticket` beim Namen, und ein
+   * Alias an dieser Stelle waere ein SQL-Fehler, den kein Typechecker sieht.
+   */
+  check("collectTeamOverview laeuft mit allem an", () => {
+    const settings = mits.TeamSettingsSchema.parse({
+      show_current_ticket: true,
+      show_resolved_today: true,
+      stale_days: 3,
+    });
+    const overview = team.collectTeamOverview(settings, Date.now());
+    if (!overview.backlog) throw new Error("kein rueckstand berechnet");
+    if (overview.members.length < 1) throw new Error("keine agentenzeile");
+    // Der Agent hat in diesem Lauf Tickets bekommen; die Zeile muss ihn kennen.
+    const row = overview.members.find((member) => member.id === agentId);
+    if (!row) throw new Error("der agent fehlt in der liste");
+    if (row.capacity !== 7) throw new Error(`kapazitaet ${row.capacity}`);
+    return overview;
+  });
+
+  check("abgeschaltet heisst nicht berechnet", () => {
+    const overview = team.collectTeamOverview(
+      mits.TeamSettingsSchema.parse({
+        show_backlog: false,
+        show_workload: false,
+      }),
+      Date.now(),
+    );
+    if (overview.backlog !== null) throw new Error("rueckstand trotzdem gerechnet");
+    if (overview.members.length !== 0) throw new Error("zeilen trotzdem gebaut");
+    return overview;
+  });
+
+  check("stale_days = 0 schaltet die kachel ab, statt alles zu zaehlen", () => {
+    const overview = team.collectTeamOverview(
+      mits.TeamSettingsSchema.parse({ stale_days: 0 }),
+      Date.now(),
+    );
+    if (overview.backlog?.stale !== 0) {
+      throw new Error(String(overview.backlog?.stale));
+    }
+    return overview;
+  });
+
+  // Zurueck auf die Vorgaben, damit die Purge-Pruefungen darunter auf einem
+  // unveraenderten Stand laufen.
+  check("zuruecksetzen", () =>
+    teamSettings.setTeamSettings(mits.DEFAULT_TEAM_SETTINGS),
+  );
+
   console.log("purge");
   const purge = await import("../src/lib/purge");
   check("counts before", () => {

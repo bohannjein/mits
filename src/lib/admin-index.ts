@@ -10,6 +10,7 @@ import { listFormSchemas } from "@/lib/form-schemas";
 import { listLocations } from "@/lib/locations";
 import { listMacros } from "@/lib/macros";
 import { getNotificationSettings } from "@/lib/notification-settings";
+import { getTeamSettings } from "@/lib/team-settings";
 import { listOrganizations } from "@/lib/organizations";
 import { getPortalConfig, getPortalFaqs } from "@/lib/portal";
 import { getRoleVisibility } from "@/lib/role-visibility";
@@ -353,6 +354,34 @@ export function collectAdminSummaries(): Record<string, AdminSummary> {
     text: `Sammelmeldung ab ${notifications.digestThreshold}`,
     tone: "ok",
   };
+
+  /*
+   * Die Zeile nennt zuerst, ob das Modul überhaupt an ist — dieselbe
+   * Unterscheidung, die `collectSystemStatus` trägt: „aus" ist neutral und kein
+   * Mangel. Danach die Kapazität, weil das die eine Zahl ist, die jemand hier
+   * sucht, und die personenbezogenen Angaben, weil sie ab Werk aus sind und ein
+   * Admin sonst nicht sieht, dass er sie eingeschaltet hat.
+   */
+  const team = getTeamSettings();
+  if (!flags.feature_team_overview) {
+    summaries["/admin/settings/team"] = { text: "Modul aus", tone: "off" };
+  } else {
+    const personal = (["show_current_ticket", "show_resolved_today"] as const)
+      .filter((key) => team[key])
+      .length;
+    summaries["/admin/settings/team"] = {
+      text: [
+        `Kapazität ${team.default_capacity}`,
+        team.stale_days > 0
+          ? `ohne Bewegung ab ${team.stale_days} Tagen`
+          : "ohne Bewegung aus",
+        personal === 0
+          ? "keine personenbezogenen Angaben"
+          : `${personal} personenbezogene Angabe(n)`,
+      ].join(" · "),
+      tone: "ok",
+    };
+  }
 
   const data = getDataSettings();
   summaries["/admin/settings/data"] = {

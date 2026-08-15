@@ -35,6 +35,7 @@ die die jeweilige Sitzung nie berührt.
 | `.claude/rules/realtime.md` | SSE, Signale, Coalescing, Pop-out und Floating-Fenster |
 | `.claude/rules/cmdb.md` | Objekte, Lizenzen, Firmen, Import, REST |
 | `.claude/rules/analytics.md` | Kennzahlen, Zeiträume, Caching, Diagrammfarben |
+| `.claude/rules/team.md` | Team-Übersicht: Rückstand, Auslastung, Kapazität |
 | `.claude/rules/ai.md` | Opt-in-Architektur, Provider, Triage-Pipeline |
 | `.claude/rules/forms.md` | Schema-Compiler, bedingte Felder, abhängige Auswahl |
 | `.claude/rules/notifications.md` | Toast-Kanäle, Darstellung, Sammelmeldung |
@@ -331,6 +332,7 @@ mit Dateien, Entscheidungen und Stolperfallen steht in **[ROADMAP.md](ROADMAP.md
 | — | Dual-Theme, Rollen-Rename, Bubbles, Toasts, Queue, Zeit, Makros, S3, Mail-Abruf | ✅ |
 | — | Erinnerungen, Kategoriebaum + kaskadierender Filter, Smart-Routing (3 Flags) | ✅ |
 | — | Tickets anheften: eigener Block über der Queue, pro Person (16. Flag) | ✅ |
+| — | Team-Übersicht `/mits/team`: Rückstand, Auslastung, Präsenz (24. Flag) | ✅ |
 
 ## Drei Kern-Features nach der CMDB
 
@@ -485,6 +487,7 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /mits/tickets/[id]      Agenten-Detailansicht mit Workflow-Panel
 /mits/tickets/[id]/popout  nur der Verlauf: eigenes Fenster und iframe-Inhalt
 /mits/cmdb/…            Bestand, Lizenzen, Objekt-Detailansicht (Agenten)
+/mits/team              Rückstand, Auslastung je Agent, Präsenz (Agenten)
 /mits/analytics         Statistiken (Agenten), Anwender gesperrt
 /admin/…                Administration
 /admin/macros           Makros
@@ -499,6 +502,7 @@ deshalb ist die erste Ziffer fest und nicht frei — sonst wären `TCK-1042`
 /admin/security         Zugriffsprotokoll: Anmeldungen, Rollenwechsel, Kontoanlage, 2FA-Reset
 /admin/status           Systemzustand: was eingerichtet ist, plus Live-Verbindung
 /admin/settings/tickets  Wo die Antworten eines Formulars stehen, plus die drei Spalten der Melderansicht
+/admin/settings/team    Was auf der Team-Übersicht steht, Kapazität je Konto
 /admin/settings/analytics Widget-Schalter und Default-Intervall
 /admin/settings/notifications Kanäle, Darstellung, Sammelmeldung
 /admin/mail             Postfach-Abruf + Defender-Regel

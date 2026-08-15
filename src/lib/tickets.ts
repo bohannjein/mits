@@ -923,6 +923,61 @@ export function countSearchTickets(
   return row.n;
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   „Wartet ein Kunde auf uns" — der eine Ausdruck, zwei Aufrufer.
+
+   Er steht auf Modulebene und nicht mehr in `searchTickets`, weil die
+   Team-Übersicht dieselbe Frage stellt: der Marker in der Queue-Zeile und die
+   Rückstandszahl auf `/mits/team` müssen dieselbe Menge zählen. Zwei Kopien
+   wären zwei Definitionen von „wir sind dran", und die Abweichung fiele erst
+   auf, wenn jemand die beiden Zahlen nebeneinander legt.
+
+   **Parameterlos**, und genau das macht ihn teilbar: der Marker ist geteilt und
+   nicht je Leser, es kommt also kein `?` darin vor, das an einer Bindeposition
+   hängen würde.
+
+   Die Regel ist schärfer als „der Melder ist am Zug". Das sagt der Status seit
+   dem Ballbesitz-Umbau schon (`open` = das Team ist dran), und ein Marker für
+   dieselbe Aussage wäre ein zweites Signal für eine Frage. Was der Status nicht
+   sagen kann, ist der Fall hier: ein Ticket, das von `waiting_user` auf `open`
+   zurückgesprungen ist, sieht danach aus wie jedes andere offene — obwohl dort
+   jemand wartet, der schon einmal eine Antwort bekommen hatte.
+
+   ⚠️ Erwartet die Ticket-Tabelle unter ihrem echten Namen `mits_ticket` im
+   Scope, nicht unter einem Alias. Ein Aufrufer, der `FROM mits_ticket t`
+   schreibt, bekommt einen SQL-Fehler und keine falsche Zahl — die richtige
+   Richtung für einen Fehler, aber es kostet eine Minute, wenn man es nicht
+   weiß.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** Jüngste öffentliche Antwort des Teams. Interne Notizen zählen nicht: „das
+ *  Team hat geantwortet" heißt, der Melder hat etwas bekommen. */
+const LAST_STAFF_REPLY_SQL = `(
+    SELECT MAX(cs.created_at) FROM mits_ticket_comment cs
+     WHERE cs.ticket_id = mits_ticket.id
+       AND cs.deleted_at IS NULL
+       AND cs.author_is_agent = 1
+       AND cs.visibility = 'public'
+  )`;
+
+/** Jüngste Nachricht der Gegenseite. `author_is_agent` und nicht die Rolle des
+ *  Kontos: der Mail-Ingest erzwingt dort `0`, eine gemailte Kundenantwort zählt
+ *  also mit — der häufigste Fall überhaupt. */
+const LAST_REPORTER_MESSAGE_SQL = `(
+    SELECT MAX(cr.created_at) FROM mits_ticket_comment cr
+     WHERE cr.ticket_id = mits_ticket.id
+       AND cr.deleted_at IS NULL
+       AND cr.author_is_agent = 0
+  )`;
+
+/** `1` wenn eine Melder-Nachricht neuer ist als die jüngste öffentliche
+ *  Team-Antwort — und eine solche Antwort überhaupt existiert. */
+export const AWAITING_REPLY_SQL = `CASE
+           WHEN ${LAST_STAFF_REPLY_SQL} IS NULL THEN 0
+           WHEN ${LAST_REPORTER_MESSAGE_SQL} > ${LAST_STAFF_REPLY_SQL} THEN 1
+           ELSE 0
+         END`;
+
 export function searchTickets(
   filter: TicketFilter,
   user: SessionUser,
@@ -998,52 +1053,14 @@ export function searchTickets(
   )`;
 
   /*
-   * Der Melder hat nachgelegt — und das ist **geteilt**, nicht persönlich.
-   *
-   * `unread` daneben antwortet je Leser: zwei Agenten sehen zwei verschiedene
-   * Queues, und keiner von beiden sieht, ob der Kunde am Zug war. Genau das ist die
-   * Lücke, die dieser Ausdruck füllt, und deshalb kommt in ihm kein `?` vor.
-   *
-   * **Schärfer als „der Melder ist am Zug".** Das sagt der Status schon: seit dem
-   * Ballbesitz-Umbau heißt `open` „das Team ist am Zug". Ein Marker für dieselbe
-   * Aussage wäre ein zweites Signal für eine Frage. Was der Status *nicht* sagen
-   * kann, ist der Fall hier: ein Ticket, das von `waiting_user` auf `open`
-   * zurückgesprungen ist, sieht danach aus wie jedes andere offene — obwohl dort
-   * ein Kunde wartet, der schon einmal eine Antwort bekommen hatte.
-   *
-   * Deshalb die zweite Bedingung: es muss eine öffentliche Team-Antwort *geben*.
-   * Auf einem unberührten Ticket leuchtet nichts; dort sagen der Status und der
-   * persönliche Punkt schon alles.
-   *
-   * **Interne Notizen zählen nicht als Antwort.** „Das Team hat geantwortet" heißt,
-   * der Melder hat etwas bekommen; eine Notiz ist Werkstattgespräch. Ohne das
-   * `visibility = 'public'` leuchtete der Marker auf einem Ticket, auf das nie
-   * jemand geantwortet hat.
-   *
-   * `author_is_agent` und nicht die Rolle des Kontos: der Mail-Ingest erzwingt dort
-   * `0`, eine per Mail eingegangene Kundenantwort zählt also mit — der häufigste
-   * Fall überhaupt.
-   */
-  const lastStaffReply = `(
-    SELECT MAX(cs.created_at) FROM mits_ticket_comment cs
-     WHERE cs.ticket_id = mits_ticket.id
-       AND cs.deleted_at IS NULL
-       AND cs.author_is_agent = 1
-       AND cs.visibility = 'public'
-  )`;
-
-  const lastReporterMessage = `(
-    SELECT MAX(cr.created_at) FROM mits_ticket_comment cr
-     WHERE cr.ticket_id = mits_ticket.id
-       AND cr.deleted_at IS NULL
-       AND cr.author_is_agent = 0
-  )`;
-
-  /*
    * Reihenfolge in dieser Liste ist Bindungsreihenfolge — siehe die Warnung an
-   * `pinned` darüber. `awaiting_reply` ist parameterlos und könnte deshalb
+   * `pinned` darüber. `AWAITING_REPLY_SQL` ist parameterlos und könnte deshalb
    * überall stehen; es steht trotzdem hinten, damit die Warnung weiter für die
    * ganze Liste gilt und niemand die Ausnahme zur Regel liest.
+   *
+   * Der Ausdruck selbst liegt auf Modulebene, samt seiner Begründung: die
+   * Team-Übersicht zählt dieselbe Menge, und zwei Kopien wären zwei Antworten
+   * auf „wartet ein Kunde auf uns".
    */
   const extraColumns = `,
          ${activity} AS last_activity_at,
@@ -1055,11 +1072,7 @@ export function searchTickets(
          END AS unread,
          ${logged} AS logged_minutes,
          ${pinned} AS pinned,
-         CASE
-           WHEN ${lastStaffReply} IS NULL THEN 0
-           WHEN ${lastReporterMessage} > ${lastStaffReply} THEN 1
-           ELSE 0
-         END AS awaiting_reply`;
+         ${AWAITING_REPLY_SQL} AS awaiting_reply`;
 
   // `activity` and `readAt` are each interpolated more than once above, so their
   // placeholders repeat in the same order. Bound by repeating the values rather

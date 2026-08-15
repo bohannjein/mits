@@ -8,6 +8,7 @@ import {
   SettingsIcon,
   ShieldIcon,
   TicketIcon,
+  UsersIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -59,10 +60,13 @@ export function UserMenu({
   showOwnTickets = true,
   /** „Statistiken" — Bereich `mits_analytics`. */
   showAnalytics = true,
+  /** „Team" — Bereich `mits_team` **und** das Modul-Flag. */
+  showTeam = false,
 }: {
   user: SessionUser;
   showOwnTickets?: boolean;
   showAnalytics?: boolean;
+  showTeam?: boolean;
 }) {
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
@@ -161,6 +165,22 @@ export function UserMenu({
             in. Gated on the same predicate as the desk entry, which is the guard
             `/mits/analytics` itself uses.
           */}
+          {/*
+            Wie die Statistiken: der auffällige Weg ist der Knopf in der
+            Queue-Kopfzeile, aber der steht nur auf `/mits`. Von einer
+            Ticketseite aus wäre die Team-Übersicht sonst zwei Klicks entfernt.
+            Gegated auf dasselbe Prädikat wie der Desk-Eintrag — das ist der
+            Guard, den `/mits/team` selbst benutzt.
+          */}
+          {showBoard && showTeam && (
+            <DropdownMenuItem asChild>
+              <Link href="/mits/team">
+                <UsersIcon />
+                Team
+              </Link>
+            </DropdownMenuItem>
+          )}
+
           {showBoard && showAnalytics && (
             <DropdownMenuItem asChild>
               <Link href="/mits/analytics">

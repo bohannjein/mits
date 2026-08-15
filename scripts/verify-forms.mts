@@ -1,13 +1,19 @@
 import { SHORTCUT_GROUPS, isPlainKey, swallowsKeys } from "../src/lib/shortcuts";
 import { fillCannedResponse, firstNameOf } from "../src/types/mits";
 import {
+  DEFAULT_TEAM_SETTINGS,
   QUEUE_COLUMNS,
   QUEUE_COLUMN_LABELS,
+  TEAM_TOGGLES,
+  TEAM_TOGGLE_META,
+  TeamSettingsSchema,
   TicketStatus,
   TicketStatusValues,
   WorkflowSettingsSchema,
   describeTicketState,
   hasAutoClose,
+  isOverloaded,
+  loadRatio,
   nextStatusAfterReply,
   queueColumnVisible,
   toAutoCloseDays,
@@ -5008,6 +5014,70 @@ console.log("\nqueue-spalten");
   check(
     "eine ausgeblendete Spalte ist unsichtbar, jede andere sichtbar",
     !queueColumnVisible(["time"], "time") && queueColumnVisible(["time"], "status"),
+  );
+}
+
+console.log("\nteam-uebersicht");
+{
+  /*
+   * Flach, mit Default je Feld — die Eigenschaft, auf die es ankommt: eine von
+   * einem aelteren Build geschriebene Zeile faellt Feld fuer Feld zurueck statt
+   * ganz verworfen zu werden. Ein verworfener Parse blendete hier abgeschaltete
+   * personenbezogene Angaben wieder ein, und das ist die eine Fehlrichtung, die
+   * niemand bemerkt.
+   */
+  check(
+    "parse({}) liefert ein vollstaendiges Objekt",
+    TEAM_TOGGLES.every((key) => typeof DEFAULT_TEAM_SETTINGS[key] === "boolean") &&
+      typeof DEFAULT_TEAM_SETTINGS.default_capacity === "number",
+  );
+
+  const partial = TeamSettingsSchema.parse({ show_backlog: false });
+  check(
+    "eine teilzeile behaelt ihren wert und fuellt den rest auf",
+    partial.show_backlog === false &&
+      partial.show_workload === true &&
+      partial.default_capacity === DEFAULT_TEAM_SETTINGS.default_capacity,
+  );
+
+  // Die zwei personenbezogenen Angaben sind ab Werk aus. Wer das umdreht, gibt
+  // jeder bestehenden Instanz mit einem Update eine Leistungskennzahl.
+  check(
+    "aktuelles ticket und heute-abgeschlossen sind ab werk aus",
+    DEFAULT_TEAM_SETTINGS.show_current_ticket === false &&
+      DEFAULT_TEAM_SETTINGS.show_resolved_today === false,
+  );
+
+  check(
+    "jeder schalter hat eine beschriftung",
+    TEAM_TOGGLES.every(
+      (key) =>
+        TEAM_TOGGLE_META[key].label.length > 0 &&
+        TEAM_TOGGLE_META[key].description.length > 0,
+    ),
+  );
+
+  check(
+    "grenzwerte werden geklemmt statt abgelehnt",
+    TeamSettingsSchema.safeParse({ default_capacity: 9000 }).success === false &&
+      TeamSettingsSchema.parse({ stale_days: 0 }).stale_days === 0,
+  );
+
+  /*
+   * Die Balkenrechnung. Der Fall, fuer den sie hier steht, ist `capacity = 0`:
+   * `14/0` waere `Infinity`, im Markup eine Breite, die der Browser als `NaN%`
+   * verwirft — der Balken saehe bei der am staerksten belasteten Person am
+   * leersten aus.
+   */
+  check("kapazitaet null teilt nicht durch null", loadRatio(14, 0) === 1);
+  check("kapazitaet null ohne last ist leer", loadRatio(0, 0) === 0);
+  check("ueber der kapazitaet ist der balken voll", loadRatio(14, 12) === 1);
+  check("die haelfte ist die haelfte", loadRatio(6, 12) === 0.5);
+  check("leer ist leer", loadRatio(0, 12) === 0);
+
+  check(
+    "ueberlast braucht einen maszstab",
+    isOverloaded(14, 12) && !isOverloaded(12, 12) && !isOverloaded(14, 0),
   );
 }
 

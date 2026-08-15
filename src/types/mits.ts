@@ -2288,6 +2288,20 @@ export const FeatureFlagsSchema = z.object({
    * somebody made rather than something that started happening after an update.
    */
   feature_smart_routing: z.boolean().default(false),
+  /**
+   * On, like the pins and unlike the routing.
+   *
+   * The page only reads. Nothing about it writes to a ticket, and an instance
+   * with one agent shows one row rather than an empty module somebody has to go
+   * looking for.
+   *
+   * What starts *off* is the half that is about a person rather than about the
+   * work: `show_current_ticket` and `show_resolved_today` in
+   * `TeamSettingsSchema`. Which tickets are piling up is an operational fact;
+   * who closed how many of them today is a performance figure, and a helpdesk
+   * that gains one on update never decided to have it.
+   */
+  feature_team_overview: z.boolean().default(true),
 });
 export type FeatureFlags = z.infer<typeof FeatureFlagsSchema>;
 export type FeatureFlagKey = keyof FeatureFlags;
@@ -2451,6 +2465,136 @@ export function channelConfig(
     tone: settings[`${channel}_tone`],
     sticky: settings[`${channel}_sticky`],
   };
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Was auf der Team-Übersicht steht.
+
+   Drei Achsen schalten die Seite, und sie beantworten drei verschiedene Fragen:
+   `feature_team_overview` — gibt es sie auf dieser Instanz; der Bereich
+   `mits_team` — bekommt diese Rolle sie zu sehen; und dieses Schema — was steht
+   darauf. Zusammengelegt wäre es ein Schalter, der drei Dinge tut, und beim
+   Nachsehen die falsche Stelle.
+
+   **Flach, nicht verschachtelt**, aus demselben Grund wie bei
+   `NotificationSettingsSchema`: `parse({})` muss ein vollständiges Objekt
+   liefern, damit eine von einem älteren Build geschriebene Zeile Feld für Feld
+   auf den Default fällt statt ganz verworfen zu werden. Ein verworfener Parse
+   würde hier abgeschaltete Angaben wieder einblenden — und das ist die eine
+   Fehlrichtung, die niemand bemerkt.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const TeamSettingsSchema = z.object({
+  show_backlog: z.boolean().default(true),
+  show_workload: z.boolean().default(true),
+  show_capacity_bar: z.boolean().default(true),
+  show_priority_split: z.boolean().default(true),
+  show_oldest_age: z.boolean().default(true),
+  show_presence: z.boolean().default(true),
+
+  /*
+   * Die zwei, die aus per Default sind.
+   *
+   * Alles andere hier beschreibt die *Arbeit* — was liegt, wie viel wem gehört.
+   * Diese beiden beschreiben eine *Person*: woran sie gerade sitzt und wie viel
+   * sie heute geschafft hat. Das ist in einem Betrieb mit Mitbestimmung eine
+   * Angabe, die jemand einschalten soll, statt sie mit einem Update zu bekommen.
+   */
+  show_current_ticket: z.boolean().default(false),
+  show_resolved_today: z.boolean().default(false),
+
+  /** Woran die Balkenlänge gemessen wird, wenn für ein Konto nichts Eigenes steht. */
+  default_capacity: z.coerce.number().int().min(0).max(500).default(12),
+  /** Ab wann ein Ticket als „ohne Bewegung" zählt. `0` nimmt die Zahl aus dem Rückstand. */
+  stale_days: z.coerce.number().int().min(0).max(90).default(5),
+  /** Wie weit zurück „arbeitet gerade an" schaut. */
+  current_work_minutes: z.coerce.number().int().min(5).max(480).default(30),
+});
+export type TeamSettings = z.infer<typeof TeamSettingsSchema>;
+
+export const DEFAULT_TEAM_SETTINGS: TeamSettings = TeamSettingsSchema.parse({});
+
+/**
+ * Die Schalter der Maske, in Anzeigereihenfolge.
+ *
+ * Die Maske baut sich daraus, die Save-Action liest daraus — es gibt also keine
+ * Zeile zu vergessen, wenn hier eine dazukommt. Dieselbe Bauart wie
+ * `FEATURE_FLAG_META` und `ANALYTICS_WIDGETS`.
+ */
+export const TEAM_TOGGLES = [
+  "show_backlog",
+  "show_workload",
+  "show_capacity_bar",
+  "show_priority_split",
+  "show_oldest_age",
+  "show_presence",
+  "show_current_ticket",
+  "show_resolved_today",
+] as const satisfies readonly (keyof TeamSettings)[];
+export type TeamToggle = (typeof TEAM_TOGGLES)[number];
+
+export const TEAM_TOGGLE_META: Record<
+  TeamToggle,
+  { label: string; description: string }
+> = {
+  show_backlog: {
+    label: "Rückstand",
+    description:
+      "Der Block über der Liste: unzugewiesen, wartet auf uns, ohne Bewegung, kritisch offen.",
+  },
+  show_workload: {
+    label: "Auslastung je Agent",
+    description:
+      "Eine Zeile pro Agent mit der Zahl der offenen Tickets. Ohne diesen Schalter bleibt nur der Rückstand.",
+  },
+  show_capacity_bar: {
+    label: "Kapazitätsbalken",
+    description:
+      "Balken statt nackter Zahl, gemessen an der Kapazität des Kontos.",
+  },
+  show_priority_split: {
+    label: "Prioritäten je Agent",
+    description: "Wie viele der offenen Tickets hoch oder kritisch sind.",
+  },
+  show_oldest_age: {
+    label: "Ältestes Ticket je Agent",
+    description: "Wie lange der am längsten offene Vorgang schon liegt.",
+  },
+  show_presence: {
+    label: "Präsenzpunkt",
+    description: "Aktiv, inaktiv oder offline an jeder Zeile.",
+  },
+  show_current_ticket: {
+    label: "Aktuelles Ticket",
+    description:
+      "Woran die Person zuletzt gearbeitet hat. Personenbezogen — ab Werk aus.",
+  },
+  show_resolved_today: {
+    label: "Heute abgeschlossen",
+    description:
+      "Wie viele Tickets die Person heute geschlossen hat. Personenbezogen — ab Werk aus.",
+  },
+};
+
+/**
+ * Wie voll der Balken ist, als Anteil zwischen 0 und 1.
+ *
+ * Hier und nicht in `lib/team.ts`, aus demselben Grund wie `presenceStateFor`:
+ * das Bauteil, das den Balken zeichnet, ist ein Client-Bauteil und kann kein
+ * `server-only`-Modul importieren. Und es ist die Stelle, an der eine Division
+ * durch null wartet — `capacity = 0` heißt „kein Maßstab gesetzt", und `14/0`
+ * wäre `Infinity`, im Markup eine Breite, die der Browser verwirft und still auf
+ * null setzt. Der Balken sähe dann bei der am stärksten belasteten Person am
+ * leersten aus.
+ */
+export function loadRatio(open: number, capacity: number): number {
+  if (capacity <= 0) return open > 0 ? 1 : 0;
+  return Math.max(0, Math.min(1, open / capacity));
+}
+
+/** Über dem Maßstab — der Zustand, für den der Balken überhaupt da ist. */
+export function isOverloaded(open: number, capacity: number): boolean {
+  return capacity > 0 && open > capacity;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -2728,6 +2872,11 @@ export const FEATURE_FLAG_META: Record<
     description:
       "Schlägt Tickets vor, die Duplikate sein könnten. Experimentell.",
   },
+  feature_team_overview: {
+    label: "Team-Übersicht",
+    description:
+      "Rückstand, Auslastung je Agent und Präsenz auf einer Seite unter /mits/team. Welche Angaben dort stehen, wird unter /admin/settings/team eingestellt.",
+  },
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -2788,6 +2937,7 @@ export const NAV_AREAS = [
   "ticket_search",
   "mits_cmdb",
   "mits_analytics",
+  "mits_team",
 ] as const;
 export type NavArea = (typeof NAV_AREAS)[number];
 
@@ -2836,6 +2986,12 @@ export const NAV_AREA_META: Record<
   mits_analytics: {
     label: "Statistiken",
     description: "Die Auswertung unter /mits/analytics und ihre JSON-Ausgabe.",
+    role: "agent",
+  },
+  mits_team: {
+    label: "Team-Übersicht",
+    description:
+      "Rückstand, Auslastung und Präsenz unter /mits/team. Wer sie nicht sieht, behält die eigene Queue.",
     role: "agent",
   },
 };

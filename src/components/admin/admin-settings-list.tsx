@@ -311,6 +311,14 @@ const ENTRIES: SettingsEntry[] = [
       "analytics kennzahlen widgets diagramme intervall zeitraum heatmap csv auswertung",
   },
   {
+    href: "/admin/settings/team",
+    label: "Team-Übersicht",
+    group: "operations",
+    icon: UsersIcon,
+    keywords:
+      "team auslastung kapazität rückstand präsenz agenten last balken liegen geblieben",
+  },
+  {
     href: "/admin/settings/notifications",
     label: "Benachrichtigungen",
     group: "operations",

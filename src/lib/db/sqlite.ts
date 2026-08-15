@@ -941,6 +941,31 @@ function addColumns(database: Database.Database): void {
        ON mits_ticket (status, status_changed_at)`,
   );
 
+  /*
+   * Die Team-Übersicht liest den Audit-Log zum ersten Mal quer statt je Ticket.
+   *
+   * Der vorhandene Index steht auf `(ticket_id, created_at)` — richtig für
+   * `listAuditFor`, und für „was hat dieser Akteur zuletzt getan" wertlos: ohne
+   * einen Index auf `actor_id` ist jede der beiden Team-Abfragen ein Scan über
+   * eine Tabelle, die als einzige in diesem Schema nur wächst und nie aufgeräumt
+   * wird. Auf einer zwei Jahre alten Instanz ist das der Unterschied zwischen
+   * einer Seite und einer Wartezeit.
+   */
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_mits_audit_actor
+       ON mits_audit_log (actor_id, created_at)`,
+  );
+
+  /*
+   * Und der Gegenstück-Index für die Lastzahl: `GROUP BY assigned_to` über die
+   * offenen Tickets. Partiell, weil ein unzugewiesenes Ticket in dieser Gruppe
+   * nichts zu suchen hat — es ist der Rückstand, nicht die Last einer Person.
+   */
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_mits_ticket_assigned
+       ON mits_ticket (assigned_to, status) WHERE assigned_to IS NOT NULL`,
+  );
+
   backfillStatusChangedAt(database);
 }
 
