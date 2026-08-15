@@ -5048,6 +5048,18 @@ console.log("\nteam-uebersicht");
       DEFAULT_TEAM_SETTINGS.show_resolved_today === false,
   );
 
+  /*
+   * Umverteilen ist an: es nimmt niemandem etwas weg, was er nicht ohnehin auf
+   * der Ticketseite darf. Der Schalter ist eine Anzeigeentscheidung und keine
+   * Berechtigung — die Beschriftung muss das sagen, sonst sucht ein Admin hier
+   * einen Rechteentzug.
+   */
+  check("umverteilen ist ab werk an", DEFAULT_TEAM_SETTINGS.allow_reassign === true);
+  check(
+    "und die beschriftung sagt, dass die ticketseite bleibt",
+    TEAM_TOGGLE_META.allow_reassign.description.includes("Ticketseite"),
+  );
+
   check(
     "jeder schalter hat eine beschriftung",
     TEAM_TOGGLES.every(

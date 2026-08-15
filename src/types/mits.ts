@@ -2503,6 +2503,18 @@ export const TeamSettingsSchema = z.object({
   show_current_ticket: z.boolean().default(false),
   show_resolved_today: z.boolean().default(false),
 
+  /**
+   * Zuweisen direkt aus der Übersicht — Ziehen plus das Menü an jeder Zeile.
+   *
+   * **Eine Anzeigeentscheidung und keine Berechtigung**, und das gehört
+   * ausgesprochen: der Weg dahinter ist `assignTicketAction`, dieselbe Tür, die
+   * die Ticketseite benutzt. Abgeschaltet verschwindet die Geste hier; ein Agent
+   * weist danach weiterhin auf dem Ticket zu. Wer das Zuweisen als Recht
+   * entziehen will, sucht etwas, das es nicht gibt — und ein Schalter, der so
+   * aussieht, wäre die schlechtere Antwort als keiner.
+   */
+  allow_reassign: z.boolean().default(true),
+
   /** Woran die Balkenlänge gemessen wird, wenn für ein Konto nichts Eigenes steht. */
   default_capacity: z.coerce.number().int().min(0).max(500).default(12),
   /** Ab wann ein Ticket als „ohne Bewegung" zählt. `0` nimmt die Zahl aus dem Rückstand. */
@@ -2530,6 +2542,7 @@ export const TEAM_TOGGLES = [
   "show_presence",
   "show_current_ticket",
   "show_resolved_today",
+  "allow_reassign",
 ] as const satisfies readonly (keyof TeamSettings)[];
 export type TeamToggle = (typeof TEAM_TOGGLES)[number];
 
@@ -2573,6 +2586,11 @@ export const TEAM_TOGGLE_META: Record<
     label: "Heute abgeschlossen",
     description:
       "Wie viele Tickets die Person heute geschlossen hat. Personenbezogen — ab Werk aus.",
+  },
+  allow_reassign: {
+    label: "Umverteilen",
+    description:
+      "Tickets aus der Übersicht ziehen oder per Menü zuweisen. Abgeschaltet bleibt das Zuweisen auf der Ticketseite möglich.",
   },
 };
 

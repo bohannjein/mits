@@ -168,6 +168,77 @@ Präsenz zu sortieren wäre die Reihenfolge der Sidebar-Liste und beantwortet ei
 andere Frage — und wer offline ist, verschwände unter den Leuten, deren Tickets
 trotzdem liegen.
 
+## Umverteilen
+
+`allow_reassign`, an per Default. Der Pool wird zu einem Block über der Liste,
+jede Agentenzeile bekommt ihre offenen Tickets als Chips, und beides ist
+Ziehquelle **und** Ablageziel. Ablage auf dem Pool hebt die Zuweisung auf.
+
+**Der Schalter ist eine Anzeigeentscheidung, keine Berechtigung.** Dahinter
+steht `assignTicketAction`, dieselbe Tür, die die Ticketseite benutzt.
+Abgeschaltet verschwindet die Geste hier; ein Agent weist danach weiterhin auf
+dem Ticket zu. Ihn serverseitig durchzusetzen hieße, das Zuweisen überall zu
+verbieten — wer das als Recht entziehen will, sucht etwas, das es nicht gibt,
+und ein Schalter, der so aussieht, wäre die schlechtere Antwort als keiner. Die
+Beschriftung sagt es; `test:forms` hält den Satz fest.
+
+**Native HTML5-DnD, keine neue Abhängigkeit.** `Reorder` aus framer-motion — das
+Werkzeug des Formular-Canvas — ordnet innerhalb *einer* Liste um und zieht nicht
+zwischen zwei Containern. Für „von Meier zu Schulz" ist es das falsche Werkzeug.
+
+**Das Menü an jeder Zeile ist der gleichwertige Weg**, nicht die Notlösung:
+Ziehen ist mit einer Maus schneller und mit Tastatur oder Touch gar nicht
+bedienbar. Beide laufen in dieselbe Funktion.
+
+**`dragleave` braucht einen Zähler je Ziel.** Es feuert auch beim Wechsel auf ein
+Kindelement — ohne den Zähler flackert die Markierung, sobald der Cursor über
+einen Chip innerhalb des Ziels fährt. Derselbe `dragDepth`, den die Dropzone des
+Erstellungs-Chats hält.
+
+**Der Link im Chip trägt `draggable={false}`.** Ein Anker ist von sich aus
+ziehbar, und der Browser legt dann seine eigene URL in `dataTransfer` statt der
+Ticket-Id — das Fehlerbild ist ein Drop, der nichts tut.
+
+**Optimistisch, mit Rücknahme im Fehlerfall.** `moved` hält nur die Abweichungen
+vom Serverstand. Bei Erfolg wird der Eintrag **nicht** geräumt: er entspricht
+dann dem Geschriebenen, und die Revalidierung zieht die Props nach — ihn sofort
+zurückzunehmen wäre ein sichtbares Zurückspringen für die Dauer der
+Revalidierung. Dieselbe Regel wie beim Anheften. Ein Fehler setzt auf den Stand
+*vor dem Ziehen* zurück, nicht auf den Serverstand: dazwischen kann eine andere
+Verschiebung liegen, die durchgegangen ist.
+
+**Die Zahlen folgen als Differenz, nicht aus der sichtbaren Liste.** Über dem
+Deckel gibt es Tickets, deren Priorität die Seite nicht kennt;
+`open − tickets.length` ist genau ihr Beitrag und bleibt beim Verschieben
+unberührt. Deshalb rechnet die Zeile `member.open − base + sichtbar` statt
+`sichtbar.length`.
+
+**Zwei Leute ziehen dasselbe Ticket:** `assignTicket` prüft den aktuellen
+Inhaber nicht, der zweite Schreiber gewinnt, und das `queue`-Signal korrigiert
+beide Bildschirme innerhalb des Coalescing-Fensters. Kein Sperrmechanismus —
+eine Fehlzuweisung ist ein Klick, kein Datenverlust.
+
+**`revalidateTicket` kennt jetzt `/mits/team`.** Es stand nicht darin, und das
+war exakt die Lücke, für die der Helfer existiert: dreizehn Aufrufstellen
+revalidierten von Hand, und keine kannte alle Flächen.
+
+### Drei Deckel, und keiner ist still
+
+600 Zeilen über alle Bearbeiter zusammen, 25 je Person, 50 im Pool. Was
+weggeschnitten wird, steht als Zahl in der Zeile („… und 9 weitere"), verlinkt in
+die gefilterte Queue. Eine gekürzte Liste, die sich für vollständig ausgibt, ist
+das eine Ergebnis, das man ablehnen muss — dieselbe Regel wie beim CSV-Export
+über 20.000 Zeilen.
+
+Sortiert wird nach `SORT_SQL.priority` absteigend, dann nach Alter: was ein
+Deckel wegnimmt, ist das am wenigsten Dringende und kein zufälliger Ausschnitt.
+Der Ausdruck kommt aus der Sortier-Whitelist statt neu getippt — `PRIORITY_RANK`
+soll eine Wahrheit bleiben.
+
+**Die Pool-Gesamtzahl wird eigens gezählt**, nicht aus `rows.length` abgeleitet:
+über dem Deckel wäre die Zahl sonst genau der Deckel, und „50 unzugewiesen" auf
+einem Pool von zweihundert ist eine Zahl, nach der jemand seine Schicht plant.
+
 ## Speichern
 
 Ein Formular, als JSON in einem versteckten Feld — wie bei den Modulen. Das

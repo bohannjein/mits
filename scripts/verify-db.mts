@@ -1906,6 +1906,7 @@ try {
     const settings = mits.TeamSettingsSchema.parse({
       show_current_ticket: true,
       show_resolved_today: true,
+      allow_reassign: true,
       stale_days: 3,
     });
     const overview = team.collectTeamOverview(settings, Date.now());
@@ -1915,6 +1916,41 @@ try {
     const row = overview.members.find((member) => member.id === agentId);
     if (!row) throw new Error("der agent fehlt in der liste");
     if (row.capacity !== 7) throw new Error(`kapazitaet ${row.capacity}`);
+    // Die zwei Ziehlisten interpolieren `SORT_SQL.priority`; ein Tippfehler
+    // darin ist ein SQL-Fehler, den kein Typechecker sieht.
+    if (!overview.pool) throw new Error("kein pool geladen");
+    return overview;
+  });
+
+  check("die gezeigten zeilen passen zur gezaehlten last", () => {
+    const overview = team.collectTeamOverview(
+      mits.TeamSettingsSchema.parse({ allow_reassign: true }),
+      Date.now(),
+    );
+    for (const member of overview.members) {
+      // Gedeckelt wird bei 25 je Person; darunter muss die Liste die Zahl treffen,
+      // sonst rechnet die Zeile im Browser mit einer falschen Differenz.
+      if (member.load.open <= 25 && member.tickets.length !== member.load.open) {
+        throw new Error(
+          `${member.name}: ${member.tickets.length} zeilen bei ${member.load.open} offen`,
+        );
+      }
+    }
+    if (overview.pool && overview.pool.total < overview.pool.tickets.length) {
+      throw new Error("die gesamtzahl liegt unter der gezeigten liste");
+    }
+    return overview;
+  });
+
+  check("ohne umverteilen werden die ziehlisten nicht geladen", () => {
+    const overview = team.collectTeamOverview(
+      mits.TeamSettingsSchema.parse({ allow_reassign: false }),
+      Date.now(),
+    );
+    if (overview.pool !== null) throw new Error("pool trotzdem geladen");
+    if (overview.members.some((member) => member.tickets.length > 0)) {
+      throw new Error("zeilen trotzdem geladen");
+    }
     return overview;
   });
 

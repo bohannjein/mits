@@ -83,6 +83,12 @@ function revalidateTicket(ticketId: string): void {
   revalidatePath("/customer/tickets");
   revalidatePath("/customer");
   revalidatePath("/mits");
+  /*
+   * Die Team-Übersicht zählt dieselben Zeilen und stand vorher nicht darin.
+   * Genau die Lücke, die dieser Helfer schließen sollte: dreizehn Aufrufstellen
+   * revalidierten von Hand, und keine kannte alle Flächen.
+   */
+  revalidatePath("/mits/team");
 }
 
 /**

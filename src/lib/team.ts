@@ -4,11 +4,13 @@ import { canViewBoard, type MITSRole } from "@/lib/auth/roles";
 import { db } from "@/lib/db/sqlite";
 import { listPresence } from "@/lib/presence";
 import { listAgentCapacities } from "@/lib/team-settings";
+import { SORT_SQL } from "@/lib/ticket-sort";
 import { AWAITING_REPLY_SQL } from "@/lib/tickets";
 import {
   OPEN_TICKET_STATUSES,
   type PresenceState,
   type TeamSettings,
+  type TicketPriority,
 } from "@/types/mits";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -60,6 +62,21 @@ export interface TeamCurrentWork {
   at: string;
 }
 
+/** Eine Zeile, die sich ziehen lässt. Nur so viel, wie der Chip anzeigt. */
+export interface TeamTicket {
+  id: string;
+  ticketNumber: number | null;
+  title: string;
+  priority: TicketPriority;
+  createdAt: string;
+}
+
+export interface TeamPool {
+  tickets: TeamTicket[];
+  /** Alle unzugewiesenen, auch die nicht gezeigten. */
+  total: number;
+}
+
 export interface TeamMember {
   id: string;
   name: string;
@@ -74,11 +91,15 @@ export interface TeamMember {
   capacityIsDefault: boolean;
   resolvedToday: number;
   current: TeamCurrentWork | null;
+  /** Leer, solange `allow_reassign` aus ist — dann gibt es nichts zu ziehen. */
+  tickets: TeamTicket[];
 }
 
 export interface TeamOverview {
   backlog: TeamBacklog | null;
   members: TeamMember[];
+  /** `null`, solange `allow_reassign` aus ist. */
+  pool: TeamPool | null;
 }
 
 const EMPTY_LOAD: TeamMemberLoad = { open: 0, high: 0, critical: 0, oldest: null };
@@ -91,6 +112,30 @@ const EMPTY_LOAD: TeamMemberLoad = { open: 0, high: 0, critical: 0, oldest: null
  * harmlose Richtung: eine Person bekommt dann keine Zeile statt einer falschen.
  */
 const CURRENT_WORK_ROW_CAP = 400;
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Drei Deckel für die Ziehlisten, und keiner davon ist still.
+
+   Was ein Deckel wegschneidet, steht als Zahl in der Zeile („und 9 weitere"),
+   verlinkt in die gefilterte Queue. Eine gekürzte Liste, die sich für
+   vollständig ausgibt, ist das eine Ergebnis, das man ablehnen muss — dieselbe
+   Regel wie beim CSV-Export, der über 20.000 Zeilen die Zahl nennt statt zu
+   kürzen.
+
+   Sortiert wird nach Priorität absteigend, dann nach Alter: was ein Deckel
+   wegnimmt, ist damit das am wenigsten Dringende und nicht ein zufälliger
+   Ausschnitt.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** Über alle Bearbeiter zusammen, bevor gruppiert wird. */
+const ASSIGNED_ROW_CAP = 600;
+/** Je Bearbeiter, nach dem Gruppieren. Zwanzig Chips sind schon eine Wand. */
+const PER_MEMBER_CAP = 25;
+/** Der Pool ist ein Block und keine Queue. */
+const POOL_CAP = 50;
+
+/** `CASE mits_ticket.priority … END`, aus der Sortier-Whitelist statt neu getippt. */
+const PRIORITY_RANK_SQL = SORT_SQL.priority;
 
 /** `?,?` für `OPEN_TICKET_STATUSES` — die Länge kommt aus der Konstante, nicht aus einer 2. */
 const openStatusPlaceholders = OPEN_TICKET_STATUSES.map(() => "?").join(", ");
@@ -300,6 +345,91 @@ function currentWork(minutes: number, now: number): Map<string, TeamCurrentWork>
   return out;
 }
 
+interface TicketRow {
+  id: string;
+  ticket_number: number | null;
+  title: string;
+  priority: string;
+  created_at: string;
+}
+
+const toTeamTicket = (row: TicketRow): TeamTicket => ({
+  id: row.id,
+  ticketNumber: row.ticket_number,
+  title: row.title,
+  // Der Wert kommt aus der Spalte und wird nicht geparst: eine Priorität, die
+  // dieser Build nicht kennt, soll den Chip nicht verschwinden lassen. Die
+  // Anzeige fällt dafür auf den Rohwert zurück.
+  priority: row.priority as TicketPriority,
+  createdAt: row.created_at,
+});
+
+/**
+ * Die offenen Tickets je Bearbeiter, gedeckelt.
+ *
+ * Eine Abfrage für alle, danach in JavaScript gruppiert. SQLite hat kein
+ * „N Zeilen je Gruppe", und eine Abfrage pro Agent wäre wieder das, was
+ * `loadByAgent` gerade vermeidet.
+ */
+function ticketsByAgent(): Map<string, TeamTicket[]> {
+  const rows = db
+    .prepare(
+      `SELECT id, ticket_number, title, priority, created_at, assigned_to
+         FROM mits_ticket
+        WHERE deleted_at IS NULL
+          AND assigned_to IS NOT NULL
+          AND status IN (${openStatusPlaceholders})
+        ORDER BY ${PRIORITY_RANK_SQL} DESC, created_at ASC
+        LIMIT ?`,
+    )
+    .all(...OPEN_TICKET_STATUSES, ASSIGNED_ROW_CAP) as (TicketRow & {
+    assigned_to: string;
+  })[];
+
+  const out = new Map<string, TeamTicket[]>();
+  for (const row of rows) {
+    const list = out.get(row.assigned_to);
+    if (list) {
+      if (list.length < PER_MEMBER_CAP) list.push(toTeamTicket(row));
+    } else {
+      out.set(row.assigned_to, [toTeamTicket(row)]);
+    }
+  }
+  return out;
+}
+
+/** Der unzugewiesene Pool, plus seine echte Gesamtzahl. */
+function poolTickets(): TeamPool {
+  const rows = db
+    .prepare(
+      `SELECT id, ticket_number, title, priority, created_at
+         FROM mits_ticket
+        WHERE deleted_at IS NULL
+          AND assigned_to IS NULL
+          AND status IN (${openStatusPlaceholders})
+        ORDER BY ${PRIORITY_RANK_SQL} DESC, created_at ASC
+        LIMIT ?`,
+    )
+    .all(...OPEN_TICKET_STATUSES, POOL_CAP) as TicketRow[];
+
+  /*
+   * Eigene Zählung und nicht `rows.length`: über dem Deckel wäre die Zahl sonst
+   * genau der Deckel, und „50 unzugewiesen" auf einem Pool von zweihundert ist
+   * eine Zahl, nach der jemand seine Schicht plant.
+   */
+  const { n } = db
+    .prepare(
+      `SELECT COUNT(*) AS n
+         FROM mits_ticket
+        WHERE deleted_at IS NULL
+          AND assigned_to IS NULL
+          AND status IN (${openStatusPlaceholders})`,
+    )
+    .get(...OPEN_TICKET_STATUSES) as { n: number };
+
+  return { tickets: rows.map(toTeamTicket), total: n };
+}
+
 /**
  * Die ganze Seite in einem Aufruf.
  *
@@ -314,7 +444,7 @@ export function collectTeamOverview(
 ): TeamOverview {
   const backlog = settings.show_backlog ? backlogFor(settings, now) : null;
 
-  if (!settings.show_workload) return { backlog, members: [] };
+  if (!settings.show_workload) return { backlog, members: [], pool: null };
 
   /*
    * Gefiltert wird in JavaScript und nicht in SQL, und das ist kein Versehen.
@@ -335,6 +465,11 @@ export function collectTeamOverview(
     ? currentWork(settings.current_work_minutes, now)
     : null;
 
+  // Ohne Umverteilen gibt es nichts zu ziehen, also werden die Zeilen auch nicht
+  // geladen — dieselbe Regel wie bei den beiden personenbezogenen Angaben.
+  const draggable = settings.allow_reassign ? ticketsByAgent() : null;
+  const pool = settings.allow_reassign ? poolTickets() : null;
+
   const members: TeamMember[] = staff.map((row) => {
     const own = capacities.get(row.id);
     return {
@@ -349,6 +484,7 @@ export function collectTeamOverview(
       capacityIsDefault: own === undefined,
       resolvedToday: resolved?.get(row.id) ?? 0,
       current: working?.get(row.id) ?? null,
+      tickets: draggable?.get(row.id) ?? [],
     };
   });
 
@@ -364,5 +500,5 @@ export function collectTeamOverview(
     (a, b) => b.load.open - a.load.open || a.name.localeCompare(b.name, "de"),
   );
 
-  return { backlog, members };
+  return { backlog, members, pool };
 }
