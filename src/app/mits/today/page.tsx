@@ -21,22 +21,8 @@ export const metadata: Metadata = {
   title: "Mein Tag — MITS",
 };
 
-/* ──────────────────────────────────────────────────────────────────────────
-   Womit fange ich an.
-
-   Die Angaben lagen alle schon da — Queue-Reiter, Pin-Block,
-   Erinnerungs-Widget, und seit Neuestem die Abo-Spalte. Keine davon beantwortete
-   die Frage, mit der jemand morgens ankommt, weil jede nur ihren eigenen
-   Ausschnitt kennt.
-
-   **Kein eigenes Flag.** Die Seite zeigt ausschließlich, was der Leser ohnehin
-   sehen darf, in einer anderen Reihenfolge; ein Schalter dafür wäre einer für
-   eine Sortierung. Was fehlt, fehlt mit seinem Modul: ohne Erinnerungen keine
-   Erinnerungszeilen, ohne Beobachter keine beobachteten.
-
-   **Kein Bereich in `/admin/settings/roles`** aus demselben Grund — und weil
-   `requireRole("agent")` die Grenze ist, die zählt.
-   ────────────────────────────────────────────────────────────────────────── */
+// Kein Flag und kein Bereich: die Seite zeigt nur, was der Leser ohnehin sehen
+// darf, in anderer Reihenfolge.
 
 export default async function TodayPage() {
   const user = await requireRole("agent", "/mits/today");
@@ -69,11 +55,6 @@ export default async function TodayPage() {
           <Separator className="my-8 bg-border" />
 
           {items.length === 0 ? (
-            /*
-              Die leere Liste ist hier eine gute Nachricht und wird auch so
-              formuliert. „Keine Einträge" wäre der Satz, den eine kaputte
-              Abfrage produziert.
-            */
             <p className="rounded-2xl border border-border px-4 py-10 text-center text-sm text-muted-foreground">
               Nichts liegt an. Keine fällige Erinnerung, kein Kunde, der wartet.
             </p>
@@ -90,9 +71,7 @@ export default async function TodayPage() {
                         variant="outline"
                         className={cn(
                           "rounded-full",
-                          // Nur die Erinnerung sticht heraus: sie ist die
-                          // einzige Zeile, die jemand selbst auf heute gelegt
-                          // hat. Fünf auffällige Etiketten wären keins.
+                          // Nur die Erinnerung sticht heraus.
                           item.reason === "reminder" &&
                             "border-warning/40 text-warning",
                         )}
@@ -125,12 +104,6 @@ export default async function TodayPage() {
             </ul>
           )}
 
-          {/*
-            Der Pool ist hier ein Angebot und gedeckelt; die vollständige Liste
-            hat die Queue. Der Link steht auch dann da, wenn der Deckel nicht
-            greift — ein Weg, der erst ab dem sechsten Ticket erscheint, ist
-            einer, den niemand findet.
-          */}
           {poolTotal > 0 && (
             <p className="mt-6 text-sm text-muted-foreground">
               <Link

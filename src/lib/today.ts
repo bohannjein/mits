@@ -11,25 +11,8 @@ import {
   type TicketPriority,
 } from "@/types/mits";
 
-/* ──────────────────────────────────────────────────────────────────────────
-   „Mein Tag": eine Liste statt fünf.
-
-   **Keine neue Tabelle und keine neue Abfrage.** Alles hier ist eine
-   Zusammensetzung dessen, was die Queue ohnehin liest — `filterFor` für die
-   Presets, `searchTickets` für die Zeilen, `listUpcomingReminders` für die
-   eigenen Notizen. Das ist der ganze Punkt: die Angaben lagen verstreut auf
-   Queue-Reitern, Pin-Block und Erinnerungs-Widget, und keine davon beantwortete
-   „womit fange ich an".
-
-   **Eine Liste, nicht fünf Abschnitte mit eigener Sortierung.** Überfälliges
-   unter „steht noch an" ist die eine Reihenfolge, die eine Aufgabenliste nicht
-   haben darf — dieselbe Regel, aus der das Erinnerungs-Widget seine beiden
-   Hälften nicht trennt. Der Grund steht als Etikett an der Zeile, damit die
-   Ordnung nachvollziehbar bleibt.
-
-   **Ein Ticket erscheint einmal**, mit seinem dringendsten Grund. Zweimal
-   dieselbe Zeile mit zwei Etiketten wäre eine Liste, deren Länge nichts sagt.
-   ────────────────────────────────────────────────────────────────────────── */
+// Zusammensetzung aus vorhandenen Reads, keine eigene Abfrage.
+// Begründungen in .claude/rules/watchers.md.
 
 /** Warum eine Zeile hier steht. Die Reihenfolge *ist* die Rangfolge. */
 export const TODAY_REASONS = [
@@ -61,32 +44,17 @@ export interface TodayItem {
   at: string;
 }
 
-/**
- * Wie viele Pool-Tickets als Angebot erscheinen.
- *
- * Der Pool ist hier kein Arbeitsvorrat, sondern der Hinweis „es liegt noch
- * etwas da". Die vollständige Liste hat die Queue, und ein Link steht darunter.
- */
+/** Der Pool ist hier ein Hinweis, kein Arbeitsvorrat. */
 const POOL_SUGGESTIONS = 5;
 
 const reasonRank = (reason: TodayReason): number =>
   TODAY_REASONS.indexOf(reason);
 
-/**
- * Die Liste für eine Person.
- *
- * Ohne `now`-Parameter, anders als `collectTeamOverview`: hier zieht keine
- * Abfrage eine Zeitgrenze — `listUpcomingReminders` entscheidet „fällig" selbst,
- * und alles andere ist Reihenfolge. Die Uhr für die Anzeige holt sich die Seite.
- */
 export function collectToday(
   user: SessionUser,
 ): { items: TodayItem[]; poolTotal: number } {
-  /*
-   * Erst gesammelt, dann entdoppelt. Die Reihenfolge der Blöcke unten ist die
-   * Rangfolge der Gründe, und `keep` behält den ersten Treffer je Ticket — also
-   * den dringendsten.
-   */
+  // Die Reihenfolge der Blöcke unten ist die Rangfolge; `keep` behält je Ticket
+  // den dringendsten Grund.
   const found = new Map<string, TodayItem>();
   const keep = (item: TodayItem) => {
     const existing = found.get(item.ticketId);
@@ -102,8 +70,7 @@ export function collectToday(
         ticketId: reminder.ticket_id,
         ticketNumber: reminder.ticket_number,
         title: reminder.ticket_title,
-        // Eine Erinnerung trägt die Priorität ihres Tickets nicht mit; sie steht
-        // ohnehin ganz oben, also ist der Wert hier kein Sortierkriterium.
+        // Erinnerungen stehen ohnehin ganz oben; der Wert sortiert hier nichts.
         priority: "medium",
         reason: "reminder",
         detail: reminder.note || null,
@@ -112,14 +79,8 @@ export function collectToday(
     }
   }
 
-  /*
-   * Meine offenen Tickets, auf denen der Melder nachgelegt hat.
-   *
-   * `awaiting_reply` ist der geteilte Marker aus der Queue-Zeile und wird hier
-   * nachgefiltert statt in SQL: die Spalte kommt fertig aus `searchTickets`, und
-   * ein zweiter Filterausdruck dafür wäre eine zweite Definition von „wir sind
-   * dran".
-   */
+  // `awaiting_reply` kommt fertig aus `searchTickets` und wird nachgefiltert —
+  // ein zweiter Filterausdruck wäre eine zweite Definition von „wir sind dran".
   const mine = searchTickets(
     { ...filterFor("mine", "open", user.id), sort: { key: "age", dir: "asc" } },
     user,
@@ -172,13 +133,6 @@ export function collectToday(
     }
   }
 
-  /*
-   * Der Pool zuletzt und gedeckelt.
-   *
-   * Er ist das Angebot, nicht die Pflicht: was hier steht, gehört noch
-   * niemandem. Ungedeckelt wäre „Mein Tag" auf einer belasteten Instanz eine
-   * Kopie des Eingangs mit einer irreführenden Überschrift.
-   */
   const pool = searchTickets(
     { ...filterFor("pool", "inbox", user.id), sort: { key: "age", dir: "asc" } },
     user,

@@ -623,13 +623,7 @@ export interface TicketFilter {
   pinnedOnlyFor?: string;
   excludePinnedFor?: string;
 
-  /**
-   * Nur, was diese Person beobachtet.
-   *
-   * Wie die zwei darüber eine Benutzer-Id und deshalb **nie** aus dem
-   * Query-String: ein Wert von dort wäre ein Leser, der in die Abo-Liste eines
-   * anderen sieht. Gesetzt wird er nur dort, wo die Id aus der Sitzung kommt.
-   */
+  /** Wie die zwei darüber eine Benutzer-Id — nie aus dem Query-String. */
   watchedBy?: string;
 
   /**
@@ -892,10 +886,6 @@ function ticketWhere(
     );
     whereParams.push(filter.pinnedOnlyFor);
   }
-  /*
-   * Nur, was diese Person beobachtet. Kein Gegenstück wie beim Pin: es gibt
-   * keinen zweiten Block, aus dem etwas herausgehalten werden müsste.
-   */
   if (filter.watchedBy) {
     clauses.push(
       `EXISTS (SELECT 1 FROM mits_ticket_watch w
@@ -948,35 +938,11 @@ export function countSearchTickets(
   return row.n;
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
-   „Wartet ein Kunde auf uns" — der eine Ausdruck, zwei Aufrufer.
+// „Wartet ein Kunde auf uns" — geteilt mit `lib/team.ts`, damit Queue-Marker und
+// Rückstandszahl dieselbe Menge zählen. Parameterlos.
+// ⚠️ Erwartet die Tabelle als `mits_ticket`, nicht unter einem Alias.
 
-   Er steht auf Modulebene und nicht mehr in `searchTickets`, weil die
-   Team-Übersicht dieselbe Frage stellt: der Marker in der Queue-Zeile und die
-   Rückstandszahl auf `/mits/team` müssen dieselbe Menge zählen. Zwei Kopien
-   wären zwei Definitionen von „wir sind dran", und die Abweichung fiele erst
-   auf, wenn jemand die beiden Zahlen nebeneinander legt.
-
-   **Parameterlos**, und genau das macht ihn teilbar: der Marker ist geteilt und
-   nicht je Leser, es kommt also kein `?` darin vor, das an einer Bindeposition
-   hängen würde.
-
-   Die Regel ist schärfer als „der Melder ist am Zug". Das sagt der Status seit
-   dem Ballbesitz-Umbau schon (`open` = das Team ist dran), und ein Marker für
-   dieselbe Aussage wäre ein zweites Signal für eine Frage. Was der Status nicht
-   sagen kann, ist der Fall hier: ein Ticket, das von `waiting_user` auf `open`
-   zurückgesprungen ist, sieht danach aus wie jedes andere offene — obwohl dort
-   jemand wartet, der schon einmal eine Antwort bekommen hatte.
-
-   ⚠️ Erwartet die Ticket-Tabelle unter ihrem echten Namen `mits_ticket` im
-   Scope, nicht unter einem Alias. Ein Aufrufer, der `FROM mits_ticket t`
-   schreibt, bekommt einen SQL-Fehler und keine falsche Zahl — die richtige
-   Richtung für einen Fehler, aber es kostet eine Minute, wenn man es nicht
-   weiß.
-   ────────────────────────────────────────────────────────────────────────── */
-
-/** Jüngste öffentliche Antwort des Teams. Interne Notizen zählen nicht: „das
- *  Team hat geantwortet" heißt, der Melder hat etwas bekommen. */
+/** Interne Notizen zählen nicht: der Melder muss etwas bekommen haben. */
 const LAST_STAFF_REPLY_SQL = `(
     SELECT MAX(cs.created_at) FROM mits_ticket_comment cs
      WHERE cs.ticket_id = mits_ticket.id
@@ -985,9 +951,7 @@ const LAST_STAFF_REPLY_SQL = `(
        AND cs.visibility = 'public'
   )`;
 
-/** Jüngste Nachricht der Gegenseite. `author_is_agent` und nicht die Rolle des
- *  Kontos: der Mail-Ingest erzwingt dort `0`, eine gemailte Kundenantwort zählt
- *  also mit — der häufigste Fall überhaupt. */
+/** `author_is_agent`, nicht die Rolle: der Mail-Ingest erzwingt dort `0`. */
 const LAST_REPORTER_MESSAGE_SQL = `(
     SELECT MAX(cr.created_at) FROM mits_ticket_comment cr
      WHERE cr.ticket_id = mits_ticket.id
@@ -995,8 +959,8 @@ const LAST_REPORTER_MESSAGE_SQL = `(
        AND cr.author_is_agent = 0
   )`;
 
-/** `1` wenn eine Melder-Nachricht neuer ist als die jüngste öffentliche
- *  Team-Antwort — und eine solche Antwort überhaupt existiert. */
+/** `1`, wenn eine Melder-Nachricht neuer ist als die jüngste öffentliche
+ *  Team-Antwort — und eine solche Antwort existiert. */
 export const AWAITING_REPLY_SQL = `CASE
            WHEN ${LAST_STAFF_REPLY_SQL} IS NULL THEN 0
            WHEN ${LAST_REPORTER_MESSAGE_SQL} > ${LAST_STAFF_REPLY_SQL} THEN 1
@@ -1077,27 +1041,14 @@ export function searchTickets(
      WHERE p.ticket_id = mits_ticket.id AND p.user_id = ?
   )`;
 
-  /*
-   * Ob dieser Leser dem Ticket folgt. Direkt hinter `pinned`, damit die beiden
-   * parametrisierten Ausdrücke nebeneinander stehen und die Bindungswarnung
-   * darüber für beide gilt — der Parameter wird unten in derselben Reihenfolge
-   * angehängt.
-   */
+  // Direkt hinter `pinned`, damit die Bindungswarnung darüber für beide gilt.
   const watched = `EXISTS (
     SELECT 1 FROM mits_ticket_watch w
      WHERE w.ticket_id = mits_ticket.id AND w.user_id = ?
   )`;
 
-  /*
-   * Reihenfolge in dieser Liste ist Bindungsreihenfolge — siehe die Warnung an
-   * `pinned` darüber. `AWAITING_REPLY_SQL` ist parameterlos und könnte deshalb
-   * überall stehen; es steht trotzdem hinten, damit die Warnung weiter für die
-   * ganze Liste gilt und niemand die Ausnahme zur Regel liest.
-   *
-   * Der Ausdruck selbst liegt auf Modulebene, samt seiner Begründung: die
-   * Team-Übersicht zählt dieselbe Menge, und zwei Kopien wären zwei Antworten
-   * auf „wartet ein Kunde auf uns".
-   */
+  // Reihenfolge in dieser Liste ist Bindungsreihenfolge — siehe die Warnung an
+  // `pinned` darüber.
   const extraColumns = `,
          ${activity} AS last_activity_at,
          CASE
@@ -1321,17 +1272,8 @@ export function assignTicket(
       from: nameOf(before.assigned_to),
       to: nameOf(assigneeId),
     });
-    /*
-     * Wer ein Ticket bekommt, folgt ihm danach.
-     *
-     * Ohne das wäre die engere Einstellung des `reply`-Kanals eine
-     * Stummschaltung: sie fragt nach zugewiesen **oder** beobachtet, und wenn
-     * nie jemand automatisch folgt, bleibt die zweite Hälfte für immer leer.
-     *
-     * Die Gegenrichtung fehlt absichtlich — eine entzogene Zuweisung löscht das
-     * Abo nicht. Wer ein Ticket abgibt, will meist wissen, wie es ausgeht, und
-     * der Knopf am Ticket ist der Weg, das zu beenden.
-     */
+    // Ohne automatisches Folgen wäre `reply_scope: mine` eine Stummschaltung.
+    // Keine Gegenrichtung: eine entzogene Zuweisung löscht das Abo nicht.
     if (assigneeId) watchTicket(ticketId, assigneeId);
     announce(ticketId, actor.id);
     // The one state change that does produce a notification — "dir zugewiesen"

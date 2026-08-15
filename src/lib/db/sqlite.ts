@@ -488,16 +488,8 @@ function migrateAppTables(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_mits_ticket_pin_ticket
       ON mits_ticket_pin (ticket_id);
 
-    -- Wer einem Ticket folgt, ohne es zu besitzen.
-    --
-    -- Dieselbe Form wie der Pin, und ein anderer Zweck: der Pin ist ein
-    -- Lesezeichen in der eigenen Queue, das hier ist ein Abonnement auf
-    -- Meldungen. Ein Agent sieht ohnehin jedes Ticket -- was ihm fehlt, ist der
-    -- Zwischenzustand zwischen "alles" und "nur meins", und den traegt diese
-    -- Tabelle.
-    --
-    -- Das Paar ist der Schluessel: zweimal folgen ist derselbe Zustand wie
-    -- einmal. Keine weiteren Spalten -- ein Abo hat keine Eigenschaften.
+    -- Wer einem Ticket folgt, ohne es zu besitzen. Form wie der Pin, anderer
+    -- Zweck: der Pin sortiert die Queue, das hier entscheidet ueber Meldungen.
     CREATE TABLE IF NOT EXISTS mits_ticket_watch (
       user_id    TEXT NOT NULL,
       ticket_id  TEXT NOT NULL,
@@ -505,28 +497,18 @@ function migrateAppTables(database: Database.Database): void {
       PRIMARY KEY (user_id, ticket_id)
     );
 
-    -- Fuer den Loeschpfad und fuer "wer folgt diesem Ticket".
     CREATE INDEX IF NOT EXISTS idx_mits_ticket_watch_ticket
       ON mits_ticket_watch (ticket_id);
 
-    -- Wer in einem Beitrag erwaehnt wurde.
-    --
-    -- Das ist KEINE Zustelltabelle und widerspricht der Doktrin in
-    -- lib/notifications.ts nicht: kein Zustellflag, kein Aufraeumjob, keine
-    -- Zeile pro Person pro Ereignis. Es ist eine Tatsache ueber den Beitrag, wie
-    -- mits_ticket_ci eine ueber das Ticket ist. Abgeleitet bleibt die *Meldung*
-    -- -- listNotifications joint diese Zeilen ueber created_at > since.
-    --
-    -- Der Text im Beitrag traegt den Anzeigenamen, diese Tabelle die Id. Den
-    -- Namen spaeter aus dem Text zurueckzulesen waere die zweite Wahrheit, und
-    -- sie waere bei zwei Kolleginnen mit demselben Vornamen falsch.
+    -- Wer in einem Beitrag erwaehnt wurde. Keine Zustelltabelle: kein
+    -- Zustellflag, kein Aufraeumjob -- eine Tatsache ueber den Beitrag. Die
+    -- Meldung bleibt abgeleitet.
     CREATE TABLE IF NOT EXISTS mits_comment_mention (
       comment_id TEXT NOT NULL,
       user_id    TEXT NOT NULL,
       PRIMARY KEY (comment_id, user_id)
     );
 
-    -- Die Meldungsabfrage sucht "was wurde seit X fuer mich erwaehnt".
     CREATE INDEX IF NOT EXISTS idx_mits_mention_user
       ON mits_comment_mention (user_id);
   `);
@@ -983,26 +965,14 @@ function addColumns(database: Database.Database): void {
        ON mits_ticket (status, status_changed_at)`,
   );
 
-  /*
-   * Die Team-Übersicht liest den Audit-Log zum ersten Mal quer statt je Ticket.
-   *
-   * Der vorhandene Index steht auf `(ticket_id, created_at)` — richtig für
-   * `listAuditFor`, und für „was hat dieser Akteur zuletzt getan" wertlos: ohne
-   * einen Index auf `actor_id` ist jede der beiden Team-Abfragen ein Scan über
-   * eine Tabelle, die als einzige in diesem Schema nur wächst und nie aufgeräumt
-   * wird. Auf einer zwei Jahre alten Instanz ist das der Unterschied zwischen
-   * einer Seite und einer Wartezeit.
-   */
+  // Die Team-Übersicht liest den Audit-Log quer statt je Ticket; der vorhandene
+  // Index steht auf `ticket_id` und hilft dabei nicht.
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_mits_audit_actor
        ON mits_audit_log (actor_id, created_at)`,
   );
 
-  /*
-   * Und der Gegenstück-Index für die Lastzahl: `GROUP BY assigned_to` über die
-   * offenen Tickets. Partiell, weil ein unzugewiesenes Ticket in dieser Gruppe
-   * nichts zu suchen hat — es ist der Rückstand, nicht die Last einer Person.
-   */
+  // Für `GROUP BY assigned_to`. Partiell: unzugewiesen ist Rückstand, keine Last.
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_mits_ticket_assigned
        ON mits_ticket (assigned_to, status) WHERE assigned_to IS NOT NULL`,

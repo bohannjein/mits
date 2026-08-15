@@ -16,31 +16,11 @@ import type { TeamOverview, TeamTicket } from "@/lib/team";
 import { cn } from "@/lib/utils";
 import { formatTicketNumber, type TeamSettings } from "@/types/mits";
 
-/* ──────────────────────────────────────────────────────────────────────────
-   Rückstand, Auslastung und Präsenz auf einer Fläche.
+// Alle Alter werden hier mit *einer* Serveruhr formatiert und als Strings
+// übergeben: ein `Date.now()` im Browser gäbe nach der Hydration eine andere
+// Antwort.
 
-   Der Rückstandsblock bleibt serverseitig — vier Zahlen und zwei Links, nichts
-   davon reagiert auf etwas. Die Auslastungsliste geht als fertige Daten an
-   `TeamWorkload`, weil dort gezogen wird und der optimistische Zustand einen
-   Client braucht.
-
-   **Die Zeitrechnung läuft hier, nicht dort.** Alle Alter werden mit *einer*
-   Serveruhr formatiert und als Strings übergeben — dieselbe Regel wie bei
-   `PresenceList`. Ein `Date.now()` im Browser gäbe nach der Hydration eine
-   andere Antwort als beim Rendern, und der Mismatch säße auf genau dem Feld,
-   das sagen soll, wie lange etwas schon liegt.
-
-   **Präsenz ist keine eigene Liste mehr, sondern der Punkt an der Zeile.** Eine
-   zweite Namensliste neben der ersten wäre dieselbe Information zweimal.
-   ────────────────────────────────────────────────────────────────────────── */
-
-/**
- * Die Queue dieser Person, gefiltert.
- *
- * `scope=pool` und nicht `mine`: „mein Bereich" heißt der eingeloggte Agent, und
- * gemeint ist der aus der Zeile. Der Deep-Filter `assignedTo` legt sich über das
- * Preset und verengt es — die Richtung, die `parseTicketQuery` erlaubt.
- */
+/** `scope=pool`, nicht `mine` — gemeint ist der Agent aus der Zeile. */
 const queueHrefFor = (agentId: string) =>
   `/mits?scope=pool&view=open&assignedTo=${encodeURIComponent(agentId)}`;
 
@@ -59,16 +39,8 @@ interface Tile {
   value: number;
   hint: string | null;
   icon: typeof InboxIcon;
-  /**
-   * `null`, wo es keinen Filter gibt, der genau diese Menge zeigt.
-   *
-   * Absichtlich kein Link auf etwas Ähnliches: eine Kachel, die „7" sagt und auf
-   * eine Liste mit dreiundzwanzig Zeilen führt, ist schlechter als eine Kachel
-   * ohne Link. „Wartet auf uns" und „ohne Bewegung" sind abgeleitete Mengen, für
-   * die die Queue keinen Filter hat.
-   */
+  /** `null`, wo es keinen Filter gibt, der genau diese Menge zeigt. */
   href: string | null;
-  /** Nur die kritischen Tickets färben. Vier auffällige Zahlen sind keine. */
   alarming?: boolean;
 }
 
@@ -79,7 +51,6 @@ export function TeamBoard({
 }: {
   overview: TeamOverview;
   settings: TeamSettings;
-  /** Eine Uhr für die ganze Seite, damit zwei Alter nicht Sekunden auseinanderliegen. */
   now: number;
 }) {
   const { backlog, members, pool } = overview;
@@ -159,8 +130,7 @@ function BacklogBlock({
       icon: ReplyIcon,
       href: null,
     },
-    // Bei `stale_days = 0` ist die Zahl abgeschaltet, nicht null — eine Kachel
-    // mit einer konstanten Null ist eine Kennzahl, die niemand mehr liest.
+    // Bei `stale_days = 0` ist die Zahl abgeschaltet, nicht null.
     ...(settings.stale_days > 0
       ? [
           {

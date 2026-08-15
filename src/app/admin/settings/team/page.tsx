@@ -25,11 +25,7 @@ export default async function TeamSettingsPage() {
   const flags = getFeatureFlags();
   const capacities = listAgentCapacities();
 
-  /*
-   * Nur Konten, die die Übersicht überhaupt füllen. Ein Melder hat keine
-   * Zuweisungen, eine Kapazität für ihn wäre ein Feld ohne Wirkung — und auf
-   * einer Instanz mit dreihundert Meldern wäre die Liste unbenutzbar.
-   */
+  // Nur Konten, die die Übersicht füllen — ein Melder hat keine Zuweisungen.
   const agents: TeamAgentRow[] = listUsers()
     .filter((account) => canViewBoard(account.role))
     .map((account) => ({
@@ -57,11 +53,6 @@ export default async function TeamSettingsPage() {
 
           <Separator className="my-8 bg-border" />
 
-          {/*
-            Dieselbe Regel wie bei den Benachrichtigungen: diese Seite formt, sie
-            schaltet nicht ein. Zwei Stellen, an denen etwas verschwinden kann,
-            sind eine zu viel zum Nachsehen.
-          */}
           {!flags.feature_team_overview && (
             <Alert className="mb-6 rounded-2xl border-border px-4 py-3">
               <InfoIcon strokeWidth={1.5} />
@@ -74,11 +65,6 @@ export default async function TeamSettingsPage() {
             </Alert>
           )}
 
-          {/*
-            Der Satz, der eine Rückfrage spart: die Sichtbarkeit *je Rolle* wird
-            woanders eingestellt, und wer sie hier sucht, findet die Schalter für
-            die Inhalte und hält sie für kaputt.
-          */}
           <Alert className="mb-6 rounded-2xl border-border px-4 py-3">
             <InfoIcon strokeWidth={1.5} />
             <AlertTitle>Wer die Seite sieht</AlertTitle>

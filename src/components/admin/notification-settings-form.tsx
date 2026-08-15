@@ -58,13 +58,7 @@ export function NotificationSettingsForm({
   settings,
   /** Whether the AI digest is switched on, so the mask can say what will happen. */
   digestUsesModel,
-  /**
-   * Ob Beobachter überhaupt existieren.
-   *
-   * Die engere Reichweite fragt nach „zugewiesen oder beobachtet"; ohne das
-   * Modul gäbe es keine Abos, und die Einstellung wäre eine Stummschaltung ohne
-   * Ausgang. Deshalb erscheint sie nur mit ihm.
-   */
+  /** Ohne das Modul gibt es keine Abos — die engere Reichweite bliebe wirkungslos. */
   watchersOn = false,
 }: {
   settings: NotificationSettings;
@@ -247,17 +241,8 @@ export function NotificationSettingsForm({
         </CardContent>
       </Card>
 
-      {/*
-        Die Reichweite des lautesten Kanals.
-
-        Sie steht in einer eigenen Karte und nicht als dritter Schalter am Kanal
-        „Neue Antwort": die drei dort beschreiben, *wie* eine Meldung aussieht,
-        das hier entscheidet, *ob* es sie gibt. Zusammengelegt läse es sich als
-        Darstellungsoption.
-
-        Nur mit dem Modul, weil die engere Wahl nach Abos fragt, die es ohne das
-        Modul nicht gibt.
-      */}
+      {/* Eigene Karte statt dritter Schalter am Kanal: die drei dort sagen, wie
+          eine Meldung aussieht, das hier, ob es sie gibt. */}
       {watchersOn && (
         <Card className="rounded-3xl border border-border bg-card ring-0 shadow-elev-1">
           <CardHeader>

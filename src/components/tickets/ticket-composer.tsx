@@ -101,13 +101,7 @@ export function TicketComposer({
   cannedResponses = [],
   /** One-click actions. Empty when the module is off. */
   macros = [],
-  /**
-   * Wer sich mit `@` in den Vorgang ziehen lässt.
-   *
-   * Nur Agenten, und der Server prüft es erneut: der Text trägt bloß den
-   * Anzeigenamen, die Ids reisen in einem eigenen Feld. Leer, wenn das Modul aus
-   * ist — dann gibt es den Knopf gar nicht.
-   */
+  /** Wer sich mit `@` dazuholen lässt. Der Server prüft die Ids erneut. */
   colleagues = [],
 }: {
   ticketId: string;
@@ -143,16 +137,7 @@ export function TicketComposer({
    */
   const [snippetFilter, setSnippetFilter] = useState("");
 
-  /*
-   * Wer in diesem Entwurf genannt wurde.
-   *
-   * Der Text bekommt den Anzeigenamen, dieser Zustand die Id — und nur die Id
-   * geht mit. Den Namen serverseitig zurückzulesen wäre die zweite Wahrheit und
-   * bei zwei Kolleginnen mit demselben Vornamen falsch.
-   *
-   * Eine Liste und keine Menge: die Reihenfolge ist die des Einfügens, und
-   * `recordMentions` entdoppelt ohnehin.
-   */
+  // Der Text bekommt den Namen, dieser Zustand die Id — nur die Id geht mit.
   const [mentioned, setMentioned] = useState<{ id: string; name: string }[]>([]);
   const [mentionOpen, setMentionOpen] = useState(false);
 
@@ -284,9 +269,7 @@ export function TicketComposer({
   useEffect(() => {
     if (!result?.ok) return;
     setBody("");
-    // Zusammen mit dem Text, nicht danach: eine stehen gebliebene Erwähnung
-    // hinge am nächsten Entwurf und benachrichtigte jemanden für eine Nachricht,
-    // in der sein Name gar nicht vorkommt.
+    // Mit dem Text: eine stehen gebliebene Erwähnung hinge am nächsten Entwurf.
     setMentioned([]);
     focusComposer();
   }, [result, focusComposer]);
@@ -601,11 +584,6 @@ export function TicketComposer({
         name="visibility"
         value={internal ? "internal" : "public"}
       />
-      {/*
-        Die Ids der Genannten. Nur sie — der Server schlägt Namen und Zugriff
-        selbst nach, und ein Name aus dem Browser wäre eine Behauptung darüber,
-        wer gemeint war.
-      */}
       <input
         type="hidden"
         name="mentions"
@@ -621,17 +599,9 @@ export function TicketComposer({
         </Label>
 
         <div className="flex flex-wrap items-center gap-1">
-        {/*
-          Jemanden dazuholen.
-
-          Neben den Bausteinen und nicht in ihnen: ein Baustein fügt Text ein,
-          eine Erwähnung benachrichtigt einen Menschen. Dasselbe Menü hätte zwei
-          Wirkungsarten in einer Liste.
-
-          Kein `@`-Kürzel im Feld wie das `/` daneben: dafür bräuchte tiptap eine
-          Suggestion-Erweiterung — eine neue Abhängigkeit für eine Geste, die der
-          Knopf ohne sie erledigt.
-        */}
+        {/* Eigenes Menü: ein Baustein fügt Text ein, eine Erwähnung
+            benachrichtigt jemanden. Kein `@`-Kürzel im Feld — das bräuchte eine
+            tiptap-Suggestion-Erweiterung. */}
         {isAgent && colleagues.length > 0 && (
           <DropdownMenu open={mentionOpen} onOpenChange={setMentionOpen}>
             <DropdownMenuTrigger asChild>
@@ -666,9 +636,7 @@ export function TicketComposer({
                     className="rounded-xl"
                     disabled={already}
                     onSelect={() => {
-                      // Der Name in den Text, die Id in den Zustand. Das
-                      // schließende Leerzeichen ist der Unterschied zwischen
-                      // „@Bea Schulzdanke" und einem lesbaren Satz.
+                      // Der Name in den Text, die Id in den Zustand.
                       insertText(`@${person.name} `);
                       setMentioned((current) => [...current, person]);
                     }}

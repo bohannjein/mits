@@ -12,22 +12,8 @@ import {
   watchTicket,
 } from "@/lib/ticket-watchers";
 
-/* ──────────────────────────────────────────────────────────────────────────
-   Einem Ticket folgen und wieder aufhören.
-
-   Eine Action für beide Richtungen, wie beim Anheften: der Knopf ist einer.
-
-   **Die Zugriffsprüfung sitzt hier und nicht in der Bibliothek.** Das ist der
-   sichtbare Unterschied zu `lib/ticket-pins.ts`, und er hat einen Grund:
-   `lib/ticket-watchers.ts` muss eine Senke bleiben, weil `assignTicket` und
-   `addComment` sie aufrufen — sie darf `lib/tickets.ts` also nicht importieren.
-   Die Tür ist trotzdem dieselbe: `getTicketFor` antwortet für „gibt es nicht"
-   und „darfst du nicht sehen" gleich, damit sich über den Unterschied keine Ids
-   aufzählen lassen.
-
-   **Rolle und Flag werden hier geprüft, nicht nur im Markup.** Eine Server
-   Action ist als POST auf die Route erreichbar, aus der sie stammt. Regel 6.
-   ────────────────────────────────────────────────────────────────────────── */
+// Die Zugriffsprüfung sitzt hier statt in der Bibliothek: `ticket-watchers.ts`
+// muss eine Senke bleiben. Rolle und Flag ebenfalls hier — Regel 6.
 
 export type WatchActionResult =
   | { ok: true; watching: boolean; message: string }
@@ -40,11 +26,7 @@ export async function toggleWatchAction(
   const ticketId = String(formData.get("ticketId") ?? "");
   const user = await requireUser(`/mits/tickets/${ticketId}`);
 
-  /*
-   * Agenten, nicht Melder — dieselbe Grenze wie bei Pins und Erinnerungen.
-   * Nicht aus Vertraulichkeit: ein Melder bekommt jede öffentliche Antwort auf
-   * sein eigenes Ticket ohnehin, ein Abo wäre für ihn eine Zeile ohne Wirkung.
-   */
+  // Agenten, nicht Melder: für einen Melder wäre ein Abo eine Zeile ohne Wirkung.
   if (!canViewBoard(user.role)) {
     return { ok: false, error: "Beobachten ist Agenten vorbehalten." };
   }
@@ -64,11 +46,7 @@ export async function toggleWatchAction(
     unwatchTicket(ticketId, user.id);
   }
 
-  /*
-   * Die Queue, weil `searchTickets` die Spalte `watched` mitliefert, und die
-   * Agenten-Detailansicht wegen des Knopfes. **Nicht** `/customer`: dort gibt es
-   * weder Knopf noch Spalte.
-   */
+  // Nicht `/customer`: dort gibt es weder Knopf noch Spalte.
   revalidatePath("/mits");
   revalidatePath("/mits/today");
   if (ticketId) revalidatePath(`/mits/tickets/${ticketId}`);

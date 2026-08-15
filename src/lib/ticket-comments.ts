@@ -359,19 +359,8 @@ export function addComment(
     applyReplyWorkflow(ticketId, user, isAgent);
   }
 
-  /*
-   * Wer schreibt, folgt danach.
-   *
-   * Hier und nicht in der Action, aus demselben Grund wie der Ballbesitz eine
-   * Zeile darüber: der Mail-Ingest legt Beiträge ohne Server Action ab, und ein
-   * Agent, der per Mail antwortet, hat genauso etwas zu diesem Ticket gesagt.
-   *
-   * **Nur Personal.** Ein Melder bekommt jede öffentliche Antwort auf sein
-   * eigenes Ticket ohnehin; eine Abo-Zeile für ihn wäre eine Zeile ohne Wirkung,
-   * und `reply_scope` fragt sie für Melder nie ab. `isAgent` und nicht die Rolle
-   * des Kontos: der Ingest erzwingt dort `0`, eine gemailte Kundenantwort unter
-   * einem Auffang-Konto legt also kein Abo an.
-   */
+  // Wer schreibt, folgt danach. Hier statt in der Action, damit der Mail-Ingest
+  // es mitbekommt. `isAgent`, nicht die Rolle: der Ingest erzwingt dort `0`.
   if (isAgent) watchTicket(ticketId, user.id);
 
   publish({

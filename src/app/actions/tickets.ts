@@ -85,11 +85,6 @@ function revalidateTicket(ticketId: string): void {
   revalidatePath("/customer/tickets");
   revalidatePath("/customer");
   revalidatePath("/mits");
-  /*
-   * Die Team-Übersicht zählt dieselben Zeilen und stand vorher nicht darin.
-   * Genau die Lücke, die dieser Helfer schließen sollte: dreizehn Aufrufstellen
-   * revalidierten von Hand, und keine kannte alle Flächen.
-   */
   revalidatePath("/mits/team");
 }
 
@@ -547,19 +542,11 @@ export async function removeTicketLinkAction(
 }
 
 /**
- * Die Erwähnungen eines abgeschickten Beitrags festhalten.
+ * Nach dem Schreiben, nicht in `addComment`: drei seiner vier Aufrufer können
+ * niemanden erwähnen. Scheitert es, steht der Beitrag trotzdem.
  *
- * **Nach dem Schreiben, nicht darin.** `addComment` hat vier Aufrufer — Maske,
- * Mail-Ingest, Sweeper, Makro-Runner — und drei davon können niemanden erwähnen;
- * ein zusätzlicher Parameter wäre dort ein Feld, das immer leer ist. Die Folge
- * ist ausgesprochen und gewollt: scheitert dieser Schritt, steht der Beitrag
- * trotzdem und es fehlt eine Meldung. Andersherum — der Beitrag scheitert, weil
- * eine Erwähnung nicht abzulegen war — wäre die teurere Reihenfolge.
- *
- * **Die Ids werden gegen den Kontenbestand geprüft.** Der Text im Beitrag trägt
- * nur den Anzeigenamen; ohne diese Prüfung könnte ein handgebauter Request eine
- * Meldung an ein beliebiges Konto auslösen, auch an eines ohne Zugriff auf das
- * Ticket.
+ * Die Ids werden gegen den Kontenbestand geprüft — sonst löste ein handgebauter
+ * Request eine Meldung an ein beliebiges Konto aus.
  */
 function recordMentionsFrom(
   formData: FormData,
@@ -585,8 +572,7 @@ function recordMentionsFrom(
 
   const allowed = listUsers()
     .filter((account) => canViewBoard(account.role) && wanted.has(account.id))
-    // Sich selbst zu nennen erzeugt keine Meldung — die Abfrage schließt den
-    // Autor ohnehin aus —, aber es legte ein Abo an, das niemand verlangt hat.
+    // Sich selbst zu nennen legte sonst ein Abo an, das niemand verlangt hat.
     .filter((account) => account.id !== authorId)
     .map((account) => account.id);
 

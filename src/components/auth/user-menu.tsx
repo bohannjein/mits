@@ -166,11 +166,6 @@ export function UserMenu({
             in. Gated on the same predicate as the desk entry, which is the guard
             `/mits/analytics` itself uses.
           */}
-          {/*
-            Ohne zweite Bedingung: „Mein Tag" hängt an keinem Modul und an
-            keinem Bereich, die Seite zeigt nur, was dieser Leser ohnehin sehen
-            darf. `showBoard` ist der Guard, den sie selbst benutzt.
-          */}
           {showBoard && (
             <DropdownMenuItem asChild>
               <Link href="/mits/today">
@@ -180,13 +175,6 @@ export function UserMenu({
             </DropdownMenuItem>
           )}
 
-          {/*
-            Wie die Statistiken: der auffällige Weg ist der Knopf in der
-            Queue-Kopfzeile, aber der steht nur auf `/mits`. Von einer
-            Ticketseite aus wäre die Team-Übersicht sonst zwei Klicks entfernt.
-            Gegated auf dasselbe Prädikat wie der Desk-Eintrag — das ist der
-            Guard, den `/mits/team` selbst benutzt.
-          */}
           {showBoard && showTeam && (
             <DropdownMenuItem asChild>
               <Link href="/mits/team">

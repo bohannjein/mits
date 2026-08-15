@@ -150,16 +150,9 @@ export function TicketTable({
    */
   showAwaitingReply = false,
   /**
-   * Die Spaltenwahl, als letzter Spaltenkopf.
-   *
-   * Als `ReactNode` und nicht als Boolean plus Props: das Bauteil ist ein
-   * Client-Bauteil mit einer Server Action daran, und diese Tabelle ist eine
-   * Server Component. Sie durchzureichen hält die Tabelle davon frei, die
-   * Spaltenwahl überhaupt zu kennen.
-   *
-   * Nur die Queue setzt es. Der Pin-Block darüber liest dieselbe Wahl und zeigt
-   * kein zweites Bedienelement dafür — zwei Wege zu einer Einstellung, zwölf
-   * Pixel auseinander.
+   * Die Spaltenwahl, als letzter Spaltenkopf. `ReactNode`, weil das Bauteil ein
+   * Client-Bauteil ist und diese Tabelle eine Server Component. Nur die Queue
+   * setzt es — der Pin-Block bekommt kein zweites Bedienelement.
    */
   columnPicker,
 }: {
@@ -311,20 +304,8 @@ export function TicketTable({
               </TableHead>
             )}
             {withAge && header("age", "w-px whitespace-nowrap")}
-            {/*
-              Die Spaltenwahl als letzter Spaltenkopf, nicht als Knopf in der
-              Kopfzeile darüber.
-
-              Sie gehört zu den Spalten und stand in einer Reihe mit „Team" und
-              „CMDB" — zwei Wegen an einen anderen Ort neben einer Einstellung
-              *dieser* Tabelle. Hier ist sie das Spiegelbild der Pin-Spalte
-              links: dort ein Knopf je Zeile ohne Überschrift, hier eine
-              Überschrift ohne Zeilen.
-
-              Nur ein Symbol, weil daneben beschriftete Spaltenköpfe stehen. Ein
-              Wort mehr in dieser Zeile nähme die Breite dem Titel weg — dieselbe
-              Begründung, aus der die Pin-Spalte keine Beschriftung trägt.
-            */}
+            {/* Spiegelbild der Pin-Spalte links: dort ein Knopf je Zeile ohne
+                Überschrift, hier eine Überschrift ohne Zeilen. */}
             {columnPicker && (
               <TableHead className="w-px py-0 pr-2 pl-1 text-right">
                 {columnPicker}
@@ -555,13 +536,7 @@ export function TicketTable({
                     {formatRelativeTime(ticket.created_at, now)}
                   </TableCell>
                 )}
-                {/*
-                  Die Gegenzelle zum Spaltenkopf der Spaltenwahl. `p-0` und leer:
-                  sie trägt nichts, und mit der üblichen Zellenpolsterung säße
-                  auf jeder Zeile ein Streifen Luft am rechten Rand, den nichts
-                  füllt. Ohne sie stünden Kopf und Zeilen um eine Spalte
-                  versetzt.
-                */}
+                {/* Gegenzelle, sonst stünden Kopf und Zeilen versetzt. */}
                 {columnPicker && <TableCell className="w-px p-0" />}
               </TableRow>
             );

@@ -94,12 +94,8 @@ export function listNotifications(
   const base = staff ? "/mits/tickets" : "/customer/tickets";
   const events: MITSNotification[] = [];
 
-  /*
-   * Beobachter und Erwähnungen hängen an einem Modul, und beide Zweige unten
-   * fragen es einzeln ab. Zusammengefasst wäre die engere Reichweite auch dann
-   * aktiv, wenn das Modul aus ist — und dann gäbe es keinen Weg, ein Abo
-   * anzulegen, mit dem man sie wieder weitet. Eine Stummschaltung ohne Ausgang.
-   */
+  // Ohne das Modul gibt es keine Abos, mit denen sich `mine` wieder weiten
+  // ließe — die engere Reichweite hängt deshalb mit daran.
   const watchers = isFeatureEnabled("feature_ticket_watchers");
   const narrowReplies =
     staff && watchers && getNotificationSettings().reply_scope === "mine";
@@ -112,12 +108,7 @@ export function listNotifications(
    * tickets. Both halves are in the SQL rather than filtered afterwards, so a
    * future caller cannot get the rows and forget the filter.
    */
-  /*
-   * Eine Erwähnung ersetzt die allgemeine Antwort-Meldung, sie kommt nicht
-   * dazu. „Bea hat geantwortet" und „Bea hat dich genannt" über derselben
-   * Nachricht sind zwei Einblendungen für ein Ereignis, und die zweite ist die
-   * genauere.
-   */
+  // Eine Erwähnung ersetzt die Antwort-Meldung, sie kommt nicht dazu.
   const mentionExclusion = watchers
     ? `AND NOT EXISTS (
          SELECT 1 FROM mits_comment_mention m
@@ -125,13 +116,7 @@ export function listNotifications(
        )`
     : "";
 
-  /*
-   * Die engere Reichweite: zugewiesen, beobachtet oder selbst gemeldet.
-   *
-   * Nur für Personal — ein Melder sieht ohnehin nur seine eigenen Tickets, und
-   * eine zweite Verengung darüber wäre eine Einstellung, die ihm Meldungen über
-   * sein eigenes Anliegen nimmt.
-   */
+  // Zugewiesen, beobachtet oder selbst gemeldet. Nur für Personal.
   const replyScopeClause = narrowReplies
     ? `AND (
          t.assigned_to = ?
@@ -263,18 +248,8 @@ export function listNotifications(
       });
     }
 
-    /*
-     * Erwähnt.
-     *
-     * Die Tabelle ist der Grund, aus dem das hier ein Join und keine Textsuche
-     * ist: der Beitrag trägt den Anzeigenamen, die Zeile die Id. Aus dem Text
-     * zurückzulesen wäre bei zwei Kolleginnen mit demselben Vornamen falsch —
-     * und zwar in die Richtung, in der jemand eine Meldung über ein Gespräch
-     * bekommt, in dem er nicht gemeint war.
-     *
-     * Kein Sichtbarkeitszusatz: erwähnbar sind nur Agenten, und die sehen jede
-     * Notiz auf jedem Ticket. Die Zeile selbst ist die Berechtigung.
-     */
+    // Join statt Textsuche: der Beitrag trägt den Namen, die Zeile die Id.
+    // Kein Sichtbarkeitszusatz — erwähnbar sind nur Agenten.
     if (watchers) {
       const mentions = db
         .prepare(

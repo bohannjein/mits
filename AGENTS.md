@@ -96,6 +96,42 @@ Diese Regeln haben Vorrang vor Bequemlichkeit. Kein Code, der sie bricht.
    Server Action prüft die Session selbst — siehe `lib/auth/session.ts`.
 7. **Niemals Eigentümerschaft aus dem Request lesen.** `created_by` kommt aus der Session.
    `MITSTicketDraftSchema` lässt das Feld bewusst weg, statt es optional zu machen.
+8. **Kommentare sind kurz und selten.** Ein Kommentar steht da, wenn er etwas sagt,
+   was der Code nicht sagen kann — eine Falle, die zugeschlagen hat, eine Bedingung
+   von außen, ein „warum nicht das Naheliegende". Ein bis drei Zeilen. Kein Essay,
+   keine Aufzählung verworfener Alternativen, keine Wiederholung dessen, was zwei
+   Zeilen tiefer steht. Siehe unten.
+
+## Regel 8: Kommentare, die sich selbst erklären, sind Lärm
+
+Diese Codebasis war zu 25,8 % Kommentar — 18.800 Zeilen, einzelne Dateien über
+50 %. Nicht weil es 18.800 Fallen gibt, sondern weil jede Entscheidung einen
+Absatz mit Begründung, Gegenprobe und Merksatz bekam. Das liest niemand, und was
+niemand liest, veraltet.
+
+**Der Maßstab ist nicht „hilfreich", sondern: steht es sonst nirgends?**
+
+| Bleibt | Beispiel |
+|---|---|
+| Eine Falle, die zugeschlagen hat | „Reihenfolge in dieser Liste ist Bindungsreihenfolge." |
+| Eine Bedingung von außen | „Better Auth cacht die Rolle 60 s im Cookie." |
+| Warum nicht das Naheliegende | „Kein `server-only`: die Vorschau braucht es auch." |
+| Eine Einheit oder Grenze am Wert | „Minuten, nie Float." |
+
+| Fliegt raus | warum |
+|---|---|
+| Was der Code sagt | `// Zählt die offenen Tickets` über `count(open)` |
+| Verworfene Alternativen | „Der naheliegende Weg wäre X gewesen, aber …" |
+| Rhetorik | „Das ist der ganze Trick", „Zwei Fragen, zwei Zustände" |
+| Dieselbe Regel zum fünften Mal | steht in `.claude/rules/`, nicht über jeder Aufrufstelle |
+| Absatz-Überschriften in Kommentarblöcken | ein Kommentar ist kein Dokument |
+
+**Begründungen gehören in `.claude/rules/` und in die Commit-Message.** Beide
+werden gelesen, wenn jemand sie sucht, und keine von beiden steht im Weg, wenn
+jemand nur den Code lesen will. Ein Kommentar im Code ist die teuerste Stelle
+für einen Gedanken: er kostet bei jedem Lesen und veraltet als Erstes.
+
+**Ein bis drei Zeilen.** Braucht ein Gedanke mehr, ist er eine Regel-Datei.
 
 ## Regel 4, verschärft: keine Erklärsätze unter Feldern
 

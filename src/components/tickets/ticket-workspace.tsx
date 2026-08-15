@@ -165,11 +165,8 @@ export function TicketWorkspace({
           <PinButton ticketId={ticketId} pinned={pinned} variant="bar" />
         )}
 
-        {/*
-          Folgen steht neben dem Pin und ist absichtlich nicht derselbe Knopf.
-          Der Pin sortiert die eigene Queue, das Abo entscheidet über Meldungen —
-          zwei Fragen, und zusammengelegt wäre jedes Lesezeichen ein Abo.
-        */}
+        {/* Nicht derselbe Knopf wie der Pin: der sortiert die Queue, das Abo
+            entscheidet über Meldungen. */}
         {watching !== null && (
           <WatchButton ticketId={ticketId} watching={watching} />
         )}

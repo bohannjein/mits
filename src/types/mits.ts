@@ -646,14 +646,7 @@ export const MITSTicketSchema = z.object({
    * never asked would be stating something it did not check.
    */
   pinned: z.boolean().default(false),
-  /**
-   * Ob *dieser Leser* dem Ticket folgt.
-   *
-   * Je Konto wie `pinned` daneben, dieselbe Stelle (`searchTickets`), derselbe
-   * ehrliche Default überall sonst. Der Unterschied zum Pin ist die Frage, nicht
-   * die Form: der Pin sagt „ich komme darauf zurück" und sortiert die eigene
-   * Queue, das hier sagt „sag mir Bescheid" und entscheidet über Meldungen.
-   */
+  /** Ob dieser Leser dem Ticket folgt. Je Konto wie `pinned`, nur in `searchTickets`. */
   watched: z.boolean().default(false),
   /**
    * Der Melder hat nachgelegt: es gibt eine Melder-Nachricht, die neuer ist als
@@ -2298,29 +2291,9 @@ export const FeatureFlagsSchema = z.object({
    * somebody made rather than something that started happening after an update.
    */
   feature_smart_routing: z.boolean().default(false),
-  /**
-   * On, like the pins and unlike the routing.
-   *
-   * The page only reads. Nothing about it writes to a ticket, and an instance
-   * with one agent shows one row rather than an empty module somebody has to go
-   * looking for.
-   *
-   * What starts *off* is the half that is about a person rather than about the
-   * work: `show_current_ticket` and `show_resolved_today` in
-   * `TeamSettingsSchema`. Which tickets are piling up is an operational fact;
-   * who closed how many of them today is a performance figure, and a helpdesk
-   * that gains one on update never decided to have it.
-   */
+  /** An: die Seite liest nur. Die personenbezogenen Angaben darauf sind aus. */
   feature_team_overview: z.boolean().default(true),
-  /**
-   * Beobachter und `@`-Erwähnungen. An, und träge wie die Pins.
-   *
-   * Inert, bis jemand jemanden erwähnt oder einem Ticket folgt: keine Zeile
-   * heißt kein Knopfzustand, keine Meldung und keine geänderte Abfrage. Was es
-   * **ermöglicht**, ist die engere Einstellung des `reply`-Kanals — die bleibt
-   * ihrerseits auf „alle Tickets", damit ein Update niemandem still Meldungen
-   * wegnimmt.
-   */
+  /** An, träge wie die Pins: keine Zeile heißt keine Wirkung. */
   feature_ticket_watchers: z.boolean().default(true),
 });
 export type FeatureFlags = z.infer<typeof FeatureFlagsSchema>;
@@ -2394,16 +2367,7 @@ export const NOTIFICATION_CHANNEL_META: Record<
     staffOnly: true,
   },
   mention: {
-    /*
-     * Der fünfte Kanal, und die Regel darüber gilt: einen zu erfinden heißt,
-     * die Abfrage zu schreiben, die ihn findet. Sie steht in
-     * `listNotifications` neben den vier anderen und joint
-     * `mits_comment_mention`.
-     *
-     * Staff-only, weil nur Agenten erwähnbar sind. Einen Melder in einer
-     * internen Notiz zu erwähnen, die er nie sieht, wäre eine Meldung über ein
-     * Ticket ohne einen Ort, an dem der Satz steht.
-     */
+    // Staff-only: erwähnbar sind nur Agenten.
     label: "Erwähnt",
     description:
       "Jemand hat dich mit @ in einem Beitrag genannt. Nur für Agenten.",
@@ -2489,27 +2453,12 @@ export const NotificationSettingsSchema = z.object({
 
   mention_enabled: z.boolean().default(true),
   mention_tone: ToastTone.default("success"),
-  /**
-   * Bleibt stehen, wie die Zuweisung und aus demselben Grund: jemand hat
-   * ausdrücklich *dich* gemeint. Eine Erwähnung, die nach fünf Sekunden weg ist,
-   * ist eine Frage, die niemand beantwortet.
-   */
+  /** Bleibt stehen wie die Zuweisung: jemand hat ausdrücklich dich gemeint. */
   mention_sticky: z.boolean().default(true),
 
   /**
-   * Wofür der `reply`-Kanal feuert.
-   *
-   * `all` ist der Auslieferungszustand und das bisherige Verhalten: ein Agent
-   * bekommt eine Einblendung für **jede** Antwort auf **jedes** Ticket. Auf
-   * einem ruhigen Desk ist das die richtige Voreinstellung, auf einem lauten der
-   * Grund, aus dem jemand den Kanal ganz abschaltet.
-   *
-   * `mine` ist der Zwischenzustand, den es vorher nicht gab: zugewiesen,
-   * beobachtet oder selbst gemeldet. Er hängt an `mits_ticket_watch` — ohne
-   * Beobachter wäre er eine Stummschaltung und keine Eingrenzung, deshalb steht
-   * die Wahl nur bei eingeschaltetem Modul in der Maske.
-   *
-   * Default bleibt `all`, damit ein Update niemandem still Meldungen wegnimmt.
+   * Wofür der `reply`-Kanal feuert. `mine` = zugewiesen, beobachtet oder selbst
+   * gemeldet. Default `all`, damit ein Update niemandem Meldungen wegnimmt.
    */
   reply_scope: z.enum(["all", "mine"]).default("all"),
 });
@@ -2530,22 +2479,8 @@ export function channelConfig(
   };
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
-   Was auf der Team-Übersicht steht.
-
-   Drei Achsen schalten die Seite, und sie beantworten drei verschiedene Fragen:
-   `feature_team_overview` — gibt es sie auf dieser Instanz; der Bereich
-   `mits_team` — bekommt diese Rolle sie zu sehen; und dieses Schema — was steht
-   darauf. Zusammengelegt wäre es ein Schalter, der drei Dinge tut, und beim
-   Nachsehen die falsche Stelle.
-
-   **Flach, nicht verschachtelt**, aus demselben Grund wie bei
-   `NotificationSettingsSchema`: `parse({})` muss ein vollständiges Objekt
-   liefern, damit eine von einem älteren Build geschriebene Zeile Feld für Feld
-   auf den Default fällt statt ganz verworfen zu werden. Ein verworfener Parse
-   würde hier abgeschaltete Angaben wieder einblenden — und das ist die eine
-   Fehlrichtung, die niemand bemerkt.
-   ────────────────────────────────────────────────────────────────────────── */
+// Flach wie `NotificationSettingsSchema`: `parse({})` muss ein vollständiges
+// Objekt liefern, sonst blendet ein abgelehnter Parse Abgeschaltetes wieder ein.
 
 export const TeamSettingsSchema = z.object({
   show_backlog: z.boolean().default(true),
@@ -2555,47 +2490,24 @@ export const TeamSettingsSchema = z.object({
   show_oldest_age: z.boolean().default(true),
   show_presence: z.boolean().default(true),
 
-  /*
-   * Die zwei, die aus per Default sind.
-   *
-   * Alles andere hier beschreibt die *Arbeit* — was liegt, wie viel wem gehört.
-   * Diese beiden beschreiben eine *Person*: woran sie gerade sitzt und wie viel
-   * sie heute geschafft hat. Das ist in einem Betrieb mit Mitbestimmung eine
-   * Angabe, die jemand einschalten soll, statt sie mit einem Update zu bekommen.
-   */
+  // Personenbezogen, deshalb ab Werk aus: nichts, was man mit einem Update
+  // bekommt.
   show_current_ticket: z.boolean().default(false),
   show_resolved_today: z.boolean().default(false),
 
-  /**
-   * Zuweisen direkt aus der Übersicht — Ziehen plus das Menü an jeder Zeile.
-   *
-   * **Eine Anzeigeentscheidung und keine Berechtigung**, und das gehört
-   * ausgesprochen: der Weg dahinter ist `assignTicketAction`, dieselbe Tür, die
-   * die Ticketseite benutzt. Abgeschaltet verschwindet die Geste hier; ein Agent
-   * weist danach weiterhin auf dem Ticket zu. Wer das Zuweisen als Recht
-   * entziehen will, sucht etwas, das es nicht gibt — und ein Schalter, der so
-   * aussieht, wäre die schlechtere Antwort als keiner.
-   */
+  /** Anzeigeentscheidung, keine Berechtigung — die Ticketseite bleibt offen. */
   allow_reassign: z.boolean().default(true),
 
-  /** Woran die Balkenlänge gemessen wird, wenn für ein Konto nichts Eigenes steht. */
   default_capacity: z.coerce.number().int().min(0).max(500).default(12),
-  /** Ab wann ein Ticket als „ohne Bewegung" zählt. `0` nimmt die Zahl aus dem Rückstand. */
+  /** `0` blendet die Kachel aus. */
   stale_days: z.coerce.number().int().min(0).max(90).default(5),
-  /** Wie weit zurück „arbeitet gerade an" schaut. */
   current_work_minutes: z.coerce.number().int().min(5).max(480).default(30),
 });
 export type TeamSettings = z.infer<typeof TeamSettingsSchema>;
 
 export const DEFAULT_TEAM_SETTINGS: TeamSettings = TeamSettingsSchema.parse({});
 
-/**
- * Die Schalter der Maske, in Anzeigereihenfolge.
- *
- * Die Maske baut sich daraus, die Save-Action liest daraus — es gibt also keine
- * Zeile zu vergessen, wenn hier eine dazukommt. Dieselbe Bauart wie
- * `FEATURE_FLAG_META` und `ANALYTICS_WIDGETS`.
- */
+/** Maske und Save-Action bauen sich daraus. */
 export const TEAM_TOGGLES = [
   "show_backlog",
   "show_workload",
@@ -2658,15 +2570,11 @@ export const TEAM_TOGGLE_META: Record<
 };
 
 /**
- * Wie voll der Balken ist, als Anteil zwischen 0 und 1.
+ * Anteil zwischen 0 und 1. Hier statt in `lib/team.ts`, weil das zeichnende
+ * Bauteil kein `server-only` importieren kann — wie `presenceStateFor`.
  *
- * Hier und nicht in `lib/team.ts`, aus demselben Grund wie `presenceStateFor`:
- * das Bauteil, das den Balken zeichnet, ist ein Client-Bauteil und kann kein
- * `server-only`-Modul importieren. Und es ist die Stelle, an der eine Division
- * durch null wartet — `capacity = 0` heißt „kein Maßstab gesetzt", und `14/0`
- * wäre `Infinity`, im Markup eine Breite, die der Browser verwirft und still auf
- * null setzt. Der Balken sähe dann bei der am stärksten belasteten Person am
- * leersten aus.
+ * `capacity = 0` heißt „kein Maßstab": `14/0` wäre `Infinity` und im Markup eine
+ * Breite, die der Browser verwirft.
  */
 export function loadRatio(open: number, capacity: number): number {
   if (capacity <= 0) return open > 0 ? 1 : 0;
@@ -3076,8 +2984,7 @@ export const NAV_AREA_META: Record<
   },
   mits_team: {
     label: "Team-Übersicht",
-    description:
-      "Rückstand, Auslastung und Präsenz unter /mits/team. Wer sie nicht sieht, behält die eigene Queue.",
+    description: "Rückstand, Auslastung und Präsenz unter /mits/team.",
     role: "agent",
   },
 };

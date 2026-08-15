@@ -359,18 +359,7 @@ export default async function AgentQueuePage({
                    * schauen.
                    */
                   <>
-                    {/*
-                      Die Spaltenwahl stand hier und sitzt jetzt als letzter
-                      Spaltenkopf in der Tabelle. In dieser Reihe stand eine
-                      Einstellung *dieser* Tabelle neben zwei Wegen an einen
-                      anderen Ort.
-                    */}
-                    {/*
-                      „Mein Tag" hängt an keinem Modul und an keinem Bereich: die
-                      Seite zeigt nur, was dieser Leser ohnehin sehen darf, in
-                      einer anderen Reihenfolge. Ein Schalter dafür wäre einer
-                      für eine Sortierung.
-                    */}
+                    {/* „Mein Tag" hängt an keinem Modul und keinem Bereich. */}
                     <Button
                       asChild
                       size="sm"
@@ -381,11 +370,6 @@ export default async function AgentQueuePage({
                         Mein Tag
                       </Link>
                     </Button>
-                    {/*
-                      Dieselbe Regel wie bei der CMDB: versteckt, wenn das Modul
-                      aus ist oder die Rolle die Fläche nicht hat. Ein Link in
-                      einen 404 ist die schlechtere Antwort als kein Link.
-                    */}
                     {flags.feature_team_overview && areas.mits_team && (
                       <Button
                         asChild
@@ -518,9 +502,7 @@ export default async function AgentQueuePage({
                     // Passed whole, so a sort click keeps the tab, the scope and any
                     // deep filter that is already narrowing the list.
                     searchParams={params}
-                    // Die Spaltenwahl gehört zu den Spalten und steht deshalb
-                    // als letzter Spaltenkopf. Nur hier, nicht am Pin-Block: es
-                    // ist eine Einstellung, keine zwei.
+                    // Nur hier, nicht am Pin-Block: eine Einstellung, keine zwei.
                     columnPicker={
                       <QueueColumnPicker
                         available={availableColumns}

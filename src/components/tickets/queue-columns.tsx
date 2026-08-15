@@ -20,14 +20,7 @@ import {
 /* ──────────────────────────────────────────────────────────────────────────
    Welche Spalten die Queue zeigt.
 
-   **Als letzter Spaltenkopf in der Tabelle**, nicht mehr in der Reihe mit
-   „Team" und „CMDB". Dort stand eine Einstellung *dieser* Tabelle neben zwei
-   Wegen an einen anderen Ort; hier ist sie das Spiegelbild der Pin-Spalte links
-   — dort ein Knopf je Zeile ohne Überschrift, hier eine Überschrift ohne
-   Zeilen.
-
-   Nur die Queue reicht sie durch. Der Pin-Block darüber liest dieselbe Wahl und
-   bekommt kein zweites Bedienelement dafür.
+   Als letzter Spaltenkopf in der Tabelle, nur von der Queue durchgereicht.
 
    **Angeboten wird nur, was die Instanz hat.** Die Liste kommt als Prop vom
    Server: `feature_time_tracking` entscheidet über „Zeit", die Pins über
@@ -82,15 +75,8 @@ export function QueueColumnPicker({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        {/*
-          Nur das Symbol, und in Icon-Knopf-Größe.
-
-          Der Knopf sitzt jetzt als letzter Spaltenkopf in der Tabelle statt in
-          der Reihe mit „Team" und „CMDB". Neben beschrifteten Spaltenköpfen ist
-          ein Wort mehr Breite, die dem Titel fehlt — dieselbe Begründung, aus
-          der die Pin-Spalte gegenüber keine Beschriftung trägt. Was er tut,
-          steht im `title` und im `sr-only`-Text.
-        */}
+        {/* Nur das Symbol: ein Wort neben den Spaltenköpfen nähme dem Titel
+            Breite. Was der Knopf tut, steht im `title`. */}
         <Button
           size="icon"
           variant="ghost"

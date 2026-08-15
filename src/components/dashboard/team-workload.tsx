@@ -36,30 +36,10 @@ import {
   type TicketPriority,
 } from "@/types/mits";
 
-/* ──────────────────────────────────────────────────────────────────────────
-   Die Auslastungsliste, und darin das Umverteilen.
-
-   **Ziehen mit der nativen HTML5-Schnittstelle**, keine neue Abhängigkeit.
-   `Reorder` aus framer-motion — das Werkzeug, das dieses Projekt für den
-   Formular-Canvas benutzt — ordnet innerhalb *einer* Liste um und kann nicht
-   zwischen zwei Containern ziehen; für „von Meier zu Schulz" ist es das falsche
-   Werkzeug.
-
-   **Das Menü an jeder Zeile ist kein Nachgedanke.** Ziehen ist für eine Maus
-   schneller und auf einem Touchgerät und mit der Tastatur gar nicht bedienbar.
-   Beide Wege laufen in dieselbe Funktion.
-
-   **Es gibt keinen neuen Schreibpfad.** Der Drop ruft `assignTicketAction` —
-   dieselbe Tür, die die Ticketseite benutzt, mit Rollenprüfung, Audit-Zeile,
-   Benachrichtigung und Revalidierung. Ein zweiter Eingang wäre ein zweiter Ort,
-   das falsch zu machen; aus demselben Grund hat `AgentInbox` seinerzeit keine
-   eigene Claim-Action bekommen.
-
-   **Optimistisch, mit Rücknahme im Fehlerfall.** Der Chip wandert sofort; ein
-   abgelehnter Aufruf schiebt ihn zurück und meldet sich als Toast. Erfolg meldet
-   sich nicht — der gewanderte Chip *ist* die Rückmeldung, dieselbe Regel wie
-   beim Anheften.
-   ────────────────────────────────────────────────────────────────────────── */
+// Native HTML5-DnD statt framer-motion `Reorder`: das ordnet innerhalb *einer*
+// Liste um und zieht nicht zwischen Containern. Der Drop ruft
+// `assignTicketAction` — kein zweiter Schreibpfad. Begründungen in
+// .claude/rules/team.md.
 
 /** Der Ablageort „niemand". Ein String, weil `dataTransfer` nur Strings kennt. */
 const POOL = "__pool";
@@ -114,28 +94,18 @@ export function TeamWorkload({
   const { toast } = useToast();
   const [, startTransition] = useTransition();
 
-  /**
-   * Wohin ein Ticket verschoben wurde, solange der Server antwortet.
-   *
-   * Die Karte hält nur die *Abweichungen* vom Serverstand. Bei Erfolg wird der
-   * Eintrag nicht zurückgenommen: er entspricht dann dem, was geschrieben wurde,
-   * und die Revalidierung zieht die Props nach. Ihn sofort zu räumen wäre ein
-   * sichtbares Zurückspringen für die Dauer der Revalidierung.
-   */
+  // Nur die Abweichungen vom Serverstand. Bei Erfolg nicht geräumt — das wäre
+  // ein sichtbares Zurückspringen für die Dauer der Revalidierung.
   const [moved, setMoved] = useState<Record<string, string | null>>({});
   const [busy, setBusy] = useState<Record<string, true>>({});
   const [over, setOver] = useState<string | null>(null);
 
-  /*
-   * `dragleave` feuert auch beim Wechsel auf ein Kindelement — derselbe Zähler
-   * wie in der Dropzone des Erstellungs-Chats, sonst flackert die Markierung,
-   * sobald der Cursor über einen Chip innerhalb des Ziels fährt.
-   */
+  // `dragleave` feuert auch beim Wechsel auf ein Kindelement — ohne Zähler
+  // flackert die Markierung über jedem Chip im Ziel.
   const depth = useRef<Map<string, number>>(new Map());
 
   const reassign = pool !== null;
 
-  /** Jedes Ticket auf dem Schirm, plus sein Platz laut Server. */
   const { all, home } = useMemo(() => {
     const all = new Map<string, WorkloadTicket>();
     const home = new Map<string, string | null>();
@@ -156,7 +126,6 @@ export function TeamWorkload({
   const ownerOf = (ticketId: string): string | null =>
     ticketId in moved ? moved[ticketId] : (home.get(ticketId) ?? null);
 
-  /** Was gerade bei diesem Ziel liegt, dringendstes zuerst. */
   const ticketsFor = (target: string | null): WorkloadTicket[] =>
     [...all.values()]
       .filter((ticket) => ownerOf(ticket.id) === target)
@@ -175,8 +144,7 @@ export function TeamWorkload({
 
     const formData = new FormData();
     formData.set("ticketId", ticketId);
-    // Der leere Wert ist die dokumentierte Form für „Zuweisung aufheben"; die
-    // Action übersetzt ihn und `__none` gleich.
+    // Leer heißt „Zuweisung aufheben".
     formData.set("assigneeId", target ?? "");
 
     startTransition(async () => {
@@ -190,9 +158,8 @@ export function TeamWorkload({
 
       if (result.ok) return;
 
-      // Zurück auf den Stand, der vor dem Ziehen galt — nicht auf den
-      // Serverstand: dazwischen kann eine andere Verschiebung liegen, die
-      // durchgegangen ist.
+      // Auf den Stand vor dem Ziehen, nicht auf den Serverstand: dazwischen kann
+      // eine andere Verschiebung liegen, die durchgegangen ist.
       setMoved((current) => ({ ...current, [ticketId]: previous }));
       toast({ kind: "system", tone: "warning", title: result.error });
     });
@@ -230,7 +197,6 @@ export function TeamWorkload({
     };
   };
 
-  /** Die Ziele des Menüs — Reihenfolge wie die Liste, plus der Pool. */
   const targets = members.map((member) => ({ id: member.id, name: member.name }));
 
   return (
@@ -333,10 +299,6 @@ function PoolBlock({
         emptyText="Nichts unzugewiesen."
       />
 
-      {/*
-        Was der Deckel wegnimmt, steht als Zahl da. Eine gekürzte Liste, die sich
-        für vollständig ausgibt, ist das eine Ergebnis, das man ablehnen muss.
-      */}
       {hidden > 0 && (
         <p className="mt-2 text-xs text-muted-foreground">
           <Link
@@ -371,14 +333,8 @@ function MemberRow({
   onMove: (ticketId: string, target: string | null) => void;
   handlers: Record<string, unknown>;
 }) {
-  /*
-   * Die Zahlen folgen dem, was gerade zu sehen ist.
-   *
-   * Gerechnet wird als Differenz gegen den Serverstand, nicht aus der sichtbaren
-   * Liste allein: über dem Deckel gibt es Tickets, deren Priorität diese Seite
-   * nicht kennt. `open - tickets.length` ist genau ihr Beitrag, und der bleibt
-   * beim Verschieben unberührt.
-   */
+  // Differenz gegen den Serverstand, nicht aus der sichtbaren Liste allein:
+  // über dem Deckel liegen Tickets, deren Priorität diese Seite nicht kennt.
   const open = visible
     ? member.open - member.tickets.length + visible.length
     : member.open;
@@ -424,8 +380,7 @@ function MemberRow({
               className={cn("size-2 shrink-0 rounded-full", DOT[member.state])}
               aria-hidden
             />
-            {/* Farbe allein ist das eine Signal, das ein rot-grün-blinder Leser
-                verliert — dieselbe Regel wie an den Queue-Markern. */}
+            {/* Farbe allein verliert ein rot-grün-blinder Leser. */}
             <span className="sr-only">{PRESENCE_LABELS[member.state]}</span>
           </span>
         )}
@@ -586,9 +541,8 @@ function TicketChip({
       <Link
         href={`/mits/tickets/${ticket.id}`}
         className="max-w-56 truncate hover:underline"
-        // Ein Klick auf den Titel öffnet das Ticket; das Ziehen beginnt am
-        // Chip, und ein Link ist von sich aus ziehbar — ohne das schickt der
-        // Browser seine eigene URL statt der Ticket-Id.
+        // Ein Anker ist von sich aus ziehbar und legte sonst seine URL statt der
+        // Ticket-Id in `dataTransfer`.
         draggable={false}
       >
         <span className="text-muted-foreground">{ticket.label.slice(-6)}</span>{" "}

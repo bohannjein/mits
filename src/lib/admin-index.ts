@@ -355,13 +355,6 @@ export function collectAdminSummaries(): Record<string, AdminSummary> {
     tone: "ok",
   };
 
-  /*
-   * Die Zeile nennt zuerst, ob das Modul überhaupt an ist — dieselbe
-   * Unterscheidung, die `collectSystemStatus` trägt: „aus" ist neutral und kein
-   * Mangel. Danach die Kapazität, weil das die eine Zahl ist, die jemand hier
-   * sucht, und die personenbezogenen Angaben, weil sie ab Werk aus sind und ein
-   * Admin sonst nicht sieht, dass er sie eingeschaltet hat.
-   */
   const team = getTeamSettings();
   if (!flags.feature_team_overview) {
     summaries["/admin/settings/team"] = { text: "Modul aus", tone: "off" };

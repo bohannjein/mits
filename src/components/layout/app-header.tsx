@@ -46,12 +46,7 @@ export async function AppHeader() {
 
   const staff = user !== null && canViewBoard(user.role);
 
-  /*
-   * Zwei Achsen, beide hier aufgelöst: das Modul kann für die Instanz aus sein,
-   * und die Rolle kann die Fläche nicht haben. Das Menü bekommt ein Boolean —
-   * eine Client-Komponente, die die Regel selbst liest, wäre die zweite Stelle,
-   * an der sie gelten muss.
-   */
+  // Modul und Bereich hier aufgelöst; das Menü bekommt ein Boolean.
   const showTeam =
     staff &&
     isFeatureEnabled("feature_team_overview") &&

@@ -334,11 +334,7 @@ export default async function AgentTicketPage({
    */
   const pinned = flags.feature_ticket_pins ? isPinned(id, user.id) : null;
 
-  /*
-   * Dasselbe eine Zeile tiefer und aus demselben Grund: `ticket.watched` ist
-   * hier per Default `false`, weil nur `searchTickets` die Spalte rechnet. Ein
-   * eigener Read ist eine Antwort, das Feld wäre eine Behauptung.
-   */
+  // Eigener Read wie beim Pin: `ticket.watched` rechnet nur `searchTickets`.
   const watching = flags.feature_ticket_watchers
     ? isWatching(id, user.id)
     : null;
@@ -603,12 +599,7 @@ export default async function AgentTicketPage({
                 ticketId={ticket.id}
                 isAgent
                 variant="rich"
-                /*
-                 * Ohne die eigene Person: sich selbst zu nennen erzeugt keine
-                 * Meldung — die Abfrage schließt den Autor aus —, legte aber ein
-                 * Abo an, das niemand verlangt hat. Leer bei abgeschaltetem
-                 * Modul, dann gibt es den Knopf gar nicht.
-                 */
+                // Ohne die eigene Person; leer bei abgeschaltetem Modul.
                 colleagues={
                   flags.feature_ticket_watchers
                     ? agents.filter((agent) => agent.id !== user.id)

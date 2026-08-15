@@ -8,24 +8,9 @@ import { useToast } from "@/components/feedback/toast";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-/* ──────────────────────────────────────────────────────────────────────────
-   Einem Ticket folgen.
-
-   Neben dem Pin und bewusst nicht derselbe Knopf: der Pin sortiert die eigene
-   Queue („ich komme darauf zurück"), das hier entscheidet über Meldungen („sag
-   mir Bescheid"). Zwei Fragen, zwei Zustände — zusammengelegt wäre jedes
-   Lesezeichen ein Abo und jede stille Beobachtung eine Zeile über der Queue.
-
-   **Kein `<form>`**, dieselbe Bauart wie beim Anheften: die Zeile wird unter dem
-   Knopf neu gerendert, sobald ein Realtime-Signal kommt, und ein Formular in
-   einem ausgetauschten Element schickt ins Leere. `FormData` von Hand plus
-   `startTransition`, ohne die React warnt und `pending` nie umschaltet.
-
-   **Erfolg meldet sich als Toast, anders als beim Pin.** Beim Pin wandert die
-   Zeile sichtbar in den Block darüber — das *ist* die Rückmeldung. Hier ändert
-   sich nur ein Symbol, und „ab jetzt bekomme ich Meldungen" ist eine Zusage, die
-   man einmal gelesen haben will.
-   ────────────────────────────────────────────────────────────────────────── */
+// Kein `<form>`, wie beim Pin: die Zeile wird unter dem Knopf neu gerendert.
+// Erfolg meldet sich hier als Toast — anders als beim Pin ändert sich nur ein
+// Symbol.
 
 export function WatchButton({
   ticketId,
@@ -37,11 +22,7 @@ export function WatchButton({
   const { toast } = useToast();
   const [result, action, pending] = useActionState(toggleWatchAction, null);
 
-  /*
-   * Der Zustand, solange der Server antwortet. Zurückgenommen nur im
-   * Fehlerfall — bei Erfolg entspricht er dem Geschriebenen, und das Prop zieht
-   * mit der Revalidierung nach.
-   */
+  // Zurückgenommen nur im Fehlerfall; bei Erfolg zieht das Prop nach.
   const [optimistic, setOptimistic] = useState<boolean | null>(null);
 
   useEffect(() => {

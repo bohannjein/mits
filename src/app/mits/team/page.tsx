@@ -16,28 +16,8 @@ export const metadata: Metadata = {
   title: "Team — MITS",
 };
 
-/* ──────────────────────────────────────────────────────────────────────────
-   Der Desk sieht sich selbst.
-
-   Drei Tore, wie überall im Agentenbereich, und jedes beantwortet eine andere
-   Frage: `requireRole` — ist das Personal; `requireArea` — bietet die Instanz
-   dieser Rolle die Fläche noch an; das Feature-Flag — gibt es das Modul hier
-   überhaupt. Ein abgeschaltetes Modul antwortet `404` und nicht mit einer leeren
-   Seite: eine leere Liste ist eine Aussage über den Bestand.
-
-   **`QueueLive` wird wiederverwendet und nicht nachgebaut.** Es hört auf
-   dasselbe `queue`-Signal, das jede Zuweisung, jeder Statuswechsel und jeder
-   Kommentar ohnehin veröffentlicht, bündelt Bursts in einem 1,5-Sekunden-Fenster
-   und fällt bei totem Stream auf den ETag-Poll zurück. Ein zweites Bauteil mit
-   derselben Logik wäre eine zweite Stelle, an der das Coalescing falsch
-   eingestellt ist.
-
-   Die Folge, ehrlich benannt: **Präsenz allein bewegt nichts.** Der Heartbeat
-   veröffentlicht kein Signal, ein Kollege, der sich anmeldet und sonst nichts
-   tut, erscheint also erst mit der nächsten Aktualisierung. Dafür ein eigenes
-   Signal einzuführen hieße, den Bus im 150-Sekunden-Takt jeder offenen Sitzung
-   zu befeuern — für einen Punkt, der die Farbe wechselt.
-   ────────────────────────────────────────────────────────────────────────── */
+// `QueueLive` wiederverwendet statt nachgebaut. Folge: Präsenz allein bewegt
+// nichts — der Heartbeat veröffentlicht kein Signal.
 
 export default async function TeamPage() {
   const viewer = await requireRole("agent", "/mits/team");
@@ -47,12 +27,7 @@ export default async function TeamPage() {
 
   const settings = getTeamSettings();
 
-  /*
-   * Eine Uhr für die ganze Seite. Die vier Abfragen setzen ihre Zeitgrenzen
-   * daraus, und die Alter darunter werden dagegen formatiert — mit mehreren
-   * `Date.now()` lägen „heute" und „ohne Bewegung" ein paar Millisekunden
-   * auseinander, und das ist eine Abweichung, die nur unter Last auftritt.
-   */
+  // Eine Uhr für Abfragen und Anzeige.
   const now = Date.now();
   const overview = collectTeamOverview(settings, now);
 
@@ -66,10 +41,6 @@ export default async function TeamPage() {
         <div className="w-full max-w-7xl">
           <BackLink href="/mits" label="Zurück zur Queue" />
           <div className="mt-4">
-            {/*
-              Nur die Überschrift. Der Untertitel beschrieb, was die Blöcke
-              darunter zeigen — und die tragen ihre eigenen Überschriften.
-            */}
             <h1 className="flex items-center gap-3 text-3xl font-normal tracking-tight sm:text-4xl">
               <UsersIcon
                 className="size-7 text-muted-foreground"
@@ -90,12 +61,6 @@ export default async function TeamPage() {
             <TeamBoard overview={overview} settings={settings} now={now} />
           )}
 
-          {/*
-            Die Zeitzone steht hier und nicht an jeder Zahl. „Heute" ist der
-            laufende UTC-Tag, wie in der Statistik: die Anzeige-Zeitzone ist eine
-            Render-Einstellung und greift bei einer Bucket-Grenze absichtlich
-            nicht durch.
-          */}
           {settings.show_resolved_today && (
             <p className="mt-6 text-xs text-muted-foreground">
               „Heute abgeschlossen" zählt den laufenden Tag in UTC.

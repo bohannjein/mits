@@ -1464,12 +1464,7 @@ export async function saveNotificationSettingsAction(
       maxVisible: formData.get("maxVisible"),
       pollSeconds: formData.get("pollSeconds"),
       digestThreshold: formData.get("digestThreshold"),
-      /*
-       * Fehlt das Feld — das Modul ist aus, die Karte wird nicht gerendert —,
-       * greift der Default `all`. Das ist die richtige Richtung: ohne Abos wäre
-       * `mine` eine Stummschaltung, und ein Speichern der übrigen Einstellungen
-       * darf sie nicht nebenbei setzen.
-       */
+      // Fehlt das Feld (Modul aus, Karte nicht gerendert), greift `all`.
       reply_scope: formData.get("reply_scope") ?? undefined,
     }),
   );
@@ -1497,14 +1492,7 @@ export async function saveNotificationSettingsAction(
 
 /* ── Team overview ──────────────────────────────────────────────────────── */
 
-/**
- * Was auf /mits/team steht, plus die Kapazität je Konto.
- *
- * Ein Absenden, zwei Ziele: das flache Schalter-Objekt geht in eine
- * `mits_setting`-Zeile, die Kapazitäten in je eine eigene. Zwei Formulare wären
- * hier der bekannte Fehler — ein nicht angehakter Schalter wird nicht gesendet,
- * also löschte jedes Speichern der einen Sektion die Schalter der anderen.
- */
+/** Ein Absenden, zwei Ziele: Schalter in eine Zeile, Kapazitäten in je eine. */
 export async function saveTeamSettingsAction(
   _previous: ActionResult | null,
   formData: FormData,
@@ -1516,16 +1504,8 @@ export async function saveTeamSettingsAction(
 
   const saved = setTeamSettings(parsed.data);
 
-  /*
-   * Die Kapazitäten von Hand geparst und **gegen den Kontenbestand gefiltert**,
-   * nicht per `z.record`.
-   *
-   * Zwei Gründe, beide schon einmal teuer gewesen: `z.record` mit einem Enum ist
-   * in Zod 4 exhaustiv und lehnt eine Teilmenge ab, und eine abgelehnte Zeile
-   * nähme hier die Schalter mit, die gerade erfolgreich gespeichert wurden. Der
-   * Filter ist zusätzlich die Zugriffsgrenze: ohne ihn schriebe ein handgebauter
-   * Request eine Setting-Zeile für jede Id, die er sich ausdenkt.
-   */
+  // Von Hand geparst statt `z.record` (in Zod 4 exhaustiv) und gegen den
+  // Kontenbestand gefiltert — sonst schriebe ein Request beliebige Ids.
   let capacityCount = 0;
   try {
     const raw: unknown = JSON.parse(String(formData.get("capacities") ?? "{}"));
@@ -1536,9 +1516,7 @@ export async function saveTeamSettingsAction(
         if (!(account.id in draft)) continue;
 
         const value = String(draft[account.id] ?? "").trim();
-        // Leer heißt „nimm den Instanzwert", nicht „Kapazität null". Der
-        // Unterschied ist, ob ein frisch angelegtes Konto denselben Maßstab
-        // bekommt wie die anderen oder als dauerhaft überlastet erscheint.
+        // Leer heißt „nimm den Instanzwert", nicht „Kapazität null".
         if (value === "") {
           setAgentCapacity(account.id, null);
           continue;
@@ -1551,8 +1529,7 @@ export async function saveTeamSettingsAction(
       }
     }
   } catch {
-    // Ein unlesbares Kapazitätsfeld darf die gespeicherten Schalter nicht
-    // zurücknehmen — sie stehen bereits. Gemeldet wird der Teilerfolg unten.
+    // Die Schalter stehen bereits; gemeldet wird der Teilerfolg.
     return {
       ok: false,
       error: "Die Angaben sind gespeichert, die Kapazitäten konnten nicht gelesen werden.",

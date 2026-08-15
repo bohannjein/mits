@@ -30,19 +30,9 @@ import {
   type TeamSettings,
 } from "@/types/mits";
 
-/* ──────────────────────────────────────────────────────────────────────────
-   Was auf /mits/team steht — und woran der Balken gemessen wird.
-
-   Ein Formular, als JSON in einem versteckten Feld abgeschickt, wie bei den
-   Modulen. Das umgeht die Falle, an der eine Schaltermaske sonst scheitert: ein
-   nicht angehakter Schalter wird gar nicht gesendet, also ist „aus" von „war
-   nicht im Formular" nicht zu unterscheiden — und jedes Speichern der einen
-   Sektion löschte die Schalter der anderen, mit Erfolgsmeldung.
-
-   Die Kapazitäten reisen im selben Absenden, aber in einem eigenen Feld: sie
-   sind eine Zahl je Konto und keine Eigenschaft der Instanz, und serverseitig
-   landen sie in eigenen Setting-Zeilen.
-   ────────────────────────────────────────────────────────────────────────── */
+// Ein Formular, als JSON in einem versteckten Feld — ein nicht angehakter
+// Schalter wird sonst nicht gesendet und „aus" ist von „nicht im Formular"
+// nicht zu unterscheiden.
 
 export interface TeamAgentRow {
   id: string;
@@ -332,12 +322,8 @@ function NumberField({
         className="h-10 rounded-xl"
         value={value}
         disabled={disabled}
-        /*
-         * Ein geleertes Zahlenfeld liefert `""`, und `Number("")` ist `0` — ohne
-         * diesen Zweig springt das Feld beim Löschen der letzten Ziffer auf null
-         * und tippt sich nicht mehr sauber neu. Der Ausreißer wird beim Parsen
-         * serverseitig ohnehin geklemmt.
-         */
+        // Ein geleertes Zahlenfeld liefert `""`; ohne diesen Zweig springt es
+        // beim Löschen der letzten Ziffer auf null.
         onChange={(event) => {
           const next = Number.parseInt(event.target.value, 10);
           onChange(Number.isFinite(next) ? next : min);
